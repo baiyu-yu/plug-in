@@ -12,7 +12,7 @@
 if (!seal.ext.find("GroupSpecialTitle")) {
     const ext = seal.ext.new("GroupSpecialTitle", "白鱼", "1.1.1");
     let whiteList = 1; // 1 表示只有管理员和群主可以设置，0 表示所有人可以设置
-    let port = "8082";
+    let port = "8083";
     let groupSpecialTitleApi = "http://127.0.0.1:" + port + "/set_group_special_title";
   
     const cmdSpecialTitle = seal.ext.newCmdItemInfo();
