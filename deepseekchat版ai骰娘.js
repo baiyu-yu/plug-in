@@ -1,15 +1,19 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin
-// @version      1.0.6
-// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复
+// @author       白鱼
+// @version      1.0.2
+// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。请自己修改content里的设定和最下面的触发词，也就是“黑鱼”这个改成你的骰的。
+// @timestamp    1721822416
 // @license      MIT
-// @homepageURL  https://platform.deepseek.com
+// @homepageURL  https://github.com/sealdice/javascript
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
 // ==/UserScript==
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
-const ACCESS_TOKEN = "sk-b32b6b8207d146ebb93cda4bd634810b"; // 确认已替换为实际的访问令牌
-const MAX_REPLY_TOKENS = 50; // 设置回复的最大tokens数
-const MAX_CONTEXT_LENGTH = 10; // 假设上下文对话限制为5轮
+const ACCESS_TOKEN = ""; // 确认已替换为实际的访问令牌
+const MAX_REPLY_TOKENS = 100; // 设置回复的最大tokens数
+const MAX_CONTEXT_LENGTH = 14; // 假设上下文对话限制为5轮
 
 if (!seal.ext.find('deepseekai')) {
     const ext = seal.ext.new('deepseekai', 'YourName', '1.0.6');
@@ -83,7 +87,7 @@ if (!seal.ext.find('deepseekai')) {
     globalThis.deepseekAIContextMap = new Map();
 
     ext.onNotCommandReceived = (ctx, msg) => {
-        if (msg.message.includes('黑鱼') && msg.message.includes('问问你')) {
+        if (msg.message.includes('黑鱼黑鱼') ){
             if (globalThis.deepseekAIContextMap.has(ctx.player.userId)) {
                 let ai = globalThis.deepseekAIContextMap.get(ctx.player.userId);
                 ai.chat(msg.message, ctx, msg);
