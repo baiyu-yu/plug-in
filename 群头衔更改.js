@@ -80,7 +80,7 @@ if (!seal.ext.find("GroupSpecialTitle")) {
           let groupQQ = ctx.group.groupId;
           let postData = {
             group_id: groupQQ.match(/:(\d+)/)[1],
-            user_id: userQQ.match(/:(\d+)/)[1],
+            user_id: userQQ,
             special_title: groupContent
           };
   
