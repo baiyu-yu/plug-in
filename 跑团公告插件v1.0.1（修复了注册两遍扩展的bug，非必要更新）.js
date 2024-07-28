@@ -5,7 +5,9 @@
 // @description  跑团公告插件，.挂团 [内容] - 挂出一个跑团公告（注意需要包含模组名这三个字和冒号），.公告列表 - 列出所有跑团公告，.示团 [序号/团名] - 显示指定跑团公告详细信息，.取消挂团 - 列出自己所有挂过的团，并提供移除功能，.公告管理 - 管理所有跑团公告（仅master可用）
 // @timestamp    1719299266
 // @license      MIT
-// @homepageURL  https://github.com/sealdice/javascript
+// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6v1.0.1%EF%BC%88%E4%BF%AE%E5%A4%8D%E4%BA%86%E6%B3%A8%E5%86%8C%E4%B8%A4%E9%81%8D%E6%89%A9%E5%B1%95%E7%9A%84bug%EF%BC%8C%E9%9D%9E%E5%BF%85%E8%A6%81%E6%9B%B4%E6%96%B0%EF%BC%89.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6v1.0.1%EF%BC%88%E4%BF%AE%E5%A4%8D%E4%BA%86%E6%B3%A8%E5%86%8C%E4%B8%A4%E9%81%8D%E6%89%A9%E5%B1%95%E7%9A%84bug%EF%BC%8C%E9%9D%9E%E5%BF%85%E8%A6%81%E6%9B%B4%E6%96%B0%EF%BC%89.js
 // ==/UserScript==
 
 if (!seal.ext.find('跑团公告插件')) {
