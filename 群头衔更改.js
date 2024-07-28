@@ -4,7 +4,7 @@
 // @version      1.1.0
 // @description  群头衔功能，需要骰娘作为群主，需要开http。gocq框架：请参考 https://docs.go-cqhttp.org/guide/config.html#%E9%85%8D%E7%BD%AE%E4%BF%A1%E6%81%AF 为你的海豹gocqhttp配置文件(config.yml)添加http配置，参考网址中servers 部分参考配置的第一节 （ - http: # HTTP 通信设置）；内置或lagrange：参考https://lagrangedev.github.io/Lagrange.Doc/Lagrange.OneBot/Config/#%E6%AD%A3%E5%90%91-http-%E9%85%8D%E7%BD%AE为你的拉格兰添加http设置。是在星尘佬的群公告发布的基础上小修改了一下达到这个结果。请注意修改你的对应端口。
 // @timestamp    1717406830
-// @license      Apache-2
+// @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E5%A4%B4%E8%A1%94%E6%9B%B4%E6%94%B9.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E5%A4%B4%E8%A1%94%E6%9B%B4%E6%94%B9.js
