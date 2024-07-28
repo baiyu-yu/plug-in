@@ -1,19 +1,18 @@
 // ==UserScript==
 // @name         群头衔更改
-// @author       白鱼
-// @version      1.1.0
 // @description  群头衔功能，需要骰娘作为群主，需要开http。gocq框架：请参考 https://docs.go-cqhttp.org/guide/config.html#%E9%85%8D%E7%BD%AE%E4%BF%A1%E6%81%AF 为你的海豹gocqhttp配置文件(config.yml)添加http配置，参考网址中servers 部分参考配置的第一节 （ - http: # HTTP 通信设置）；内置或lagrange：参考https://lagrangedev.github.io/Lagrange.Doc/Lagrange.OneBot/Config/#%E6%AD%A3%E5%90%91-http-%E9%85%8D%E7%BD%AE为你的拉格兰添加http设置。是在星尘佬的群公告发布的基础上小修改了一下达到这个结果。请注意修改你的对应端口。
-// @timestamp    1717406830
+// @version      1.1.1
 // @license      MIT
+// @author       白鱼
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E5%A4%B4%E8%A1%94%E6%9B%B4%E6%94%B9.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E5%A4%B4%E8%A1%94%E6%9B%B4%E6%94%B9.js
 // ==/UserScript==
 
 if (!seal.ext.find("GroupSpecialTitle")) {
-    const ext = seal.ext.new("GroupSpecialTitle", "白鱼", "1.1.0");
+    const ext = seal.ext.new("GroupSpecialTitle", "白鱼", "1.1.1");
     let whiteList = 1; // 1 表示只有管理员和群主可以设置，0 表示所有人可以设置
-    let port = "8083";
+    let port = "8082";
     let groupSpecialTitleApi = "http://127.0.0.1:" + port + "/set_group_special_title";
   
     const cmdSpecialTitle = seal.ext.newCmdItemInfo();
@@ -24,15 +23,15 @@ if (!seal.ext.find("GroupSpecialTitle")) {
   
     cmdSpecialTitle.solve = (ctx, msg, cmdArgs) => {
       let val = cmdArgs.getArgN(1);
-          // 获取用户ID
-          let userQQ
-          if (ctx.privilegeLevel < 45) {
-            userQQ = ctx.player.userId.split(":")[1]; // 不符合条件，获取userQQ
-          } else {
-              let mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
-              ctx.delegateText = "";
-              userQQ = mctx.player.userId.split(":")[1];
-          }
+      // 获取用户ID
+      let userQQ;
+      if (ctx.privilegeLevel < 45) {
+        userQQ = ctx.player.userId.split(":")[1]; // 不符合条件，获取userQQ
+      } else {
+        let mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+        ctx.delegateText = "";
+        userQQ = mctx.player.userId.split(":")[1];
+      }
   
       switch (val) {
         case "help": {
@@ -51,7 +50,7 @@ if (!seal.ext.find("GroupSpecialTitle")) {
             seal.replyToSender(ctx, msg, whiteList === 1 ? `权限已切换为管理员与群主可更改` : `权限已切换为所有人可更改`);
             return seal.ext.newCmdExecuteResult(true);
           }
-
+  
           if (ctx.privilegeLevel < 45 && whiteList === 1) {
             seal.replyToSender(
               ctx,
@@ -77,11 +76,11 @@ if (!seal.ext.find("GroupSpecialTitle")) {
             return seal.ext.newCmdExecuteResult(true);
           }
   
-          let groupQQ = ctx.group.groupId;
+          let groupQQ = ctx.group.groupId.match(/:(\d+)/)[1];
           let postData = {
-            group_id: groupQQ.match(/:(\d+)/)[1],
-            user_id: userQQ,
-            special_title: groupContent
+            group_id: parseInt(groupQQ, 10),
+            user_id: parseInt(userQQ, 10),
+            special_title: groupContent.toString()
           };
   
           fetch(groupSpecialTitleApi, {
@@ -108,4 +107,5 @@ if (!seal.ext.find("GroupSpecialTitle")) {
   
     ext.cmdMap["群头衔"] = cmdSpecialTitle;
     seal.ext.register(ext);
-}
+  }
+  
