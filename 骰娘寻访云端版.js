@@ -6,6 +6,8 @@
 // @timestamp 1716807011
 // @license  MIT
 // @homepageURL https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88.js
 // ==/UserScript==
 
 const appID = "abaabachaojibaiyu";
