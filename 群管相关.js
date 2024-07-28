@@ -5,7 +5,9 @@
 // @description  群管理和名片点赞这些onebot部分功能实现，需要配置http通信，适用Lagrange，内置也是这个，nc和llonebot应该是也有这些api，具体怎么开它们的http自适应一下#目移，是在星尘佬群公告插件的基础上改的
 // @timestamp    1717406830
 // @license      Apache-2
-// @homepageURL  https://github.com/sealdice/javascript
+// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E7%AE%A1%E7%9B%B8%E5%85%B3.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E7%BE%A4%E7%AE%A1%E7%9B%B8%E5%85%B3.js
 // ==/UserScript==
 
 if (!seal.ext.find("GroupManagement")) {
