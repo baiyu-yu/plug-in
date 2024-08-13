@@ -5,7 +5,9 @@
 // @description  真的能用吗 逻辑理论上是装了插件的骰可以用于上报qq然后让指定人审查骰确实是骰，再进行确认后放到骰娘寻访池子里。后端要是坏了请来保修，大坏了我就不维护了#蠕动。到时候有兴趣的请务必来接手。
 // @timestamp 1716807011
 // @license  MIT
-// @homepageURL https://github.com/sealdice/javascript
+// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88v1.0.6.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88v1.0.6.js
 // ==/UserScript==
 
 const appID = "abaabachaojibaiyu";
