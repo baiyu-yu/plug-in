@@ -6,8 +6,8 @@
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekai%E9%AA%B0%E5%A8%98%E6%B7%B7%E4%B9%B1%E7%89%88.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekai%E9%AA%B0%E5%A8%98%E6%B7%B7%E4%B9%B1%E7%89%88.js
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekai')) {
