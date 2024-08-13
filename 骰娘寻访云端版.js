@@ -10,7 +10,7 @@
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88.js
 // ==/UserScript==
 
-const appID = "abaabachaojibaiyu";
+const appID = "";
 const serverURL = "http://110.41.69.149:3518";
 const cooldownTime = 10 * 60 * 1000;
 
