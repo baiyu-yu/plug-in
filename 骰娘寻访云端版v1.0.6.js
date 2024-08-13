@@ -42,27 +42,21 @@ async function fetchQQName(qqNumber) {
         let firstResponse = await fetch(`https://api.usuuu.com/qq/${qqNumber}`);
 
         if (!firstResponse.ok) {
-            console.error(`First API returned status ${firstResponse.status}: ${firstResponse.statusText}`);
         } else {
             let data = await firstResponse.json();
             if (data.code === 200 && data.result) {
                 return data.result.nickname; // 直接返回昵称
-            } else {
-                console.error('First API did not return expected data', data);
-            }
+            } 
         }
 
         // 如果第一个 API 失败，尝试第二个 API
         let secondResponse = await fetch(`https://api.oioweb.cn/api/qq/info?qq=${qqNumber}`);
 
         if (!secondResponse.ok) {
-            console.error(`Second API returned status ${secondResponse.status}: ${secondResponse.statusText}`);
         } else {
             let data = await secondResponse.json();
             if (data.code === 200 && data.result) {
                 return data.result.nickname; // 直接返回昵称
-            } else {
-                console.error('Second API did not return expected data', data);
             }
         }
 
@@ -71,13 +65,10 @@ async function fetchQQName(qqNumber) {
         const thirdResponse = await fetch(thirdUrl);
 
         if (!thirdResponse.ok) {
-            console.error(`Third API returned status ${thirdResponse.status}: ${thirdResponse.statusText}`);
         } else {
             const thirdData = await thirdResponse.json();
             if (thirdData.code === 200 && thirdData.data && thirdData.data.nickname) {
                 return thirdData.data.nickname; // 直接返回昵称
-            } else {
-                console.error('Third API did not return expected data', thirdData);
             }
         }
 
@@ -86,14 +77,11 @@ async function fetchQQName(qqNumber) {
         const fourthResponse = await fetch(fourthUrl);
 
         if (!fourthResponse.ok) {
-            console.error(`Fourth API returned status ${fourthResponse.status}: ${fourthResponse.statusText}`);
         } else {
             const fourthData = await fourthResponse.json();
             if (fourthData.code === 200 && fourthData.name) {
                 return fourthData.name; // 返回 name
-            } else {
-                console.error('Fourth API did not return expected data', fourthData);
-            }
+            } 
         }
 
         // 如果第四个 API 失败，尝试第五个 API
@@ -103,14 +91,11 @@ async function fetchQQName(qqNumber) {
         });
 
         if (!fifthResponse.ok) {
-            console.error(`Fifth API returned status ${fifthResponse.status}: ${fifthResponse.statusText}`);
         } else {
             const fifthData = await fifthResponse.json();
             if (fifthData.status === 'ok' && fifthData.data && fifthData.data.nickname) {
                 return fifthData.data.nickname; // 直接返回昵称
-            } else {
-                console.error('Fifth API did not return expected data', fifthData);
-            }
+            } 
         }
 
         // 如果所有 API 请求均失败，则返回 "未知"
