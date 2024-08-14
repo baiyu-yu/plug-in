@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin
 // @author       白鱼
-// @version      1.1.3
+// @version      1.1.4
 // @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。请自己修改content里的设定和最下面的触发词，也就是“黑鱼”这个改成你的骰的。或者直接在插件界面改配置项，似乎得重载才能读到？
 // @timestamp    1721822416
 // @license      MIT
@@ -22,16 +22,10 @@ if (!seal.ext.find('deepseekai')) {
     seal.ext.registerStringConfig(ext, "非指令关键词", "黑鱼黑鱼"); // 存储非指令关键词
 
     const DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions";
-    // 获取配置项
-    const ACCESS_TOKEN = seal.ext.getStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）");
-    const MAX_REPLY_TOKENS = parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数（防止回复过长）"), 100);
-    const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数（14表示7轮）"), 14);
-    const SYSTEM_CONTEXT_CONTENT = seal.ext.getStringConfig(ext, "角色设定");
-    const NON_COMMAND_KEYWORD = seal.ext.getStringConfig(ext, "非指令关键词");
 
     class DeepseekAI {
         constructor() {
-            this.systemContext = {"role": "system", "content": SYSTEM_CONTEXT_CONTENT};
+            this.systemContext = {"role": "system", "content": seal.ext.getStringConfig(ext, "角色设定")};
             this.context = [this.systemContext];
         }
 
@@ -43,14 +37,14 @@ if (!seal.ext.find('deepseekai')) {
         async chat(text, ctx, msg) {
             let user = ctx.player.name
             this.context.push({"role": "user", "content": "from " + user + text});
-            if (this.context.length > MAX_CONTEXT_LENGTH) {
+            if (this.context.length > parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数（14表示7轮）")) {
                 this.context = [this.systemContext]; // 只保留system的context
             }
             this.cleanContext(); // 清理上下文中的 null 值
 
             try {
                 console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
-
+                const ACCESS_TOKEN = seal.ext.getStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）");
                 const response = await fetch(`${DEEPSEEK_API_URL}`, {
                     method: 'POST',
                     headers: {
@@ -61,7 +55,7 @@ if (!seal.ext.find('deepseekai')) {
                     body: JSON.stringify({
                         model: "deepseek-chat",
                         messages: this.context,
-                        max_tokens: MAX_REPLY_TOKENS,
+                        max_tokens: parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数（防止回复过长）")),
                         frequency_penalty: 0,
                         presence_penalty: 0,
                         stop: null,
@@ -99,7 +93,7 @@ if (!seal.ext.find('deepseekai')) {
     globalThis.deepseekAIContextMap = new Map();
 
     ext.onNotCommandReceived = (ctx, msg) => {
-        if (msg.message.includes(NON_COMMAND_KEYWORD) && !/\[CQ:.*?\]/.test(msg.message)) {
+        if (msg.message.includes(seal.ext.getStringConfig(ext, "非指令关键词")) && !/\[CQ:.*?\]/.test(msg.message)) {
             if (globalThis.deepseekAIContextMap.has(ctx.player.userId)) {
                 let ai = globalThis.deepseekAIContextMap.get(ctx.player.userId);
                 ai.chat(msg.message, ctx, msg);
