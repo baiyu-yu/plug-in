@@ -35,9 +35,14 @@ if (!seal.ext.find('deepseekai')) {
         }
 
         async chat(text, ctx, msg) {
-            let user = ctx.player.name
+            let user = ctx.player.name;
             this.context.push({"role": "user", "content": "from " + user + text});
-            if (this.context.length > parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数（14表示7轮）")) {
+            const contextLimit = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数（14表示7轮）"), 10);
+            if (isNaN(contextLimit)) {
+                console.error("存储上下文对话限制轮数配置错误");
+                return;
+            }
+            if (this.context.length > contextLimit) {
                 this.context = [this.systemContext]; // 只保留system的context
             }
             this.cleanContext(); // 清理上下文中的 null 值
@@ -55,7 +60,7 @@ if (!seal.ext.find('deepseekai')) {
                     body: JSON.stringify({
                         model: "deepseek-chat",
                         messages: this.context,
-                        max_tokens: parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数（防止回复过长）")),
+                        max_tokens: parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数（防止回复过长）"), 10),
                         frequency_penalty: 0,
                         presence_penalty: 0,
                         stop: null,
@@ -69,7 +74,14 @@ if (!seal.ext.find('deepseekai')) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    console.error("JSON解析错误：", jsonError);
+                    return;
+                }
+
                 console.log('服务器响应:', JSON.stringify(data, null, 2)); // 调试输出，格式化为字符串
 
                 if (data.error) {
