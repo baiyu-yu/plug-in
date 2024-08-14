@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin
 // @author       白鱼
-// @version      1.1.2
+// @version      1.1.3
 // @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。请自己修改content里的设定和最下面的触发词，也就是“黑鱼”这个改成你的骰的。或者直接在插件界面改配置项，似乎得重载才能读到？
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
+// @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekai')) {
@@ -40,7 +41,8 @@ if (!seal.ext.find('deepseekai')) {
         }
 
         async chat(text, ctx, msg) {
-            this.context.push({"role": "user", "content": text});
+            let user = ctx.player.name
+            this.context.push({"role": "user", "content": "from " + user + text});
             if (this.context.length > MAX_CONTEXT_LENGTH) {
                 this.context = [this.systemContext]; // 只保留system的context
             }
