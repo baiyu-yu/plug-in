@@ -25,7 +25,7 @@ if (!seal.ext.find('deepseekai')) {
     // 获取配置项
     const ACCESS_TOKEN = seal.ext.getStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）");
     const MAX_REPLY_TOKENS = parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数（防止回复过长）"));
-    const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数（14表示7轮）")) * 2; // 每轮包括用户和AI的两条消息
+    const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数")) * 2; // 每轮包括用户和AI的两条消息
     const SYSTEM_CONTEXT_CONTENT = seal.ext.getStringConfig(ext, "角色设定");
     const NON_COMMAND_KEYWORD = seal.ext.getStringConfig(ext, "非指令关键词");
 
