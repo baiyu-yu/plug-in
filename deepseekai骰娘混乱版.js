@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin chaos
 // @author       白鱼
-// @version      1.0.0
-// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，随机插话版。通过配置项进行设置。通过特殊关键词可以强制触发，否则就是按照设定的条数说到一定次数后，会自动触发。可以通过statusAI查询状态。目前设定只有骰主才可以开启AI等，若是需要其他人也可以使用，对代码的第175行中数字进行修改，具体数值参考海豹手册。
+// @version      1.1.0
+// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，随机插话版。通过配置项进行设置。通过特殊关键词可以强制触发，否则就是按照设定的条数说到一定次数后，会自动触发。可以通过statusAI查询状态。
 // @timestamp    1723713329
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekaichaos')) {
-    const ext = seal.ext.new('deepseekaichaos', 'baiyu', '1.1.1');
+    const ext = seal.ext.new('deepseekaichaos', 'baiyu', '1.1.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -26,7 +26,10 @@ if (!seal.ext.find('deepseekaichaos')) {
         "关闭AI关键词",
         "开启AI回复词",
         "关闭AI回复词",
-        "特殊关键词强制触发"
+        "特殊关键词强制触发",
+        "清空上下文关键词（暂时没用，悲鸣）",
+        "清空上下文回复词（暂时没用，悲鸣）",
+        "允许开启AI权限等级（100为骰主，70为白名单，60为群主，50为管理，40为邀请者，0为所有人）"
     ];
     const configDefaults = [
         "yours",
@@ -38,7 +41,10 @@ if (!seal.ext.find('deepseekaichaos')) {
         "关闭AI",
         "AI已开启",
         "AI已关闭",
-        "强制触发"
+        "强制触发",
+        "清空上下文",
+        "清空上下文回复",
+        "100"
     ];
     configKeys.forEach((key, index) => {
         seal.ext.registerStringConfig(ext, key, configDefaults[index]);
@@ -52,24 +58,19 @@ if (!seal.ext.find('deepseekaichaos')) {
     let lastTriggerCountMap = {};
     let totalMessagesCountMap = {};
     let remainingMessagesMap = {};
+    let requestLockMap = {}; // 用于避免重复请求的锁
 
-    // 尝试从存储中加载 aiStateMap, lastTriggerCountMap, totalMessagesCountMap, remainingMessagesMap
+    // 尝试从存储中加载 aiStateMap, lastTriggerCountMap, totalMessagesCountMap, remainingMessagesMap, requestLockMap
     const storedAiStateMap = ext.storageGet("aiStateMap");
-    if (storedAiStateMap) {
-        aiStateMap = JSON.parse(storedAiStateMap);
-    }
+    if (storedAiStateMap) aiStateMap = JSON.parse(storedAiStateMap);
     const storedLastTriggerCountMap = ext.storageGet("lastTriggerCountMap");
-    if (storedLastTriggerCountMap) {
-        lastTriggerCountMap = JSON.parse(storedLastTriggerCountMap);
-    }
+    if (storedLastTriggerCountMap) lastTriggerCountMap = JSON.parse(storedLastTriggerCountMap);
     const storedTotalMessagesCountMap = ext.storageGet("totalMessagesCountMap");
-    if (storedTotalMessagesCountMap) {
-        totalMessagesCountMap = JSON.parse(storedTotalMessagesCountMap);
-    }
+    if (storedTotalMessagesCountMap) totalMessagesCountMap = JSON.parse(storedTotalMessagesCountMap);
     const storedRemainingMessagesMap = ext.storageGet("remainingMessagesMap");
-    if (storedRemainingMessagesMap) {
-        remainingMessagesMap = JSON.parse(storedRemainingMessagesMap);
-    }
+    if (storedRemainingMessagesMap) remainingMessagesMap = JSON.parse(storedRemainingMessagesMap);
+    const storedRequestLockMap = ext.storageGet("requestLockMap");
+    if (storedRequestLockMap) requestLockMap = JSON.parse(storedRequestLockMap);
 
     class DeepseekAI {
         constructor() {
@@ -84,6 +85,13 @@ if (!seal.ext.find('deepseekaichaos')) {
 
         cleanContext() {
             this.context = this.context.filter(message => message !== null);
+        }
+
+        clearAllUserContext() {
+            this.context = [this.systemContext()]; // 保留角色设定，清空其他上下文
+            if (messageQueues.has(contextKey)) {
+                messageQueues.set(contextKey, []);
+            }
         }
 
         async chat(contextMessages, ctx, msg) {
@@ -135,7 +143,7 @@ if (!seal.ext.find('deepseekaichaos')) {
                 if (data.choices && data.choices.length > 0) {
                     let reply = data.choices[0].message.content;
                     this.context.push({"role": "assistant", "content": reply});
-                    reply = reply.replace(/from .*? in .*?: /g, '');
+                    reply = reply.replace(/from .+?: /g, '');
                     seal.replyToSender(ctx, msg, reply);
                     return reply;
                 } else {
@@ -154,11 +162,19 @@ if (!seal.ext.find('deepseekaichaos')) {
         const DISABLE_AI_KEYWORD = seal.ext.getStringConfig(ext, configKeys[6]);
         const ENABLE_AI_RESPONSE = seal.ext.getStringConfig(ext, configKeys[7]);
         const DISABLE_AI_RESPONSE = seal.ext.getStringConfig(ext, configKeys[8]);
+        const CLEAR_CONTEXT_KEYWORD = seal.ext.getStringConfig(ext, configKeys[10]);
+        const CLEAR_CONTEXT_RESPONSE = seal.ext.getStringConfig(ext, configKeys[11]); 
         const TRIGGER_MESSAGE_COUNT = parseInt(seal.ext.getStringConfig(ext, configKeys[4]));
 
         const commands = [
             { keyword: ENABLE_AI_KEYWORD, response: ENABLE_AI_RESPONSE, action: () => aiStateMap[contextKey] = true },
             { keyword: DISABLE_AI_KEYWORD, response: DISABLE_AI_RESPONSE, action: () => aiStateMap[contextKey] = false },
+            { keyword: CLEAR_CONTEXT_KEYWORD, response: CLEAR_CONTEXT_RESPONSE, action: () => {
+                if (globalThis.deepseekAIContextMap.has(contextKey)) {
+                    const aiInstance = globalThis.deepseekAIContextMap.get(contextKey);
+                    aiInstance.clearAllUserContext();
+                }//哈哈，没用，怎么一回事呢
+            }},
             { keyword: "statusAI", response: () => {
                 const aiStatus = aiStateMap[contextKey] ? "已开启" : "未开启";
                 const recordedMessages = messageQueues.has(contextKey) ?
@@ -172,7 +188,7 @@ if (!seal.ext.find('deepseekaichaos')) {
 
         for (const command of commands) {
             if (msg.message === command.keyword) {
-                if (ctx.privilegeLevel >= 100) {
+                if (ctx.privilegeLevel >= parseInt(seal.ext.getStringConfig(ext, configKeys[12]))) {
                     if (typeof command.action === 'function') {
                         command.action();
                     }
@@ -193,53 +209,60 @@ if (!seal.ext.find('deepseekaichaos')) {
         const FORCE_TRIGGER_KEYWORD = seal.ext.getStringConfig(ext, configKeys[9]);
         const TRIGGER_MESSAGE_COUNT = parseInt(seal.ext.getStringConfig(ext, configKeys[4]));
         let user = msg.sender.nickname;
-
+    
         if (handleAICommand(ctx, msg, contextKey, isGroupChat)) return;
-
+    
         if (!aiStateMap[contextKey]) return;
-
+    
         if (!globalThis.deepseekAIContextMap.has(contextKey)) {
             globalThis.deepseekAIContextMap.set(contextKey, new DeepseekAI());
         }
-
+    
         const ai = globalThis.deepseekAIContextMap.get(contextKey);
+    
+        const queue = messageQueues.has(contextKey) ? messageQueues.get(contextKey) : [];
+        
+        queue.push({ role: 'user', content: `from ${user}: ${msg.message}` });
 
-        if (!messageQueues.has(contextKey)) {
-            messageQueues.set(contextKey, []);
-            remainingMessagesMap[contextKey] = TRIGGER_MESSAGE_COUNT;
-            lastTriggerCountMap[contextKey] = 0;
-            totalMessagesCountMap[contextKey] = 0;
+        const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, configKeys[2]));
+
+        if (queue.length > MAX_CONTEXT_LENGTH) {
+            queue.shift(); // Remove the earliest message when exceeding context limit
         }
-
-        const queue = messageQueues.get(contextKey);
-        const markedMessage = {"role": "user", "content": "from " + user + ": " + msg.message};
-        queue.push(markedMessage);
-
-        if (queue.length > parseInt(seal.ext.getStringConfig(ext, configKeys[2]))) {
-            queue.shift(); // 超过存储上下文对话限制轮数时移除最早的消息
-        }
-
-        totalMessagesCountMap[contextKey]++;
-        remainingMessagesMap[contextKey]--; // 每收到一条消息减一
-
-        const triggerReport = async (aiInstance, contextKey, messageQueue, context, message) => {
-            const reply = await aiInstance.chat(messageQueue, context, message); // 发送消息队列给Deepseek AI
-            if (reply) {
-                messageQueue.push({"role": "assistant", "content": reply}); // 将AI的回复加入队列
+    
+        messageQueues.set(contextKey, queue);
+    
+        totalMessagesCountMap[contextKey] = (totalMessagesCountMap[contextKey] || 0) + 1;
+        remainingMessagesMap[contextKey] = (remainingMessagesMap[contextKey] || TRIGGER_MESSAGE_COUNT) - 1;
+    
+        // Check for forced trigger or if the remaining messages count is zero
+        if (msg.message.includes(FORCE_TRIGGER_KEYWORD) || (remainingMessagesMap[contextKey] <= 0 && !requestLockMap[contextKey])) {
+            if (!requestLockMap[contextKey]) {
+                requestLockMap[contextKey] = true; // Lock to prevent duplicate requests
+                try {
+                    await triggerReport(ai, contextKey, queue, ctx, msg);
+                    remainingMessagesMap[contextKey] = TRIGGER_MESSAGE_COUNT; // Reset after API request
+                } catch (error) {
+                    console.error("API request failed:", error);
+                } finally {
+                    requestLockMap[contextKey] = false; // Ensure the lock is released even on failure
+                }
             }
-
-            lastTriggerCountMap[contextKey] = totalMessagesCountMap[contextKey] - messageQueue.length; // 更新上次触发时的总消息数
-            remainingMessagesMap[contextKey] = TRIGGER_MESSAGE_COUNT; // 重置剩余消息数
-
-            ext.storageSet("aiStateMap", JSON.stringify(aiStateMap));
-            ext.storageSet("lastTriggerCountMap", JSON.stringify(lastTriggerCountMap));
-            ext.storageSet("remainingMessagesMap", JSON.stringify(remainingMessagesMap));
-            ext.storageSet("totalMessagesCountMap", JSON.stringify(totalMessagesCountMap));
-        };
-
-        // 判断是否触发上报
-        if (msg.message.includes(FORCE_TRIGGER_KEYWORD) || remainingMessagesMap[contextKey] <= 0) {
-            await triggerReport(ai, contextKey, queue, ctx, msg);
         }
+    
+        ext.storageSet("lastTriggerCountMap", JSON.stringify(lastTriggerCountMap));
+        ext.storageSet("totalMessagesCountMap", JSON.stringify(totalMessagesCountMap));
+        ext.storageSet("remainingMessagesMap", JSON.stringify(remainingMessagesMap));
+        ext.storageSet("requestLockMap", JSON.stringify(requestLockMap)); // Store request lock state
     };
+    
+    async function triggerReport(ai, contextKey, queue, ctx, msg) {
+        const contextMessages = queue.map(q => ({ role: q.role, content: q.content }));   
+        const reply = await ai.chat(contextMessages, ctx, msg);
+        if (reply) {
+            // 更新消息队列
+            messageQueues.get(contextKey).push({"role": "assistant", "content": reply});
+        }
+        return reply; 
+    }        
 }
