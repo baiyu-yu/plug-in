@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekai')) {
-    const ext = seal.ext.new('deepseekai', 'baiyu', '1.1.2');
+    const ext = seal.ext.new('deepseekai', 'baiyu', '1.2.2');
     seal.ext.register(ext);
     // 注册配置项
     seal.ext.registerStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）", "yours"); // 存储访问令牌
@@ -42,8 +42,12 @@ if (!seal.ext.find('deepseekai')) {
         }
 
         cleanContext() {
-            // 移除上下文中的 null 值
             this.context = this.context.filter(message => message !== null);
+
+            // 确保 systemContext 消息始终存在
+            if (this.context.every(message => message.role !== "system")) {
+                this.context.unshift(this.systemContext());
+            }
         }
 
         async chat(text, ctx, msg) {
@@ -53,7 +57,18 @@ if (!seal.ext.find('deepseekai')) {
             
             // 确保上下文长度不超过最大限制
             while (this.context.length > MAX_CONTEXT_LENGTH) {
-                this.context.shift(); // 移除最早的上下文消息
+                // 确保始终保留 systemContext
+                if (this.context[0].role === "system") {
+                    // 保存 systemContext
+                    const systemContext = this.context.shift();
+                    // 移除最早的上下文消息
+                    this.context.shift();
+                    // 将 systemContext 放回到队列的最前端
+                    this.context.unshift(systemContext);
+                } else {
+                    // 移除最早的上下文消息
+                    this.context.shift();
+                }
             }
             this.cleanContext();
 
@@ -95,6 +110,7 @@ if (!seal.ext.find('deepseekai')) {
                 if (data.choices && data.choices.length > 0) {
                     let reply = data.choices[0].message.content;
                     this.context.push({"role": "assistant", "content": reply});
+                    reply = reply.replace(/from .+?: /g, '');
                     seal.replyToSender(ctx, msg, reply);
                 } else {
                     console.error("服务器响应中没有choices或choices为空");
@@ -120,4 +136,3 @@ if (!seal.ext.find('deepseekai')) {
         }
     };
 }
-
