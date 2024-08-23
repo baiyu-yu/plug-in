@@ -3,7 +3,7 @@
 // @author       白鱼
 // @version      1.0.0
 // @description  随机记录群友发言并且储存在数据库里，然后随机放出一条的插件。使用.chatlog on/off控制开启关闭，可以在配置项配置一些东西。第一条会很快发出来，后面的就正常了，表情包图片可能过期会出现消息无法显示之类的，不管了。
-// @timestamp    1723713329
+// @timestamp    1724394115
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
