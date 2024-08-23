@@ -6,8 +6,8 @@
 // @timestamp    1723713329
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomChatLogger.js
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomChatLogger.js
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
 // @sealVersion  1.4.5
 // ==/UserScript==
 
