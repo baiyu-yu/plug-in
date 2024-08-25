@@ -5,9 +5,9 @@
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
-// @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
+// @homepageURL  https://github.com/baiyu-yu/plug-in/
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E4%BB%8A%E6%97%A5%E8%80%81%E5%A9%86.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E4%BB%8A%E6%97%A5%E8%80%81%E5%A9%86.js
 // @sealVersion  1.4.6
 // ==/UserScript==
 
