@@ -5,8 +5,9 @@
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI ，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
-// @homepageURL  https://github.com/sealdice/javascript/
-// @updateUrl    
+// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/AI%E9%AA%B0%E5%A8%98%E5%88%A4%E6%96%AD%E6%8F%92%E5%98%B4%E5%9B%9E%E5%A4%8D%E5%9B%BE%E7%89%87v2.0.1.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/AI%E9%AA%B0%E5%A8%98%E5%88%A4%E6%96%AD%E6%8F%92%E5%98%B4%E5%9B%9E%E5%A4%8D%E5%9B%BE%E7%89%87v2.0.1.js
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
