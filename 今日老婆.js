@@ -16,24 +16,24 @@ if (!seal.ext.find('wifeOfTheDay')) {
     seal.ext.register(ext);
 
     // 正确地注册配置项
-    seal.ext.registerBoolConfig(ext, '是否添加@功能', false);
     seal.ext.registerStringConfig(ext, '输出前缀', '今日老婆: ');
-    seal.ext.registerBoolConfig(ext, '是否允许一天多个老婆', false);
-    seal.ext.registerBoolConfig(ext, '是否允许重复被选为老婆', false);
     seal.ext.registerStringConfig(ext, '无可选用户回复', '今天的老婆们已经全部选完了！');
     seal.ext.registerStringConfig(ext, '重复抽取回复前缀', '你已经抽过了，你的老婆是：');
 
     // 定义存储用户记录、每日选择记录和黑名单的变量
+    // 错误：还有选项每个群分开存吧
     let userRecords = {};
     let dailySelectionMap = {};
     let blacklists = {};
+    let options = {};
     const storedData = ext.storageGet("data");
     if (storedData) {
         try {
-            const data = JSON.parse(storedData);
+            const data = JSON.parse(storedData || '{}');
             userRecords = data.userRecords || {};
             dailySelectionMap = data.dailySelectionMap || {};
             blacklists = data.blacklists || {};
+            options = data.options || {};
         } catch (e) {
             console.error("Failed to parse stored data:", e);
         }
@@ -50,6 +50,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         if (msg.messageType === 'group') {
             const groupId = msg.groupId;
             if (!userRecords[groupId]) userRecords[groupId] = [];
+            if (!options[groupId]) options[groupId] = {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false};
             const pureUserId = extractPureId(msg.sender.userId);
             const userInfo = { qqNumber: pureUserId, nickname: msg.sender.nickname };
             // 确保在同一个群中不重复记录同一个用户
@@ -65,7 +66,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
 
     // 存储数据的辅助函数
     const saveData = () => {
-        ext.storageSet("data", JSON.stringify({ userRecords, dailySelectionMap, blacklists }));
+        ext.storageSet("data", JSON.stringify({ userRecords, dailySelectionMap, blacklists, options}));
     };
 
     const cmdWifeOfTheDay = seal.ext.newCmdItemInfo();
@@ -90,9 +91,9 @@ if (!seal.ext.find('wifeOfTheDay')) {
             return seal.ext.newCmdExecuteResult(true);
         }
 
-        const shouldAt = seal.ext.getConfig(ext, '是否添加@功能').value;
-        const allowMultipleWifePerDay = seal.ext.getConfig(ext, '是否允许一天多个老婆').value;
-        const allowRepeatSelectionByOthers = seal.ext.getConfig(ext, '是否允许重复被选为老婆').value;
+        let shouldAt = options[groupId].shouldAt
+        let allowMultipleWifePerDay = options[groupId].allowMultipleWifePerDay
+        let allowRepeatSelectionByOthers = options[groupId].allowRepeatSelectionByOthers
 
         // 处理设置命令，但是没反应，哈哈，本来有反应但是没起作用，改了一通直接没反应了，摆烂，看代码的大佬拜托您了
         if (subCommand === '设置') {
@@ -113,6 +114,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                         }
                         settingValue = value === 'true';
                         shouldAt = settingValue; // 更新 shouldAt 变量
+                        options[groupId].shouldAt =shouldAt
                         break;
                     case 2:
                         settingKey = '是否允许一天多个老婆';
@@ -122,6 +124,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                         }
                         settingValue = value === 'true';
                         allowMultipleWifePerDay = settingValue; // 更新 allowMultipleWifePerDay 变量
+                        options[groupId].allowMultipleWifePerDay = allowMultipleWifePerDay
                         break;
                     case 3:
                         settingKey = '是否允许重复被选为老婆';
@@ -131,9 +134,10 @@ if (!seal.ext.find('wifeOfTheDay')) {
                         }
                         settingValue = value === 'true';
                         allowRepeatSelectionByOthers = settingValue; // 更新 allowRepeatSelectionByOthers 变量
+                        options[groupId].allowRepeatSelectionByOthers = allowRepeatSelectionByOthers
                         break;
                 }
-                ext.storageSet(settingKey, settingValue);
+                saveData()
                 seal.replyToSender(ctx, msg, `已设置 ${settingKey} 为 ${settingValue ? '允许' : '不允许'}`);
             } else {
                 seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
@@ -197,7 +201,9 @@ if (!seal.ext.find('wifeOfTheDay')) {
         }
 
         // 创建候选池，排除已选中的和黑名单中的用户
+        // 还有排除自己！
         let candidatePool = userRecords[groupId].filter(user => !blacklists[groupId]?.includes(user.qqNumber));
+        candidatePool = candidatePool.filter(user => user.qqNumber !== pureUserId);
         if (!allowRepeatSelectionByOthers) {
             const selectedUsersToday = Object.values(dailySelectionMap[groupId][today]);
             candidatePool = candidatePool.filter(user => !selectedUsersToday.includes(user.qqNumber));
