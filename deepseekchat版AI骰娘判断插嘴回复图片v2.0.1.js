@@ -1,17 +1,16 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin
 // @author       错误、白鱼
-// @version      2.0.0
+// @version      2.0.1
 // @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。
 // @timestamp    1721822416
 // @license      MIT
-// @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    
-// @updateUrl    
+// @homepageURL  https://github.com/error2913/sealdice-js/
+// @updateUrl    https://raw.githubusercontent.com/error2913/sealdice-js/main/deepseekchat%E7%89%88AI%E9%AA%B0%E5%A8%98%E5%88%A4%E6%96%AD%E6%8F%92%E5%98%B4%E5%9B%9E%E5%A4%8D%E5%9B%BE%E7%89%87v2.0.0.js
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekai')) {
-    const ext = seal.ext.new('deepseekai', 'baiyu&错误', '2.0.0');
+    const ext = seal.ext.new('deepseekai', 'baiyu&错误', '2.0.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -43,6 +42,7 @@ if (!seal.ext.find('deepseekai')) {
         "群聊计数器基础值",
         "群聊计时器基础值（s）",
         "参与插嘴检测的上下文轮数",
+        "插嘴活跃度的缓存时间（s）",
         "图片存储上限",
         "回复图片的概率（%）"
     ]
@@ -54,18 +54,22 @@ if (!seal.ext.find('deepseekai')) {
         "3",
         "60",
         "3",
+        "20",
         "30",
         "100"
     ]
     configKeys.forEach((key, index) => { seal.ext.registerStringConfig(ext, key, configDefaults[index]); });
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
+    seal.ext.registerFloatConfig(ext, "触发插嘴的活跃度（1~10）", "7");
 
+    //初始化
     const data = JSON.parse(ext.storageGet("data") || '{}')
     if (!data.hasOwnProperty('counter')) data['counter'] = {};
     if (!data.hasOwnProperty('activity')) data['activity'] = {};
     if (!data.hasOwnProperty('actLv')) data['actLv'] = {};
+    if (!data.hasOwnProperty('actCache')) data['actCache'] = {};
     if (!data.hasOwnProperty("image")) data["image"] = [];
-    if (!data.hasOwnProperty('sign')) data['sign'] = { '2001': [true, 60] };
+    if (!data.hasOwnProperty('chat')) data['chat'] = { '2001': [true, 60] };
     if (!data.hasOwnProperty('interrupt')) data['interrupt'] = { '2001': true };
     data['timer'] = {}
 
@@ -123,7 +127,7 @@ if (!seal.ext.find('deepseekai')) {
 
         text = text.replace(/\[CQ:at,qq=(\d+)\]/g,`@$1`)
         if (CQmode == "image") {
-            if (data['sign'].hasOwnProperty(group)) {
+            if (data['chat'].hasOwnProperty(group)) {
                 let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
                 let imageCQCode = text.match(/\[CQ:image,file=https:.*?\]/)[0];
                 data["image"].unshift(imageCQCode);
@@ -335,7 +339,7 @@ if (!seal.ext.find('deepseekai')) {
                     body: JSON.stringify({
                         'model': seal.ext.getStringConfig(ext, "模型名称"),
                         'messages': this.context,
-                        'max_tokens': seal.ext.getIntConfig(ext, "最大回复tokens数（防止回复过长）"),
+                        'max_tokens': 1,
                         'frequency_penalty': 0,
                         'presence_penalty': 0,
                         'stop': null,
@@ -348,12 +352,14 @@ if (!seal.ext.find('deepseekai')) {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
                 const data_response = await response.json();
-                console.log('服务器响应:', JSON.stringify(data_response, null, 2)); // 调试输出，格式化为字符串
+                //console.log('服务器响应:', JSON.stringify(data_response, null, 2)); // 调试输出，格式化为字符串
 
                 if (data_response.error) throw new Error(`请求失败：${JSON.stringify(data_response.error)}`);
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
+                    reply = reply.replace('<｜end▁of▁sentence｜>','')
+                    console.log('返回活跃度:',reply)
 
                     // 解析 AI 返回的数字
                     const activityLevel = parseInt(reply.trim());
@@ -362,6 +368,11 @@ if (!seal.ext.find('deepseekai')) {
                         return;
                     }
                     data['actLv'][group] = (data['actLv'][group] || 0) * 0.2 + activityLevel * 0.8
+                    // 更新缓存
+                    data['actCache'][group] = {
+                        actLv: data['actLv'][group],
+                        expires: Date.now() + seal.ext.getIntConfig(ext, "插嘴活跃度的缓存时间（s）") * 1000
+                    };
 
                     console.log("当前活跃等级：", data['actLv'][group])
                 } else {
@@ -390,16 +401,16 @@ if (!seal.ext.find('deepseekai')) {
                 return ret;
             }
             case 'on': {
-                if (data['sign'].hasOwnProperty(group)) {
-                    if (ctx.privilegeLevel >= data['sign'][group][1]) {
+                if (data['chat'].hasOwnProperty(group)) {
+                    if (ctx.privilegeLevel >= data['chat'][group][1]) {
                         if (val2 == '插嘴') {
-                            data['sign'][group][0] = false
+                            data['chat'][group][0] = false
                             data['interrupt'][group] = true
                             seal.replyToSender(ctx, msg, 'AI插嘴已开启');
                             return;
                         }
                         data['interrupt'][group] = false
-                        data['sign'][group][0] = true
+                        data['chat'][group][0] = true
                         seal.replyToSender(ctx, msg, 'AI已开启');
                         return;
                     }
@@ -408,15 +419,15 @@ if (!seal.ext.find('deepseekai')) {
                 return;
             }
             case 'off': {
-                if (data['sign'].hasOwnProperty(group)) {
+                if (data['chat'].hasOwnProperty(group)) {
                     if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null
                     clearTimeout(data['timer'][group])
                     data['counter'][group] = 0
                     //console.log('清除计时器和计数器')
 
-                    if (ctx.privilegeLevel >= data['sign'][group][1]) {
+                    if (ctx.privilegeLevel >= data['chat'][group][1]) {
                         data['interrupt'][group] = false
-                        data['sign'][group][0] = false
+                        data['chat'][group][0] = false
                         ext.storageSet("data", JSON.stringify(data))
                         seal.replyToSender(ctx, msg, 'AI已关闭');
                         return;
@@ -434,11 +445,12 @@ if (!seal.ext.find('deepseekai')) {
                     seal.replyToSender(ctx, msg, '参数缺少');
                     return;
                 }
-                if (!data['sign'].hasOwnProperty(val2)) {
+                if (!data['chat'].hasOwnProperty(val2)) {
                     seal.replyToSender(ctx, msg, '没有该群信息');
                     return;
                 } else {
-                    delete data['sign'][val2]
+                    delete data['chat'][val2]
+                    delete data['interrupt'][val2]
                     delete data['counter'][val2]
                     delete data['timer'][val2]
                     seal.replyToSender(ctx, msg, '删除完成');
@@ -454,12 +466,13 @@ if (!seal.ext.find('deepseekai')) {
                     seal.replyToSender(ctx, msg, '参数缺少');
                     return;
                 }
-                data['sign'][val2] = [false, val3]
+                data['chat'][val2] = [false, val3]
+                data['interrupt'][val2] = false
                 seal.replyToSender(ctx, msg, '权限修改完成');
                 return;
             }
             case 'fgt': {
-                if (ctx.privilegeLevel < data['sign'][group][1]) { 
+                if (ctx.privilegeLevel < data['chat'][group][1]) { 
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
@@ -481,8 +494,8 @@ if (!seal.ext.find('deepseekai')) {
                     return;
                 }
                 let text = `当前权限列表为：`
-                for (let group in data['sign']) {
-                    text += `\n${group}：权限${data['sign'][group][1]} 状态：${data['sign'][group][0]}`
+                for (let group in data['chat']) {
+                    text += `\n${group}：权限${data['chat'][group][1]} 状态：${data['chat'][group][0]} ${data['interrupt'][group]}`
                 }
                 seal.replyToSender(ctx, msg, text);
                 return seal.ext.newCmdExecuteResult(true);
@@ -503,8 +516,8 @@ if (!seal.ext.find('deepseekai')) {
 
                 let ai = new DeepseekAI();
                 ai.chat(ctx, msg);
-            } else if (data['sign'].hasOwnProperty(group)) {
-                if (data['sign'][group][0] == true) {
+            } else if (data['chat'].hasOwnProperty(group)) {
+                if (data['chat'][group][0] == true) {
                     if (iteration(message, ctx, 'user', CQmode)) return;
 
                     updateActivity(group, parseInt(seal.format(ctx, "{$tTimestamp}")));
@@ -545,11 +558,14 @@ if (!seal.ext.find('deepseekai')) {
                         if (iteration(message, ctx, 'user', CQmode)) return;
 
                         let ai = new DeepseekAI();
-                        // 调用 adjustActivityLevel 并返回 Promise
-                        let adjustActivityPromise = ai.adjustActivityLevel(ctx);
+                        let adjustActivityPromise;
+                        if (!data['actCache'].hasOwnProperty(group) || data['actCache'][group].expires <= Date.now()) {
+                            // 调用 adjustActivityLevel 并返回 Promise
+                            adjustActivityPromise = ai.adjustActivityLevel(ctx);
+                        }
 
                         Promise.all([adjustActivityPromise]).then(() => {
-                            if (data['actLv'][group] >= 7.5) {
+                            if (data['actLv'][group] >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
                                 ai.chat(ctx, msg);
                                 data['actLv'][group] *= 0.2
                             } else return;
