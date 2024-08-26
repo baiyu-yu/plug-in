@@ -105,7 +105,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
             if (ctx.privilegeLevel > 50) {
                 const optionIndex = parseInt(cmdArgs.getArgN(2), 10);
                 const value = cmdArgs.getArgN(3);
-                if (isNaN(optionIndex) || (optionIndex < 0 || optionIndex > 3)) {
+                if (isNaN(optionIndex) || (optionIndex < 1 || optionIndex > 3)) {
                     let text = '设置状态如下:'
                     let settingValue
                     settingValue = options[groupId].shouldAt
@@ -118,7 +118,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                     return seal.ext.newCmdExecuteResult(true);
                 }
                 let settingKey, settingValue;
-                switch (optionIndex) { 
+                switch (optionIndex) {
                     case 1:
                         settingKey = '是否添加@功能';
                         if (value !== 'true' && value !== 'false') {
