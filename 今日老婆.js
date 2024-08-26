@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         今日老婆
-// @author       白鱼
+// @author       白鱼、错误
 // @version      1.1.0
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
