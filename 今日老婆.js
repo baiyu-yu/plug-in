@@ -85,8 +85,12 @@ if (!seal.ext.find('wifeOfTheDay')) {
             const helpMessage = `
             今日老婆 使用方法:
 1. .今日老婆 - 随机选择一名出现过的群成员为今日老婆。（无法分辨是否还在群内，因此抽到退群的请自行使用黑名单功能）
-2. .今日老婆 黑名单 添加/移除 用户ID - 管理本群黑名单（需要管理员以上）。
-            `;
+2. .今日老婆 黑名单 添加/移除 用户ID - 管理本群黑名单（需要管理员以上）
+3. .今日老婆 设置 [设置项序号] [true/false] - 本群设置项修改（需要管理员以上）
+            - 1. 是否添加@功能
+            - 2. 是否允许一天多个老婆
+            - 3. 是否允许重复被选为老婆
+`;
             seal.replyToSender(ctx, msg, helpMessage);
             return seal.ext.newCmdExecuteResult(true);
         }
