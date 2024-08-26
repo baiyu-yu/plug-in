@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyu', '1.1.1');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '1.1.1');
     seal.ext.register(ext);
 
     // 正确地注册配置项
