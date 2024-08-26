@@ -99,7 +99,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         let allowMultipleWifePerDay = options[groupId].allowMultipleWifePerDay
         let allowRepeatSelectionByOthers = options[groupId].allowRepeatSelectionByOthers
 
-        // 处理设置命令，但是没反应，哈哈，本来有反应但是没起作用，改了一通直接没反应了，摆烂，看代码的大佬拜托您了
+        // 处理设置命令
         if (subCommand === '设置') {
             if (ctx.privilegeLevel > 50) {
                 const optionIndex = parseInt(cmdArgs.getArgN(2), 10);
