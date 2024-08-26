@@ -1,22 +1,22 @@
 // ==UserScript==
-// @name         Deepseek AI Plugin
+// @name         AI Plugin
 // @author       错误、白鱼
 // @version      2.0.1
-// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。
+// @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI ，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript/
 // @updateUrl    
 // ==/UserScript==
 
-if (!seal.ext.find('deepseekai')) {
-    const ext = seal.ext.new('deepseekai', 'baiyu&错误', '2.0.1');
+if (!seal.ext.find('aiplugin')) {
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.0.1');
     seal.ext.register(ext);
 
     // 注册配置项
     const configKeys = [
-        "API地址",
-        "你的APIkeys（请在deepseek开放平台获取并确定有token数）",
+        "url地址",
+        "你的APIkeys（请在对应大模型获取并确定有token数）",
         "模型名称",
         "角色设定",
         "非指令关键词",
@@ -222,10 +222,10 @@ if (!seal.ext.find('deepseekai')) {
 
             try {
                 console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
-                const response = await fetch(`${seal.ext.getStringConfig(ext, "API地址")}`, {
+                const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）")}`,
+                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
@@ -329,10 +329,10 @@ if (!seal.ext.find('deepseekai')) {
 
             try {
                 console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
-                const response = await fetch(`${seal.ext.getStringConfig(ext, "API地址")}`, {
+                const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在deepseek开放平台获取并确定有token数）")}`,
+                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
