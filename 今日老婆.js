@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         今日老婆
 // @author       白鱼、错误
-// @version      1.1.0
+// @version      1.1.1
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyu', '1.1.0');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyu', '1.1.1');
     seal.ext.register(ext);
 
     // 正确地注册配置项
@@ -95,21 +95,30 @@ if (!seal.ext.find('wifeOfTheDay')) {
             return seal.ext.newCmdExecuteResult(true);
         }
 
+        if (!options[groupId]) options[groupId] = {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false};
         let shouldAt = options[groupId].shouldAt
         let allowMultipleWifePerDay = options[groupId].allowMultipleWifePerDay
         let allowRepeatSelectionByOthers = options[groupId].allowRepeatSelectionByOthers
 
-        // 处理设置命令
+        // 处理设置命令，但是没反应，哈哈，本来有反应但是没起作用，改了一通直接没反应了，摆烂，看代码的大佬拜托您了
         if (subCommand === '设置') {
             if (ctx.privilegeLevel > 50) {
                 const optionIndex = parseInt(cmdArgs.getArgN(2), 10);
                 const value = cmdArgs.getArgN(3);
-                if (isNaN(optionIndex) || (optionIndex < 1 || optionIndex > 3)) {
-                    seal.replyToSender(ctx, msg, "无效的选项序号。请使用 1 到 3。");
+                if (isNaN(optionIndex) || (optionIndex < 0 || optionIndex > 3)) {
+                    let text = '设置状态如下:'
+                    let settingValue
+                    settingValue = options[groupId].shouldAt
+                    text += `\n1. 是否添加@功能 ${settingValue ? '允许' : '不允许'}\n`
+                    settingValue = options[groupId].allowMultipleWifePerDay
+                    text += `\n2. 是否允许一天多个老婆 ${settingValue ? '允许' : '不允许'}\n`
+                    settingValue = options[groupId].allowRepeatSelectionByOthers
+                    text += `\n3. 是否允许重复被选为老婆 ${settingValue ? '允许' : '不允许'}\n`
+                    seal.replyToSender(ctx, msg, text + '\n请使用对应序号进行修改,指令:\n.今日老婆 设置 [设置项序号] [true/false]');
                     return seal.ext.newCmdExecuteResult(true);
                 }
                 let settingKey, settingValue;
-                switch (optionIndex) {
+                switch (optionIndex) { 
                     case 1:
                         settingKey = '是否添加@功能';
                         if (value !== 'true' && value !== 'false') {
