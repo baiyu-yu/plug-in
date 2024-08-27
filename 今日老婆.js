@@ -60,7 +60,6 @@ if (!seal.ext.find('wifeOfTheDay')) {
             } else {
                 userRecords[groupId].push(userInfo);
             }
-            saveData();
         }
     };
 
