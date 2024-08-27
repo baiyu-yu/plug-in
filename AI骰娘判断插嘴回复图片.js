@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.1.1
+// @version      2.1.2
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.1');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.2');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -59,9 +59,25 @@ if (!seal.ext.find('aiplugin')) {
         "30",
         "100"
     ]
+    const configKeysFloat = [
+        "触发插嘴的活跃度（1~10）",
+        "frequency_penalty(-2~2)",
+        "presence_penalty(-2~2)",
+        "temperature(0~2)",
+        "top_p(0~1)"
+    ]
+    const configDefaultsFloat = [
+        "7",
+        "0",
+        "0",
+        "1",
+        "1"
+    ]
+
+
     configKeys.forEach((key, index) => { seal.ext.registerStringConfig(ext, key, configDefaults[index]); });
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
-    seal.ext.registerFloatConfig(ext, "触发插嘴的活跃度（1~10）", "7");
+    configKeysFloat.forEach((key, index) => { seal.ext.registerFloatConfig(ext, key, configDefaultsFloat[index]); });
 
     //初始化
     const data = JSON.parse(ext.storageGet("data") || '{}')
@@ -233,12 +249,12 @@ if (!seal.ext.find('aiplugin')) {
                         'model': seal.ext.getStringConfig(ext, "模型名称"),
                         'messages': this.context,
                         'max_tokens': seal.ext.getIntConfig(ext, "最大回复tokens数（防止回复过长）"),
-                        'frequency_penalty': 2,
-                        'presence_penalty': 2,
+                        'frequency_penalty': seal.ext.getFloatConfig(ext, "frequency_penalty(-2~2)"),
+                        'presence_penalty': seal.ext.getFloatConfig(ext, "presence_penalty(-2~2)"),
                         'stop': null,
                         'stream': false,
-                        'temperature': 1.1,
-                        'top_p': 1
+                        'temperature': seal.ext.getFloatConfig(ext, "temperature(0~2)"),
+                        'top_p': seal.ext.getFloatConfig(ext, "top_p(0~1)"),
                     }),
                 });
 
@@ -344,7 +360,7 @@ if (!seal.ext.find('aiplugin')) {
                         'presence_penalty': 0,
                         'stop': null,
                         'stream': false,
-                        'temperature': 1.1,
+                        'temperature': 1.0,
                         'top_p': 1
                     }),
                 });
