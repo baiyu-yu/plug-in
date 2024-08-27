@@ -7,7 +7,7 @@ const port = 3518;
 const mongoUri = 'mongodb://localhost:27017/qq_numbers';
 
 // 假设定有效的appid
-const validAppID = 'abaabachaojibaiyu';
+const validAppID = '';
 
 // Appid验证函数
 function isValidAppId(requestAppId) {
