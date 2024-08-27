@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.1.0
+// @version      2.1.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.0');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -116,7 +116,7 @@ if (!seal.ext.find('aiplugin')) {
         };
     }
 
-    function iteration(text, ctx, role, CQmode = 'default') {
+    async function iteration(text, ctx, role, CQmode = 'default') {
         const MAX_CONTEXT_LENGTH = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
         let userId = ctx.player.userId
         let groupId = ctx.group.groupId
@@ -553,7 +553,7 @@ if (!seal.ext.find('aiplugin')) {
         }
     };
 
-    ext.onNotCommandReceived = (ctx, msg) => {
+    ext.onNotCommandReceived = async (ctx, msg) => {
         let message = msg.message
         let groupId = ctx.group.groupId
         let group = groupId.replace(/\D+/g, "")
@@ -562,13 +562,13 @@ if (!seal.ext.find('aiplugin')) {
 
         if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
             if (message.includes(seal.ext.getStringConfig(ext, "非指令关键词"))) {
-                if (iteration(message, ctx, 'user', CQmode)) return;
+                if (await iteration(message, ctx, 'user', CQmode)) return;
 
                 let ai = new DeepseekAI();
                 ai.chat(ctx, msg);
             } else if (data['chat'].hasOwnProperty(group)) {
                 if (data['chat'][group][0] == true) {
-                    if (iteration(message, ctx, 'user', CQmode)) return;
+                    if (await iteration(message, ctx, 'user', CQmode)) return;
 
                     updateActivity(group, parseInt(seal.format(ctx, "{$tTimestamp}")));
                     const { counterLimit, timerLimit } = getActivityAdjustedLimits(group);
@@ -604,7 +604,7 @@ if (!seal.ext.find('aiplugin')) {
                         }, timerLimit + ran);
                     }
                 } else if (data['interrupt'][group]) {
-                    if (iteration(message, ctx, 'user', CQmode)) return;
+                    if (await iteration(message, ctx, 'user', CQmode)) return;
 
                     let ai = new DeepseekAI();
                     let adjustActivityPromise;
@@ -615,8 +615,8 @@ if (!seal.ext.find('aiplugin')) {
 
                     Promise.all([adjustActivityPromise]).then(() => {
                         if (data['actLv'][group] >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
-                            ai.chat(ctx, msg);
                             data['actLv'][group] *= 0.2
+                            ai.chat(ctx, msg);
                         } else return;
                     })
                 }
