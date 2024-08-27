@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.0.2
-// @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI ，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
+// @version      2.1.0
+// @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.0.2');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -72,6 +72,7 @@ if (!seal.ext.find('aiplugin')) {
     if (!data.hasOwnProperty("image")) data["image"] = [];
     if (!data.hasOwnProperty('chat')) data['chat'] = { '2001': [true, 60] };
     if (!data.hasOwnProperty('interrupt')) data['interrupt'] = { '2001': false };
+    if (!data.hasOwnProperty('getImage')) data['getImage'] = { '2001': true };
     data['timer'] = {}
 
     // 计算群活跃度
@@ -127,7 +128,7 @@ if (!seal.ext.find('aiplugin')) {
 
         text = text.replace(/\[CQ:at,qq=(\d+)\]/g,`@$1`)
         if (CQmode == "image") {
-            if (data['chat'].hasOwnProperty(group)) {
+            if (data['chat'].hasOwnProperty(group) && data['getImage'][group]) {
                 let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
                 let imageCQCode = text.match(/\[CQ:image,file=https:.*?\]/)[0];
                 data["image"].unshift(imageCQCode);
@@ -385,7 +386,7 @@ if (!seal.ext.find('aiplugin')) {
 
     const cmdaiprivilege = seal.ext.newCmdItemInfo();
     cmdaiprivilege.name = 'AI权限'; // 指令名字，可用中文
-    cmdaiprivilege.help = '【.ai】查看权限，具体权限请查看手册\n【.ai add 群号 开启AI所需的权限】添加权限\n【.ai del 群号】删除权限\n【.ai on (插嘴)】开启普通聊天模式或者插嘴模式\n【.ai off】关闭AI，此时仍能用关键词触发\n【.ai fgt】遗忘上下文，包括储存的图片';
+    cmdaiprivilege.help = '【.ai】查看权限，具体权限请查看手册\n【.ai add 群号 (权限，默认50)】添加权限\n【.ai del 群号】删除权限\n【.ai on】开启普通聊天模式\n【.ai on [插嘴/img]】开启插嘴模式/开启获取图片\n【.ai off】关闭AI，此时仍能用关键词触发\n【.ai off img】关闭获取图片\n【.ai fgt】遗忘上下文\n【.ai fgt img】遗忘图片(只有骰主可用)';
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         let val = cmdArgs.getArgN(1);
         let val2 = cmdArgs.getArgN(2);
@@ -402,10 +403,19 @@ if (!seal.ext.find('aiplugin')) {
             case 'on': {
                 if (data['chat'].hasOwnProperty(group)) {
                     if (ctx.privilegeLevel >= data['chat'][group][1]) {
+                        if (ctx.privilegeLevel < data['chat'][group][1]) { 
+                            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                            return;
+                        }
                         if (val2 == '插嘴') {
                             data['chat'][group][0] = false
                             data['interrupt'][group] = true
                             seal.replyToSender(ctx, msg, 'AI插嘴已开启');
+                            return;
+                        }
+                        if (val2 == 'img') {
+                            data['getImage'][group] = true
+                            seal.replyToSender(ctx, msg, '图片获取已开启');
                             return;
                         }
                         data['interrupt'][group] = false
@@ -420,12 +430,20 @@ if (!seal.ext.find('aiplugin')) {
             }
             case 'off': {
                 if (data['chat'].hasOwnProperty(group)) {
-                    if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null
-                    clearTimeout(data['timer'][group])
-                    data['counter'][group] = 0
-                    //console.log('清除计时器和计数器')
-
                     if (ctx.privilegeLevel >= data['chat'][group][1]) {
+                        if (ctx.privilegeLevel < data['chat'][group][1]) { 
+                            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                            return;
+                        }
+                        if (val2 == 'img') {
+                            data['getImage'][group] = false
+                            seal.replyToSender(ctx, msg, '图片获取已关闭')
+                            return;
+                        }
+                        if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null
+                        clearTimeout(data['timer'][group])
+                        data['counter'][group] = 0
+                        //console.log('清除计时器和计数器')
                         data['interrupt'][group] = false
                         data['chat'][group][0] = false
                         seal.replyToSender(ctx, msg, 'AI已关闭');
@@ -451,6 +469,7 @@ if (!seal.ext.find('aiplugin')) {
                 } else {
                     delete data['chat'][val2]
                     delete data['interrupt'][val2]
+                    delete data['getImage'][val2]
                     delete data['counter'][val2]
                     delete data['timer'][val2]
                     seal.replyToSender(ctx, msg, '删除完成');
@@ -463,41 +482,73 @@ if (!seal.ext.find('aiplugin')) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
+                if (!val2) {
+                    seal.replyToSender(ctx, msg, '参数缺少');
+                    return;
+                }
                 if (!val3) val3 = 50;
                 data['chat'][val2] = [false, val3]
                 data['interrupt'][val2] = false
+                data['getImage'][val2] = true
                 seal.replyToSender(ctx, msg, '权限修改完成');
                 ext.storageSet("data", JSON.stringify(data));
                 return;
             }
             case 'fgt': {
-                if (ctx.privilegeLevel < data['chat'][group][1]) { 
+                if (val2 == 'img'){
+                    if (ctx.privilegeLevel == 100){
+                        data['image'] = []
+                        seal.replyToSender(ctx, msg, '图片已清除');
+                        ext.storageSet("data", JSON.stringify(data))
+                        return;
+                    }
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
-                if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null;
-                clearTimeout(data['timer'][group])
-                data['counter'][group] = 0
-                //console.log('清除计时器和计数器')
-
+                if (ctx.privilegeLevel < 50) {
+                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                    return;
+                }
+                if (data['chat'].hasOwnProperty(group)) {
+                    if (ctx.privilegeLevel < data['chat'][group][1]) { 
+                        seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                        return;
+                    }
+                    if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null;
+                    clearTimeout(data['timer'][group])
+                    data['counter'][group] = 0
+                    //console.log('清除计时器和计数器')
+                } 
                 data[group] = []
-                data["image"] = [];
-
                 seal.replyToSender(ctx, msg, '上下文已清除');
                 ext.storageSet("data", JSON.stringify(data))
                 return;
             }
             default: {
-                if (ctx.privilegeLevel < 100) { 
-                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                if (ctx.privilegeLevel == 100) { 
+                    let text = `当前权限列表：`
+                    for (let group in data['chat']) {
+                        if (!data.hasOwnProperty('interrupt')) data['interrupt'][group] = false
+                        if (!data.hasOwnProperty('getImage')) data['getImage'][group] = true
+                        text += `\n${group}：${data['chat'][group][1]} ${data['chat'][group][0]} ${data['interrupt'][group]} ${data['getImage'][group]}`
+                    }
+                    text += `\n\n上面依次为：[权限],[普通聊天模式],[插嘴聊天模式],[是否获取图片]`
+                    seal.replyToSender(ctx, msg, text);
+                    return seal.ext.newCmdExecuteResult(true);
                 }
-                let text = `当前权限列表为：`
-                for (let group in data['chat']) {
-                    text += `\n${group}：权限${data['chat'][group][1]} 状态：${data['chat'][group][0]} ${data['interrupt'][group]}`
+                if (data['chat'].hasOwnProperty(group)) {
+                    if (ctx.privilegeLevel < data['chat'][group][1]) { 
+                        seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                        return;
+                    }
+                    if (!data.hasOwnProperty('interrupt')) data['interrupt'][group] = false
+                    if (!data.hasOwnProperty('getImage')) data['getImage'][group] = true
+                    let text = `\n${group}：\n[权限]${data['chat'][group][1]}\n[普通聊天模式]${data['chat'][group][0]}\n[插嘴聊天模式]${data['interrupt'][group]}\n[是否获取图片]${data['getImage'][group]}`
+                    seal.replyToSender(ctx, msg, text);
+                    return seal.ext.newCmdExecuteResult(true);
                 }
-                seal.replyToSender(ctx, msg, text);
-                return seal.ext.newCmdExecuteResult(true);
+                seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                return;
             }
         }
     };
@@ -552,24 +603,22 @@ if (!seal.ext.find('aiplugin')) {
                             ai.chat(ctx, msg);
                         }, timerLimit + ran);
                     }
-                } else if (data['interrupt'].hasOwnProperty(group)) {
-                    if (data['interrupt'][group] == true) {
-                        if (iteration(message, ctx, 'user', CQmode)) return;
+                } else if (data['interrupt'][group]) {
+                    if (iteration(message, ctx, 'user', CQmode)) return;
 
-                        let ai = new DeepseekAI();
-                        let adjustActivityPromise;
-                        if (!data['actCache'].hasOwnProperty(group) || data['actCache'][group].expires <= Date.now()) {
-                            // 调用 adjustActivityLevel 并返回 Promise
-                            adjustActivityPromise = ai.adjustActivityLevel(ctx);
-                        }
-
-                        Promise.all([adjustActivityPromise]).then(() => {
-                            if (data['actLv'][group] >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
-                                ai.chat(ctx, msg);
-                                data['actLv'][group] *= 0.2
-                            } else return;
-                        })
+                    let ai = new DeepseekAI();
+                    let adjustActivityPromise;
+                    if (!data['actCache'].hasOwnProperty(group) || data['actCache'][group].expires <= Date.now()) {
+                        // 调用 adjustActivityLevel 并返回 Promise
+                        adjustActivityPromise = ai.adjustActivityLevel(ctx);
                     }
+
+                    Promise.all([adjustActivityPromise]).then(() => {
+                        if (data['actLv'][group] >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
+                            ai.chat(ctx, msg);
+                            data['actLv'][group] *= 0.2
+                        } else return;
+                    })
                 }
             }
         }
