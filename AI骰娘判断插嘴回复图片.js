@@ -68,9 +68,9 @@ if (!seal.ext.find('aiplugin')) {
     ]
     const configDefaultsFloat = [
         "7",
-        "0",
-        "0",
-        "1",
+        "2",
+        "2",
+        "1.1",
         "1"
     ]
 
