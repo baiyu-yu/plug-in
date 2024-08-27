@@ -71,7 +71,7 @@ if (!seal.ext.find('aiplugin')) {
     if (!data.hasOwnProperty('actCache')) data['actCache'] = {};
     if (!data.hasOwnProperty("image")) data["image"] = [];
     if (!data.hasOwnProperty('chat')) data['chat'] = { '2001': [true, 60] };
-    if (!data.hasOwnProperty('interrupt')) data['interrupt'] = { '2001': true };
+    if (!data.hasOwnProperty('interrupt')) data['interrupt'] = { '2001': false };
     data['timer'] = {}
 
     // 计算群活跃度
@@ -385,7 +385,7 @@ if (!seal.ext.find('aiplugin')) {
 
     const cmdaiprivilege = seal.ext.newCmdItemInfo();
     cmdaiprivilege.name = 'AI权限'; // 指令名字，可用中文
-    cmdaiprivilege.help = '【.ai】查看权限\n【.ai add 群号 开启AI所需的权限】添加权限\n【.ai del 群号】删除权限\n【.ai on (插嘴)】开启普通聊天模式或者插嘴模式\n【.ai off】关闭AI，此时仍能用关键词触发\n【.ai fgt】遗忘上下文，包括储存的图片';
+    cmdaiprivilege.help = '【.ai】查看权限，具体权限请查看手册\n【.ai add 群号 开启AI所需的权限】添加权限\n【.ai del 群号】删除权限\n【.ai on (插嘴)】开启普通聊天模式或者插嘴模式\n【.ai off】关闭AI，此时仍能用关键词触发\n【.ai fgt】遗忘上下文，包括储存的图片';
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         let val = cmdArgs.getArgN(1);
         let val2 = cmdArgs.getArgN(2);
@@ -463,10 +463,7 @@ if (!seal.ext.find('aiplugin')) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
-                if (!val3) {
-                    seal.replyToSender(ctx, msg, '参数缺少');
-                    return;
-                }
+                if (!val3) val3 = 50;
                 data['chat'][val2] = [false, val3]
                 data['interrupt'][val2] = false
                 seal.replyToSender(ctx, msg, '权限修改完成');
