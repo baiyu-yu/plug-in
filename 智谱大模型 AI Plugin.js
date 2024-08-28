@@ -217,7 +217,7 @@ if (!seal.ext.find('BigModelai')) {
         async sendZhipuRequest(text, userInfo, userName, ctx, msg) {
             try {
                 console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
-    
+        
                 const response = await fetch(`${DEEPSEEK_API_URL}`, {
                     method: 'POST',
                     headers: {
@@ -233,25 +233,23 @@ if (!seal.ext.find('BigModelai')) {
                             "bot_name": seal.ext.getStringConfig(ext, "当使用charglm-3时bot名字"),
                             "user_name": userName
                         },
-                        messages: [
-                            {"role": "assistant", "content": seal.ext.getStringConfig(ext, "当使用charglm-3时预设背景")},
-                            {"role": "user", "content": text}
-                        ]
+                        messages: this.context.concat([{"role": "user", "content": text}])
                     })
                 });
-    
+        
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    
+        
                 const data = await response.json();
                 console.log('智谱AI响应:', JSON.stringify(data, null, 2));
-    
+        
                 if (data.error) {
                     console.error(`智谱AI请求失败：${JSON.stringify(data.error)}`);
                     return;
                 }
-    
+        
                 if (data.choices && data.choices.length > 0) {
                     let reply = data.choices[0].message.content;
+                    this.context.push({"role": "user", "content": text});
                     this.context.push({"role": "assistant", "content": reply});
                     reply = reply.replace(/from .+?: /g, '');
                     seal.replyToSender(ctx, msg, reply);
