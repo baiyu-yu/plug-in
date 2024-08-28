@@ -21,7 +21,7 @@ if (!seal.ext.find('BigModelai')) {
     seal.ext.registerStringConfig(ext, "存储上下文对话限制轮数", "4");
     seal.ext.registerStringConfig(ext, "角色设定", "黑鱼也就是你是一个可爱的有鲨鱼尾巴的小女孩，会掷骰子，帮助调查员探索世界，黑鱼的一句话不会超过二十个中文汉字。");
     seal.ext.registerStringConfig(ext, "非指令关键词", "黑鱼黑鱼");
-    seal.ext.registerBoolConfig(ext, "允许上报图片", false);
+    seal.ext.registerBoolConfig(ext, "允许上报图片(透明底图片会报错400)", false);
     seal.ext.registerStringConfig(ext, "模型选择(glm-4/charglm-3)", "glm-4");  // 新增模型选择配置
     seal.ext.registerStringConfig(ext, "当使用charglm-3时bot名字", "黑鱼"); 
     seal.ext.registerStringConfig(ext, "当使用charglm-3时预设背景", "(旁白：黑鱼和白鱼和夏目贵志还有其它几个调查员朋友在一起聊天)"); 
@@ -42,7 +42,7 @@ if (!seal.ext.find('BigModelai')) {
     const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数")) * 2;
     const SYSTEM_CONTEXT_CONTENT = seal.ext.getStringConfig(ext, "角色设定");
     const NON_COMMAND_KEYWORD = seal.ext.getStringConfig(ext, "非指令关键词");
-    const ALLOW_IMAGE_REPORT = seal.ext.getBoolConfig(ext, "允许上报图片");
+    const ALLOW_IMAGE_REPORT = seal.ext.getBoolConfig(ext, "允许上报图片(透明底图片会报错400)");
     const MODEL_CHOICE = seal.ext.getStringConfig(ext, "模型选择(glm-4/charglm-3)");  // 获取模型选择配置
 
     // 获取特殊用户ID和对应信息配置
