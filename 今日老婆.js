@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         今日老婆
 // @author       白鱼、错误
-// @version      1.1.1
+// @version      2.0.0
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '1.1.1');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.0');
     seal.ext.register(ext);
 
     // 正确地注册配置项
@@ -20,23 +20,14 @@ if (!seal.ext.find('wifeOfTheDay')) {
     seal.ext.registerStringConfig(ext, '无可选用户回复', '今天的老婆们已经全部选完了！');
     seal.ext.registerStringConfig(ext, '重复抽取回复前缀', '你已经抽过了，你的老婆是：');
 
-    // 定义存储用户记录、每日选择记录和黑名单的变量
-    // 错误：还有选项每个群分开存吧
-    let userRecords = {};
-    let dailySelectionMap = {};
-    let blacklists = {};
-    let options = {};
-    const storedData = ext.storageGet("data");
-    if (storedData) {
-        try {
-            const data = JSON.parse(storedData || '{}');
-            userRecords = data.userRecords || {};
-            dailySelectionMap = data.dailySelectionMap || {};
-            blacklists = data.blacklists || {};
-            options = data.options || {};
-        } catch (e) {
-            console.error("Failed to parse stored data:", e);
-        }
+    const data = {};
+    function initGroupData(groupId) {
+        data[groupId] = {}
+        let groupData = JSON.parse(ext.storageGet(groupId) || '{}');
+        data[groupId].userRecords = groupData.userRecords || [];
+        data[groupId].dailySelectionMap = groupData.dailySelectionMap || {};
+        data[groupId].blacklists = groupData.blacklists || [];
+        data[groupId].options = groupData.options || {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false};
     }
 
     // 提取纯数字用户ID的工具函数
@@ -49,23 +40,23 @@ if (!seal.ext.find('wifeOfTheDay')) {
     ext.onNotCommandReceived = async (ctx, msg) => {
         if (msg.messageType === 'group') {
             const groupId = msg.groupId;
-            if (!userRecords[groupId]) userRecords[groupId] = [];
-            if (!options[groupId]) options[groupId] = {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false};
             const pureUserId = extractPureId(msg.sender.userId);
             const userInfo = { qqNumber: pureUserId, nickname: msg.sender.nickname };
+            if (!data.hasOwnProperty(groupId)) initGroupData(groupId)
             // 确保在同一个群中不重复记录同一个用户
-            const existingUser = userRecords[groupId].find(user => user.qqNumber === userInfo.qqNumber);
+            const existingUser = data[groupId].userRecords.find(user => user.qqNumber === userInfo.qqNumber);
             if (existingUser) {
-                existingUser.nickname = userInfo.nickname; // Update nickname if user already exists
+                let index = data[groupId].userRecords.indexOf(existingUser)
+                if (index !== -1) data[groupId].userRecords[index].nickname = userInfo.nickname;
             } else {
-                userRecords[groupId].push(userInfo);
+                data[groupId].userRecords.push(userInfo);
             }
         }
     };
 
     // 存储数据的辅助函数
-    const saveData = () => {
-        ext.storageSet("data", JSON.stringify({ userRecords, dailySelectionMap, blacklists, options}));
+    const saveData = (groupId) => {
+        ext.storageSet(groupId, JSON.stringify(data[groupId]));
     };
 
     const cmdWifeOfTheDay = seal.ext.newCmdItemInfo();
@@ -75,6 +66,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         const groupId = msg.groupId;
         const pureUserId = extractPureId(msg.sender.userId);
         const today = new Date().toISOString().split('T')[0]; // 获取当前日期
+        if (!data.hasOwnProperty(groupId)) initGroupData(groupId)
 
         // 检查并处理子命令
         const subCommand = cmdArgs.getArgN(1);
@@ -94,11 +86,6 @@ if (!seal.ext.find('wifeOfTheDay')) {
             return seal.ext.newCmdExecuteResult(true);
         }
 
-        if (!options[groupId]) options[groupId] = {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false};
-        let shouldAt = options[groupId].shouldAt
-        let allowMultipleWifePerDay = options[groupId].allowMultipleWifePerDay
-        let allowRepeatSelectionByOthers = options[groupId].allowRepeatSelectionByOthers
-
         // 处理设置命令
         if (subCommand === '设置') {
             if (ctx.privilegeLevel > 50) {
@@ -106,12 +93,12 @@ if (!seal.ext.find('wifeOfTheDay')) {
                 const value = cmdArgs.getArgN(3);
                 if (isNaN(optionIndex) || (optionIndex < 1 || optionIndex > 3)) {
                     let text = '设置状态如下:'
-                    let settingValue
-                    settingValue = options[groupId].shouldAt
+                    let settingValue;
+                    settingValue = data[groupId].options.shouldAt
                     text += `\n1. 是否添加@功能 ${settingValue ? '允许' : '不允许'}\n`
-                    settingValue = options[groupId].allowMultipleWifePerDay
+                    settingValue = data[groupId].options.allowMultipleWifePerDay
                     text += `\n2. 是否允许一天多个老婆 ${settingValue ? '允许' : '不允许'}\n`
-                    settingValue = options[groupId].allowRepeatSelectionByOthers
+                    settingValue = data[groupId].options.allowRepeatSelectionByOthers
                     text += `\n3. 是否允许重复被选为老婆 ${settingValue ? '允许' : '不允许'}\n`
                     seal.replyToSender(ctx, msg, text + '\n请使用对应序号进行修改,指令:\n.今日老婆 设置 [设置项序号] [true/false]');
                     return seal.ext.newCmdExecuteResult(true);
@@ -125,8 +112,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                             return seal.ext.newCmdExecuteResult(true);
                         }
                         settingValue = value === 'true';
-                        shouldAt = settingValue; // 更新 shouldAt 变量
-                        options[groupId].shouldAt =shouldAt
+                        data[groupId].options.shouldAt = settingValue; // 更新 shouldAt 变量
                         break;
                     case 2:
                         settingKey = '是否允许一天多个老婆';
@@ -135,8 +121,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                             return seal.ext.newCmdExecuteResult(true);
                         }
                         settingValue = value === 'true';
-                        allowMultipleWifePerDay = settingValue; // 更新 allowMultipleWifePerDay 变量
-                        options[groupId].allowMultipleWifePerDay = allowMultipleWifePerDay
+                        data[groupId].options.allowMultipleWifePerDay = settingValue; // 更新 allowMultipleWifePerDay 变量
                         break;
                     case 3:
                         settingKey = '是否允许重复被选为老婆';
@@ -145,8 +130,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                             return seal.ext.newCmdExecuteResult(true);
                         }
                         settingValue = value === 'true';
-                        allowRepeatSelectionByOthers = settingValue; // 更新 allowRepeatSelectionByOthers 变量
-                        options[groupId].allowRepeatSelectionByOthers = allowRepeatSelectionByOthers
+                        data[groupId].options.allowRepeatSelectionByOthers = settingValue; // 更新 allowRepeatSelectionByOthers 变量
                         break;
                 }
                 saveData()
@@ -167,21 +151,19 @@ if (!seal.ext.find('wifeOfTheDay')) {
                     return seal.ext.newCmdExecuteResult(true);
                 }
         
-                if (!blacklists[groupId]) blacklists[groupId] = [];
-        
                 if (action === '添加') {
-                    if (!blacklists[groupId].includes(targetUserId)) {
-                        blacklists[groupId].push(targetUserId);
-                        saveData();
+                    if (!data[groupId].blacklists.includes(targetUserId)) {
+                        data[groupId].blacklists.push(targetUserId);
+                        saveData(groupId);
                         seal.replyToSender(ctx, msg, `已将用户 ${targetUserId} 添加到今日老婆黑名单。`);
                     } else {
                         seal.replyToSender(ctx, msg, `用户 ${targetUserId} 已经在黑名单中。`);
                     }
                 } else if (action === '移除') {
-                    const index = blacklists[groupId].indexOf(targetUserId);
+                    let index = data[groupId].blacklists.indexOf(targetUserId);
                     if (index !== -1) {
-                        blacklists[groupId].splice(index, 1);
-                        saveData();
+                        data[groupId].blacklists.splice(index, 1);
+                        saveData(groupId);
                         seal.replyToSender(ctx, msg, `已将用户 ${targetUserId} 从今日老婆黑名单中移除。`);
                     } else {
                         seal.replyToSender(ctx, msg, `用户 ${targetUserId} 不在黑名单中。`);
@@ -197,27 +179,29 @@ if (!seal.ext.find('wifeOfTheDay')) {
 
         let yourname = ctx.player.name;
         // 随机选择一名用户为今日老婆
-        if (!userRecords[groupId] || userRecords[groupId].length === 0) {
+        if (data[groupId].userRecords.length === 0) {
             seal.replyToSender(ctx, msg, seal.ext.getConfig(ext, '无可选用户回复').value); // Use the custom message
             return seal.ext.newCmdExecuteResult(true);
         }
-        if (!dailySelectionMap[groupId]) dailySelectionMap[groupId] = {};
-        if (!dailySelectionMap[groupId][today]) dailySelectionMap[groupId][today] = {};
+        if (!data[groupId].dailySelectionMap[today]) {
+            data[groupId].dailySelectionMap = {}
+            data[groupId].dailySelectionMap[today] = {};
+        }
 
         // 检查用户是否已抽过老婆
-        if (!allowMultipleWifePerDay && dailySelectionMap[groupId][today][pureUserId]) {
+        if (!allowMultipleWifePerDay && data[groupId].dailySelectionMap[today][pureUserId]) {
             const prefix = seal.ext.getConfig(ext, '重复抽取回复前缀').value; // Get the prefix for repeated selection
-            const previousUserInfo = userRecords[groupId].find(user => user.qqNumber === dailySelectionMap[groupId][today][pureUserId]);
+            const previousUserInfo = data[groupId].userRecords.find(user => user.qqNumber === data[groupId].dailySelectionMap[today][pureUserId]);
             seal.replyToSender(ctx, msg, `${prefix}${previousUserInfo.nickname} (ID: ${previousUserInfo.qqNumber})`);
             return seal.ext.newCmdExecuteResult(true);
         }
 
         // 创建候选池，排除已选中的和黑名单中的用户
         // 还有排除自己！
-        let candidatePool = userRecords[groupId].filter(user => !blacklists[groupId]?.includes(user.qqNumber));
+        let candidatePool = data[groupId].userRecords.filter(user => !data[groupId].blacklists?.includes(user.qqNumber));
         candidatePool = candidatePool.filter(user => user.qqNumber !== pureUserId);
         if (!allowRepeatSelectionByOthers) {
-            const selectedUsersToday = Object.values(dailySelectionMap[groupId][today]);
+            const selectedUsersToday = Object.values(data[groupId].dailySelectionMap[today]);
             candidatePool = candidatePool.filter(user => !selectedUsersToday.includes(user.qqNumber));
         }
 
@@ -236,11 +220,12 @@ if (!seal.ext.find('wifeOfTheDay')) {
         const finalMessage = `${atMessage}\n[CQ:image,file=https://q2.qlogo.cn/headimg_dl?dst_uin=${selectedUser.qqNumber}&spec=5,cache=0]\n${resultMessage} `;
 
         // 记录用户的选择
-        dailySelectionMap[groupId][today][pureUserId] = selectedUser.qqNumber; // Record the selected user
-        saveData();
+        data[groupId].dailySelectionMap[today][pureUserId] = selectedUser.qqNumber; // Record the selected user
+        saveData(groupId);
         seal.replyToSender(ctx, msg, finalMessage);
         return seal.ext.newCmdExecuteResult(true);
     };
 
     ext.cmdMap['今日老婆'] = cmdWifeOfTheDay;
+    ext.cmdMap['jrlp'] = cmdWifeOfTheDay;
 }
