@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         今日老婆
 // @author       白鱼、错误
-// @version      2.0.1
+// @version      2.0.2
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
@@ -12,34 +12,57 @@
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.1');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.2');
     seal.ext.register(ext);
 
     // 正确地注册配置项
     seal.ext.registerStringConfig(ext, '输出前缀', '今日老婆: ');
     seal.ext.registerStringConfig(ext, '无可选用户回复', '今天的老婆们已经全部选完了！');
     seal.ext.registerStringConfig(ext, '重复抽取回复前缀', '你已经抽过了，你的老婆是：');
+    seal.ext.registerIntConfig(ext, '重试间隔（毫秒）', 100);
 
     const data = {};
-    function initGroupData(groupId) {
-        data[groupId] = {}
-        try {
-            let groupData = JSON.parse(ext.storageGet(groupId) || '{}');
-            data[groupId] = {
-                userRecords: groupData.userRecords || [],
-                dailySelectionMap: groupData.dailySelectionMap || {},
-                blacklists: groupData.blacklists || [],
-                options: groupData.options || {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false}
-            };
-        } catch (error) {
-            console.error(`Failed to initialize group data for groupId ${groupId}:`, error);
-            data[groupId] = {
-                userRecords: [],
-                dailySelectionMap: {},
-                blacklists: [],
-                options: {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false}
-            };
+    const locks = {};
+    //锁
+    function acquireLock(groupId) {
+        if (!locks[groupId]) {
+            locks[groupId] = true;
+            return true;
         }
+        return false;
+    }
+    function releaseLock(groupId) {
+        locks[groupId] = false;
+    }
+
+    function initGroupData(groupId) {
+        function tryInit() {
+            if (acquireLock(groupId)) {
+                try {
+                    data[groupId] = {};
+                    let groupData = JSON.parse(ext.storageGet(groupId) || '{}');
+                    data[groupId] = {
+                        userRecords: groupData.userRecords || [],
+                        dailySelectionMap: groupData.dailySelectionMap || {},
+                        blacklists: groupData.blacklists || [],
+                        options: groupData.options || {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false}
+                    };
+                } catch (error) {
+                    console.error(`Failed to initialize group data for groupId ${groupId}:`, error);
+                    data[groupId] = {
+                        userRecords: [],
+                        dailySelectionMap: {},
+                        blacklists: [],
+                        options: {shouldAt: false, allowMultipleWifePerDay: false, allowRepeatSelectionByOthers: false}
+                    };
+                } finally {
+                    releaseLock(groupId);
+                }
+            } else {
+                setTimeout(tryInit, seal.ext.getIntconfig('重试间隔（毫秒）'));
+            }
+        }
+        tryInit();
     }
 
     // 提取纯数字用户ID的工具函数
@@ -68,7 +91,18 @@ if (!seal.ext.find('wifeOfTheDay')) {
 
     // 存储数据的辅助函数
     const saveData = (groupId) => {
-        ext.storageSet(groupId, JSON.stringify(data[groupId]));
+        function trySave() {
+            if (acquireLock(groupId)) {
+                try {
+                    ext.storageSet(groupId, JSON.stringify(data[groupId]));
+                } finally {
+                    releaseLock(groupId);
+                }
+            } else {
+                setTimeout(trySave, seal.ext.getIntconfig('重试间隔（毫秒）'));
+            }
+        }
+        trySave();
     };
 
     const cmdWifeOfTheDay = seal.ext.newCmdItemInfo();
