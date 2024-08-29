@@ -277,8 +277,9 @@ if (!seal.ext.find('aiplugin')) {
                         let groupId = ctx.group.groupId
                         // 转义 group_name 中的特殊字符
                         group_name = group_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        reply = reply.replace(new RegExp(`from(.*)${groupId}\\)`), '');
-                        reply = reply.replace(new RegExp(`from(.*)${groupId}）`), '');
+                        reply = reply.replace(new RegExp(`from.*?${groupId}\\)`), '');
+                        reply = reply.replace(new RegExp(`from.*?${groupId}）`), '');
+                        reply = reply.replace(/from.*?QQ-Group:\d+/, '');
                     }
 
                     reply = reply.replace(/@(\d+)/g,`[CQ:at,qq=$1]`)
