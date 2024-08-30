@@ -1,30 +1,33 @@
 // ==UserScript==
 // @name         智谱大模型 AI Plugin 指令非指令图片版
 // @description  智谱大模型插件，用于与智谱AI进行对话，并根据特定关键词或.chat指令触发回复。可以选择glm-4/charglm-3模型，配置项中user_info和user_name的几个只有选择charglm-3才可以使用。可以选择是否识别图片。具体修改看配置项，不懂不建议直接修改插件。不建议使用包含在图片url中字符的作为非指令触发词。在https://open.bigmodel.cn/usercenter/apikeys进行注册获取api和token。
-// @version      1.0.0
+// @version      1.1.0
 // @author       白鱼
 // @timestamp    1724850114
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
-// @sealVersion  1.4.6
+// @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('BigModelai')) {
-    const ext = seal.ext.new('BigModelai', 'baiyu', '1.0.0');
+    const ext = seal.ext.new('BigModelai', 'baiyu', '1.1.0');
     seal.ext.register(ext);
 
     // 配置项注册
     seal.ext.registerStringConfig(ext, "你的APIkeys", "yours");
     seal.ext.registerStringConfig(ext, "最大回复tokens数", "100");
+    seal.ext.registerStringConfig(ext, "最大回复字符数(防止AI抽风)", "100");// 新增最大回复字符数配置项，白鱼亲测charglm-3偶尔乱叫所以得切一下
     seal.ext.registerStringConfig(ext, "存储上下文对话限制轮数", "4");
     seal.ext.registerStringConfig(ext, "角色设定", "黑鱼也就是你是一个可爱的有鲨鱼尾巴的小女孩，会掷骰子，帮助调查员探索世界，黑鱼的一句话不会超过二十个中文汉字。");
     seal.ext.registerStringConfig(ext, "非指令关键词", "黑鱼黑鱼");
     seal.ext.registerBoolConfig(ext, "允许上报图片(透明底图片会报错400)", false);
-    seal.ext.registerStringConfig(ext, "模型选择(glm-4/charglm-3)", "glm-4");  // 新增模型选择配置
+    seal.ext.registerStringConfig(ext, "模型选择(glm-4/charglm-3)", "glm-4"); 
     seal.ext.registerStringConfig(ext, "当使用charglm-3时bot名字", "黑鱼"); 
     seal.ext.registerStringConfig(ext, "当使用charglm-3时预设背景", "(旁白：黑鱼和白鱼和夏目贵志还有其它几个调查员朋友在一起聊天)"); 
+    seal.ext.registerBoolConfig(ext, "打印日志", false);  // 新增打印日志配置项
+    seal.ext.registerBoolConfig(ext, "启用引用回复和@用户", true);  // 新增启用引用回复和@用户配置项
 
     // 多个特殊用户ID及其对应配置
     seal.ext.registerStringConfig(ext, "特殊用户ID配置1", "QQ:1004205930");
@@ -44,6 +47,9 @@ if (!seal.ext.find('BigModelai')) {
     const NON_COMMAND_KEYWORD = seal.ext.getStringConfig(ext, "非指令关键词");
     const ALLOW_IMAGE_REPORT = seal.ext.getBoolConfig(ext, "允许上报图片(透明底图片会报错400)");
     const MODEL_CHOICE = seal.ext.getStringConfig(ext, "模型选择(glm-4/charglm-3)");  // 获取模型选择配置
+    const MAX_REPLY_CHARS = parseInt(seal.ext.getStringConfig(ext, "最大回复字符数(防止AI抽风)"));
+    const PRINT_LOGS = seal.ext.getBoolConfig(ext, "打印日志");  // 获取打印日志配置项
+    const ENABLE_REPLY_AND_AT = seal.ext.getBoolConfig(ext, "启用引用回复和@用户");  // 获取启用引用回复和@用户配置项
 
     // 获取特殊用户ID和对应信息配置
     const SPECIAL_USERS = [
@@ -167,8 +173,8 @@ if (!seal.ext.find('BigModelai')) {
     
         async sendRequest(ctx, msg, shouldReply = true) {
             try {
-                console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
-    
+                if (PRINT_LOGS) console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
+        
                 const response = await fetch(`${DEEPSEEK_API_URL}`, {
                     method: 'POST',
                     headers: {
@@ -185,26 +191,35 @@ if (!seal.ext.find('BigModelai')) {
                         top_p: 1
                     })
                 });
-    
+        
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-    
+        
                 const data = await response.json();
-                console.log('服务器响应:', JSON.stringify(data, null, 2));
-    
+                if (PRINT_LOGS) console.log('服务器响应:', JSON.stringify(data, null, 2));
+        
                 if (data.error) {
                     console.error(`请求失败：${JSON.stringify(data.error)}`);
                     return;
                 }
-    
+        
                 if (data.choices && data.choices.length > 0) {
                     let reply = data.choices[0].message.content;
                     this.context.push({"role": "assistant", "content": reply});
                     reply = reply.replace(/from .+?: /g, '');
-    
-                    if (shouldReply) {
-                        seal.replyToSender(ctx, msg, reply);
+        
+                    // 检查并截断回复
+                    if (reply.length > MAX_REPLY_CHARS) {
+                        reply = reply.slice(0, MAX_REPLY_CHARS) + `（以下省略${reply.length - MAX_REPLY_CHARS}字）`;
                     }
-    
+        
+                    if (shouldReply) {
+                        if (ENABLE_REPLY_AND_AT) {
+                            seal.replyToSender(ctx, msg, `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${msg.sender.userId.split(':')[1]}] ${reply}`);
+                        } else {
+                            seal.replyToSender(ctx, msg, reply);
+                        }
+                    }
+        
                     return reply;
                 } else {
                     console.error("服务器响应中没有choices或choices为空");
@@ -216,7 +231,7 @@ if (!seal.ext.find('BigModelai')) {
     
         async sendZhipuRequest(text, userInfo, userName, ctx, msg) {
             try {
-                console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
+                if (PRINT_LOGS) console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
         
                 const response = await fetch(`${DEEPSEEK_API_URL}`, {
                     method: 'POST',
@@ -240,7 +255,7 @@ if (!seal.ext.find('BigModelai')) {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         
                 const data = await response.json();
-                console.log('智谱AI响应:', JSON.stringify(data, null, 2));
+                if (PRINT_LOGS) console.log('智谱AI响应:', JSON.stringify(data, null, 2));
         
                 if (data.error) {
                     console.error(`智谱AI请求失败：${JSON.stringify(data.error)}`);
@@ -252,7 +267,16 @@ if (!seal.ext.find('BigModelai')) {
                     this.context.push({"role": "user", "content": text});
                     this.context.push({"role": "assistant", "content": reply});
                     reply = reply.replace(/from .+?: /g, '');
-                    seal.replyToSender(ctx, msg, reply);
+        
+                    // 检查并截断回复
+                    if (reply.length > MAX_REPLY_CHARS) {
+                        reply = reply.slice(0, MAX_REPLY_CHARS) + `（以下省略${reply.length - MAX_REPLY_CHARS}字）`;
+                    }
+                    if (ENABLE_REPLY_AND_AT) {
+                        seal.replyToSender(ctx, msg, `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${msg.sender.userId.split(':')[1]}] ${reply}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, reply);
+                    }
                 } else {
                     console.error("智谱AI响应中没有choices或choices为空");
                 }
@@ -263,10 +287,10 @@ if (!seal.ext.find('BigModelai')) {
     
         async handleSecondReport(ctx, msg, reply) {
             const secondReportContext = [
-                {"role": "system", "content": SYSTEM_CONTEXT_CONTENT + "你会将所有你收到的消息在保留原有大致意思的情况下以你自己的语气表述一遍，不会添加任何别的内容或者改变你收到的消息的意思，也不要表示你只是在转述消息，也不要对消息做出评论，不要表达自己的看法。"},
+                {"role": "system", "content": SYSTEM_CONTEXT_CONTENT + "你会将你之前发出的消息在保留原有大致意思的情况下以你自己的语气表述一遍，不会添加任何别的内容或者改变你收到的消息的意思，也不要表示你只是在转述消息，也不要对消息做出评论，不要表达自己的看法。"},
                 {"role": "user", "content": reply}
             ];
-    
+        
             try {
                 const secondResponse = await fetch(`${DEEPSEEK_API_URL}`, {
                     method: 'POST',
@@ -284,24 +308,34 @@ if (!seal.ext.find('BigModelai')) {
                         top_p: 1
                     })
                 });
-    
+        
                 if (!secondResponse.ok) throw new Error(`HTTP error! status: ${secondResponse.status}`);
-    
+        
                 const secondData = await secondResponse.json();
-                console.log('二次上报服务器响应:', JSON.stringify(secondData, null, 2));
-    
+                if (PRINT_LOGS) console.log('二次上报服务器响应:', JSON.stringify(secondData, null, 2));
+        
                 if (secondData.error) {
                     console.error(`请求失败：${JSON.stringify(secondData.error)}`);
                     return;
                 }
-    
+        
                 if (secondData.choices && secondData.choices.length > 0) {
                     let finalReply = secondData.choices[0].message.content;
-                    seal.replyToSender(ctx, msg, finalReply);
+        
+                    // 检查并截断回复
+                    if (finalReply.length > MAX_REPLY_CHARS) {
+                        finalReply = finalReply.slice(0, MAX_REPLY_CHARS) + `（以下省略${finalReply.length - MAX_REPLY_CHARS}字）`;
+                    }
+        
+                    if (ENABLE_REPLY_AND_AT) {
+                        seal.replyToSender(ctx, msg, `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${msg.sender.userId.split(':')[1]}] ${finalReply}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, finalReply);
+                    }
                 } else {
                     console.error("服务器响应中没有choices或choices为空");
                 }
-    
+        
                 // 清空二次上报处理队列
                 secondReportContext.length = 0;
             } catch (error) {
@@ -317,9 +351,11 @@ if (!seal.ext.find('BigModelai')) {
         async processMessage(text, ctx, msg) {
             const hasImage = /\[CQ:image,file=(.*?)\]/.test(text);
         
-            console.log('处理消息:', text);
-            console.log('是否包含图片:', hasImage);
-            console.log('允许上报图片:', ALLOW_IMAGE_REPORT);
+            if (PRINT_LOGS) {
+                console.log('处理消息:', text);
+                console.log('是否包含图片:', hasImage);
+                console.log('允许上报图片:', ALLOW_IMAGE_REPORT);
+            }
         
             if (ALLOW_IMAGE_REPORT) {
                 if (this.shouldTriggerImageLogic()) {
@@ -328,12 +364,12 @@ if (!seal.ext.find('BigModelai')) {
                         if (imageUrlMatch) {
                             const imageUrl = imageUrlMatch[1];
                             const textWithoutImage = text.replace(/\[CQ:image,file=(.*?)\]/, '').trim();
-                            console.log('触发 chatWithImage (消息队列中存在图片 URL 且本次消息含图片 CQ 码):', textWithoutImage, imageUrl);
+                            if (PRINT_LOGS) console.log('触发 chatWithImage (消息队列中存在图片 URL 且本次消息含图片 CQ 码):', textWithoutImage, imageUrl);
                             this.context = [this.systemContext()]; // 清空消息队列
                             await this.chatWithImage(textWithoutImage, imageUrl, ctx, msg);
                         }
                     } else {
-                        console.log('触发 chatWithImage (消息队列中存在图片 URL 但本次消息不含图片 CQ 码):', text);
+                        if (PRINT_LOGS) console.log('触发 chatWithImage (消息队列中存在图片 URL 但本次消息不含图片 CQ 码):', text);
                         await this.chatWithImage(text, null, ctx, msg);
                     }
                 } else {
@@ -342,19 +378,19 @@ if (!seal.ext.find('BigModelai')) {
                         if (imageUrlMatch) {
                             const imageUrl = imageUrlMatch[1];
                             const textWithoutImage = text.replace(/\[CQ:image,file=(.*?)\]/, '').trim();
-                            console.log('触发 chatWithImage (消息队列中不存在图片 URL 但本次消息含图片 CQ 码):', textWithoutImage, imageUrl);
+                            if (PRINT_LOGS) console.log('触发 chatWithImage (消息队列中不存在图片 URL 但本次消息含图片 CQ 码):', textWithoutImage, imageUrl);
                             this.context = [this.systemContext()]; // 清空消息队列
                             await this.chatWithImage(textWithoutImage, imageUrl, ctx, msg);
                         }
                     } else {
-                        console.log('触发 chat (消息队列中不存在图片 URL 且本次消息不含图片 CQ 码):', text);
+                        if (PRINT_LOGS) console.log('触发 chat (消息队列中不存在图片 URL 且本次消息不含图片 CQ 码):', text);
                         await this.chat(text, ctx, msg);
                     }
                 }
             } else {
                 const filteredText = text.replace(/\[CQ:image,file=(.*?)\]/g, '').trim();
                 if (filteredText) {
-                    console.log('触发 chat (过滤图片):', filteredText);
+                    if (PRINT_LOGS) console.log('触发 chat (过滤图片):', filteredText);
                     await this.chat(filteredText, ctx, msg);
                 }
             }
@@ -380,7 +416,11 @@ if (!seal.ext.find('BigModelai')) {
                 await ai.processMessage(fullText, ctx, msg);
             }
         } else {
-            seal.replyToSender(ctx, msg, `请输入内容`);
+            if (ENABLE_REPLY_AND_AT) {
+                seal.replyToSender(ctx, msg, `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${msg.sender.userId.split(':')[1]}] 请输入内容`);
+            } else {
+                seal.replyToSender(ctx, msg, `请输入内容`);
+            }
         }
         return seal.ext.newCmdExecuteResult(true);
     };
