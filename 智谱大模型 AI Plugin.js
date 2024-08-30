@@ -26,7 +26,7 @@ if (!seal.ext.find('BigModelai')) {
     seal.ext.registerStringConfig(ext, "模型选择(glm-4/charglm-3)", "glm-4"); 
     seal.ext.registerStringConfig(ext, "当使用charglm-3时bot名字", "黑鱼"); 
     seal.ext.registerStringConfig(ext, "当使用charglm-3时预设背景", "(旁白：黑鱼和白鱼和夏目贵志还有其它几个调查员朋友在一起聊天)"); 
-    seal.ext.registerBoolConfig(ext, "打印日志", false);  // 新增打印日志配置项
+    seal.ext.registerBoolConfig(ext, "是否打印日志", false);  // 新增打印日志配置项
     seal.ext.registerBoolConfig(ext, "启用引用回复和@用户", true);  // 新增启用引用回复和@用户配置项
 
     // 多个特殊用户ID及其对应配置
@@ -48,7 +48,7 @@ if (!seal.ext.find('BigModelai')) {
     const ALLOW_IMAGE_REPORT = seal.ext.getBoolConfig(ext, "允许上报图片(透明底图片会报错400)");
     const MODEL_CHOICE = seal.ext.getStringConfig(ext, "模型选择(glm-4/charglm-3)");  // 获取模型选择配置
     const MAX_REPLY_CHARS = parseInt(seal.ext.getStringConfig(ext, "最大回复字符数(防止AI抽风)"));
-    const PRINT_LOGS = seal.ext.getBoolConfig(ext, "打印日志");  // 获取打印日志配置项
+    const PRINT_LOGS = seal.ext.getBoolConfig(ext, "是否打印日志");  // 获取打印日志配置项
     const ENABLE_REPLY_AND_AT = seal.ext.getBoolConfig(ext, "启用引用回复和@用户");  // 获取启用引用回复和@用户配置项
 
     // 获取特殊用户ID和对应信息配置
