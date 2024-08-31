@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         今日老婆
 // @author       白鱼、错误
-// @version      2.0.2
+// @version      2.0.3
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.2');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.3');
     seal.ext.register(ext);
 
     // 正确地注册配置项
@@ -179,7 +179,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
                         data[groupId].options.allowRepeatSelectionByOthers = settingValue; // 更新 allowRepeatSelectionByOthers 变量
                         break;
                 }
-                saveData()
+                saveData(groupId)
                 seal.replyToSender(ctx, msg, `已设置 ${settingKey} 为 ${settingValue ? '允许' : '不允许'}`);
             } else {
                 seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
