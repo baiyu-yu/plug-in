@@ -285,8 +285,9 @@ if (!seal.ext.find('aiplugin')) {
                     reply = reply.replace(/@(\d+)/g,`[CQ:at,qq=$1]`)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${user}]` + reply
                     seal.replyToSender(ctx, msg, reply);
+                    
+                    reply = reply.replace(/\[CQ:reply,id=-\d+\]\[CQ:at,qq=\d+\]/g, '')
                     reply = reply.replace(/\[CQ:at,qq=(\d+)\]/g,`@$1`)
-                    reply = reply.replace(/\[CQ:reply,id=-\d+\]/g,``)
                     let p = seal.ext.getIntConfig(ext, "回复图片的概率（%）")
                     if (Math.random() * 100 <= p) {
                         setTimeout(async () => {
