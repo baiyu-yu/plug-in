@@ -620,8 +620,8 @@ if (!seal.ext.find('aiplugin')) {
 
                     Promise.all([adjustActivityPromise]).then(() => {
                         if (data[groupId].intrptAct >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
-                            ai.chat(ctx, msg);
                             data[groupId].intrptAct *= 0.5
+                            ai.chat(ctx, msg);
                         } else return;
                     })
                 }
