@@ -576,6 +576,12 @@ if (!seal.ext.find('aiplugin')) {
         if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
             if (message.includes(seal.ext.getStringConfig(ext, "非指令关键词"))) {
                 if (await iteration(message, ctx, 'user', CQmode)) return;
+                if (allow.hasOwnProperty(rawGroupId)) {
+                    clearTimeout(data[groupId].timer)
+                    data[groupId].timer = null
+                    data[groupId].counter = 0
+                    //console.log('清除计时器和计数器')
+                }
 
                 let ai = new DeepseekAI();
                 ai.chat(ctx, msg, true);
