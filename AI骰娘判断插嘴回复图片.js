@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.1.4
+// @version      2.1.5
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.4');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.1.5');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -114,17 +114,22 @@ if (!seal.ext.find('aiplugin')) {
 
     // 根据活跃度调整计数器和计时器
     function getActivityAdjustedLimits(group) {
-        const activity = data['activity'][group] ? data['activity'][group].count : 0;
-        const baseCounterLimit = seal.ext.getIntConfig(ext, "群聊计数器基础值");
-        const baseTimerLimit = seal.ext.getIntConfig(ext, "群聊计时器基础值（s）") * 1000;
+        let activity = data['activity'][group] ? data['activity'][group].count : 0;
+        let baseCounterLimit = seal.ext.getIntConfig(ext, "群聊计数器基础值");
+        let baseTimerLimit = seal.ext.getIntConfig(ext, "群聊计时器基础值（s）") * 1000;
+        let maxCounterLimit = seal.ext.getIntConfig(ext, "群聊计数器上限（计数器是每n次触发回复，随着活跃度提高计数器增加）")
+        let minTimerLimit = seal.ext.getIntConfig(ext, "群聊计时器下限（s）（随着活跃度提高计时器缩短）") * 1000
+        let counterParticle = (maxCounterLimit - baseCounterLimit) / 16
+        let timerParticle = (baseTimerLimit - minTimerLimit) / 16
+
 
         // 根据活跃度调整计数器和计时器上限
-        const adjustedCounterLimit = baseCounterLimit + Math.floor(activity / 4); // 每增加4次活跃度，计数器上限增加1
-        const adjustedTimerLimit = baseTimerLimit - ((activity - 1) * 2 * 1000); // 每增加1次活跃度，计时器上限减少2秒
+        const adjustedCounterLimit = baseCounterLimit + ((activity - 1) * counterParticle); // 每增加1次活跃度，计数器上限增加
+        const adjustedTimerLimit = baseTimerLimit - ((activity - 1) * timerParticle); // 每增加1次活跃度，计时器上限减少
 
         return {
-            counterLimit: Math.min(seal.ext.getIntConfig(ext, "群聊计数器上限（计数器是每n次触发回复，随着活跃度提高计数器增加）"), adjustedCounterLimit),
-            timerLimit: Math.max(seal.ext.getIntConfig(ext, "群聊计时器下限（s）（随着活跃度提高计时器缩短）") * 1000, adjustedTimerLimit)
+            counterLimit: Math.min(maxCounterLimit, adjustedCounterLimit),
+            timerLimit: Math.max(minTimerLimit, adjustedTimerLimit)
         };
     }
 
@@ -505,6 +510,8 @@ if (!seal.ext.find('aiplugin')) {
                 data['chat'][val2] = [false, val3]
                 data['interrupt'][val2] = false
                 data['getImage'][val2] = true
+                data['counter'][val2] = 0
+                data['timer'][val2] = null
                 seal.replyToSender(ctx, msg, '权限修改完成');
                 ext.storageSet("data", JSON.stringify(data));
                 return;
@@ -584,18 +591,17 @@ if (!seal.ext.find('aiplugin')) {
             } else if (data['chat'].hasOwnProperty(group)) {
                 if (data['chat'][group][0] == true) {
                     if (await iteration(message, ctx, 'user', CQmode)) return;
-
-                    updateActivity(group, parseInt(seal.format(ctx, "{$tTimestamp}")));
-                    const { counterLimit, timerLimit } = getActivityAdjustedLimits(group);
-                    let ran = Math.floor(Math.random() * 100)
-                    console.log('计数器上限：' + counterLimit + `，计时器上限：${timerLimit + ran}` + `，当前计数器：${data['counter'][group] + 1}`)
-
+                    data['counter'][group] += 1
                     //清除计时器防止同时触发
                     if (!data['timer'].hasOwnProperty(group)) data['timer'][group] = null;
                     clearTimeout(data['timer'][group])
 
-                    if (!data['counter'].hasOwnProperty(group)) data['counter'][group] = 0;
-                    if (data['counter'][group] >= counterLimit - 1) {
+                    updateActivity(group, parseInt(seal.format(ctx, "{$tTimestamp}")));
+                    const { counterLimit, timerLimit } = getActivityAdjustedLimits(group);
+                    let ran = Math.floor(Math.random() * 100)
+                    console.log(`计数器上限：${counterLimit}，计时器上限：${timerLimit + ran}，当前计数器：${data['counter'][group]}`)
+
+                    if (data['counter'][group] >= counterLimit) {
                         data['counter'][group] = 0
                         console.log('计数器触发回复')
                         data['activity'][group].count += 0.5;
@@ -603,11 +609,9 @@ if (!seal.ext.find('aiplugin')) {
                         let ai = new DeepseekAI();
                         ai.chat(ctx, msg);
                     } else {
-                        //计数
-                        data['counter'][group] += 1
                         //计时
                         data['timer'][group] = setTimeout(() => {
-                            data['counter'][group] = 0 //清除计数器防止重复触发
+                            data['counter'][group] = 0 //清除计数器
 
                             console.log('计时器触发回复')
                             data['activity'][group].lastTimestamp += timerLimit / 1000
