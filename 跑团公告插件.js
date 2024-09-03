@@ -6,9 +6,8 @@
 // @timestamp    1719299266
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6v1.0.1%EF%BC%88%E4%BF%AE%E5%A4%8D%E4%BA%86%E6%B3%A8%E5%86%8C%E4%B8%A4%E9%81%8D%E6%89%A9%E5%B1%95%E7%9A%84bug%EF%BC%8C%E9%9D%9E%E5%BF%85%E8%A6%81%E6%9B%B4%E6%96%B0%EF%BC%89.js
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6v1.0.1%EF%BC%88%E4%BF%AE%E5%A4%8D%E4%BA%86%E6%B3%A8%E5%86%8C%E4%B8%A4%E9%81%8D%E6%89%A9%E5%B1%95%E7%9A%84bug%EF%BC%8C%E9%9D%9E%E5%BF%85%E8%A6%81%E6%9B%B4%E6%96%B0%EF%BC%89.js
-// ==/UserScript==
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6.js
 
 if (!seal.ext.find('跑团公告插件')) {
     const ext = seal.ext.new('跑团公告插件', '白鱼', '1.0.1');
