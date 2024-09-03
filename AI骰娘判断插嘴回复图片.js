@@ -333,7 +333,7 @@ if (!seal.ext.find('aiplugin')) {
 
             let id = ctx.isPrivate ? userId : groupId;
             let topics = seal.ext.getStringConfig(ext, "插嘴检测话题")
-            let systemContext = { "role": "system", "content": `你是QQ群里的群员，昵称正确，感兴趣的话题有:${topics}...\n你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字,需要分析的对话如下:` }
+            let systemContext = { "role": "system", "content": `你是QQ群里的群员，感兴趣的话题有:${topics}...\n你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字,需要分析的对话如下:` }
             let text = ''
             for (let i = 0; i < Math.min(ctxLength + 1, data[id].aiCtx.length); i++) {
                 if (data[id].aiCtx[i]["role"] == 'user') {
