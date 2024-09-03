@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.2.2
+// @version      2.2.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.2.2');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.2.3');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -69,9 +69,16 @@ if (!seal.ext.find('aiplugin')) {
         "1.1",
         "1"
     ]
+    const configKeysBool = [
+        "能否私聊使用"
+    ]
+    const configDefaultsBool = [
+        false
+    ]
     configKeys.forEach((key, index) => { seal.ext.registerStringConfig(ext, key, configDefaults[index]); });
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
     configKeysFloat.forEach((key, index) => { seal.ext.registerFloatConfig(ext, key, configDefaultsFloat[index]); });
+    configKeysBool.forEach((key, index) => { seal.ext.registerBoolConfig(ext, key, configDefaultsBool[index]); });
 
     //初始化(allow使用rawGroupId,data使用id)
     let allow;
@@ -581,6 +588,7 @@ if (!seal.ext.find('aiplugin')) {
 
         if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
             if (message.includes(seal.ext.getStringConfig(ext, "非指令关键词"))) {
+                if (ctx.isPrivate && !seal.ext.getBoolConfig(ext, "能否私聊使用")) return;
                 if (await iteration(message, ctx, 'user', CQmode)) return;
                 if (allow.hasOwnProperty(rawGroupId)) {
                     clearTimeout(data[id].timer)
