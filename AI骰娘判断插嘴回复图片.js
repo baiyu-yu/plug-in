@@ -73,7 +73,7 @@ if (!seal.ext.find('aiplugin')) {
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
     configKeysFloat.forEach((key, index) => { seal.ext.registerFloatConfig(ext, key, configDefaultsFloat[index]); });
 
-    //初始化(allow使用rawGroupId,data使用groupId)
+    //初始化(allow使用rawGroupId,data使用id)
     let allow;
     try {
         allow = JSON.parse(ext.storageGet("allow"))
@@ -598,7 +598,7 @@ if (!seal.ext.find('aiplugin')) {
                     clearTimeout(data[id].timer)
                     data[id].timer = null
 
-                    const { counterLimit, timerLimit } = updateActivity(groupId, parseInt(seal.format(ctx, "{$tTimestamp}")));
+                    const { counterLimit, timerLimit } = updateActivity(id, parseInt(seal.format(ctx, "{$tTimestamp}")));
                     let ran = Math.floor(Math.random() * 100)
                     console.log(`计数器上限：${counterLimit}，计时器上限：${timerLimit + ran}，当前计数器：${data[id].counter}`)
 
