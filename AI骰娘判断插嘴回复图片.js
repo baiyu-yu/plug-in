@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.2.0
+// @version      2.2.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.2.0');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.2.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -88,8 +88,8 @@ if (!seal.ext.find('aiplugin')) {
             let groupData = JSON.parse(ext.storageGet(groupId) || '{}');
             data[groupId] = {
                 aiCtx: groupData.aiCtx || [],
-                counter: groupData.counter || 0,
-                timer: groupData.timer || null,
+                counter: 0,
+                timer: null,
                 normAct: groupData.normAct || { lastTimestamp: 0, act: 0 },
                 intrptAct: groupData.intrptAct || 0,
                 intrptActCache: groupData.intrptActCache || {act: 0, expires: Date.now()},
