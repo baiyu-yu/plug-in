@@ -404,14 +404,14 @@ if (!seal.ext.find('aiplugin')) {
     const cmdaiprivilege = seal.ext.newCmdItemInfo();
     cmdaiprivilege.name = 'AI权限'; // 指令名字，可用中文
     cmdaiprivilege.help = `帮助：
-【.ai add 群号 (权限，默认50)】添加权限
-【.ai del 群号】删除权限
+【.ai add 群号 (权限，默认50)】添加权限(只有骰主可用)
+【.ai del 群号】删除权限(只有骰主可用)
 【.ai priv】查看现有权限
 【.ai on [norm/intrpt/img]】开启普通聊天模式/插嘴模式/获取图片
 【.ai off】关闭AI，此时仍能用关键词触发
 【.ai off img】关闭获取图片
 【.ai fgt】遗忘上下文
-【.ai fgt img】遗忘图片(只有骰主可用)`;
+【.ai fgt img】遗忘图片`;
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         let val = cmdArgs.getArgN(1);
         let val2 = cmdArgs.getArgN(2);
