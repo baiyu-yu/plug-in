@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.2.3
+// @version      2.3.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.2.3');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.3.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -70,10 +70,14 @@ if (!seal.ext.find('aiplugin')) {
         "1"
     ]
     const configKeysBool = [
-        "能否私聊使用"
+        "能否私聊使用",
+        "非指令触发是否引用",
+        "是否在消息内添加前缀"
     ]
     const configDefaultsBool = [
-        false
+        false,
+        true,
+        true
     ]
     configKeys.forEach((key, index) => { seal.ext.registerStringConfig(ext, key, configDefaults[index]); });
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
@@ -89,7 +93,7 @@ if (!seal.ext.find('aiplugin')) {
     }
     const data = {}
 
-    function initGroupData(id) {
+    function getData(id) {
         try {
             data[id] = {};
             let groupData = JSON.parse(ext.storageGet(id) || '{}');
@@ -99,7 +103,7 @@ if (!seal.ext.find('aiplugin')) {
                 timer: null,
                 normAct: groupData.normAct || { lastTimestamp: 0, act: 0 },
                 intrptAct: groupData.intrptAct || 0,
-                intrptActCache: groupData.intrptActCache || {act: 0, expires: Date.now()},
+                intrptActCache: groupData.intrptActCache || { act: 0, expires: Date.now() },
                 images: groupData.images || []
             };
         } catch (error) {
@@ -110,7 +114,7 @@ if (!seal.ext.find('aiplugin')) {
                 timer: null,
                 normAct: { lastTimestamp: 0, act: 0 },
                 intrptAct: 0,
-                intrptActCache: {act: 0, expires: Date.now()},
+                intrptActCache: { act: 0, expires: Date.now() },
                 images: []
             }
         }
@@ -152,18 +156,16 @@ if (!seal.ext.find('aiplugin')) {
         };
     }
 
-    async function iteration(text, ctx, role, CQmode = 'default') {
+    async function iteration(text, ctx, role, senderId, sender_name, CQmode = 'default') {
         const MAX_CONTEXT_LENGTH = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
-        let userId = ctx.player.userId
         let groupId = ctx.group.groupId
         let rawGroupId = groupId.replace(/\D+/g, "")
         let id = ctx.isPrivate ? userId : groupId;
-        let user_name = ctx.player.name
         let group_name = ctx.group.groupName
         let imagesign = false
 
         text = text.replace(/\[CQ:reply,id=-\d+\]\[CQ:at,qq=\d+\]/g, '')
-        text = text.replace(/\[CQ:at,qq=(\d+)\]/g,`@$1`)
+        text = text.replace(/\[CQ:at,qq=(\d+)\]/g, `@$1`)
         if (CQmode == "image") {
             if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                 let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
@@ -173,12 +175,14 @@ if (!seal.ext.find('aiplugin')) {
                 if (data[id].images.length > max_images) data[id].images = data[id].images.slice(0, max_images);
             }
             text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
-            imagesign =true
+            imagesign = true
         }
 
-        let message = {}
-        if (ctx.isPrivate) message = { "role": role, "content": `from ${user_name}(${userId}): ${text}` };
-        else message = { "role": role, "content": `from ${user_name}(${userId}) in ${group_name}(${groupId}): ${text}` }
+        if (seal.ext.getBoolConfig(ext, "是否在消息内添加前缀")) {
+            if (ctx.isPrivate) text = `from ${sender_name}(${senderId}): ${text}`
+            else text = `from ${sender_name}(${senderId}) in ${group_name}(${groupId}): ${text}`
+        }
+        let message = { "role": role, "content": text }
 
         data[id].aiCtx.unshift(message);
         if (data[id].aiCtx.length > MAX_CONTEXT_LENGTH) data[id].aiCtx = data[id].aiCtx.slice(0, MAX_CONTEXT_LENGTH);
@@ -192,7 +196,7 @@ if (!seal.ext.find('aiplugin')) {
         let ranIndex = Math.floor(Math.random() * data[id].images.length);
         let imageToReply = data[id].images[ranIndex];
         data[id].images.splice(ranIndex, 1);
-        
+
         let isValid = false
         let match = imageToReply.match(/\[CQ:image,file=(https:.*?)\]/);
         if (!match || !match[1]) {
@@ -201,7 +205,7 @@ if (!seal.ext.find('aiplugin')) {
             let url = match[1];
             try {
                 let response = await fetch(url, { method: 'GET' });
-    
+
                 if (response.ok) {
                     let contentType = response.headers.get('Content-Type');
                     if (contentType && contentType.startsWith('image')) {
@@ -243,7 +247,7 @@ if (!seal.ext.find('aiplugin')) {
             let rawUserId = userId.replace(/\D+/g, "")
             let rawGroupId = groupId.replace(/\D+/g, "")
             let group_name = ctx.group.groupName
-            let dice_name = seal.formatTmpl(ctx,"核心:骰子名字")
+            let dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
 
             let id = ctx.isPrivate ? userId : groupId;
             let arr = data[id].aiCtx.slice()
@@ -288,7 +292,7 @@ if (!seal.ext.find('aiplugin')) {
                     reply = reply.replace(/from.*?）:/, '');
                     reply = reply.replace(new RegExp(`${dice_name}：`), '');
                     reply = reply.replace(new RegExp(`${dice_name}:`), '');
-                    reply = reply.replace('<｜end▁of▁sentence｜>','')
+                    reply = reply.replace('<｜end▁of▁sentence｜>', '')
                     //reply = reply.replace(/\[CQ:[=:,-_/.a-zA-Z0-9]*(?!\])$/g, '');
                     //reply = reply.replace(/(?!\[CQ:at,qq=\d+\]$)at,qq=\d+\]/g, '');
                     if (!ctx.isPrivate) {
@@ -298,12 +302,11 @@ if (!seal.ext.find('aiplugin')) {
                         reply = reply.replace(/from.*?QQ-Group:\d+/, '');
                     }
 
-                    reply = reply.replace(/@(\d+)/g,`[CQ:at,qq=$1]`)
+                    reply = reply.replace(/@(\d+)/g, `[CQ:at,qq=$1]`)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
                     seal.replyToSender(ctx, msg, reply);
-                    
-                    reply = reply.replace(/\[CQ:reply,id=-\d+\]\[CQ:at,qq=\d+\]/g, '')
-                    reply = reply.replace(/\[CQ:at,qq=(\d+)\]/g,`@$1`)
+                    await iteration(reply, ctx, 'assistant', diceId, dice_name)
+
                     if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                         let p = seal.ext.getIntConfig(ext, "回复图片的概率（%）")
                         if (Math.random() * 100 <= p) {
@@ -318,11 +321,6 @@ if (!seal.ext.find('aiplugin')) {
                             }, 1000)
                         }
                     }
-
-                    let message = {}
-                    if (ctx.isPrivate) message = { "role": "assistant", "content": `from ${dice_name}(${diceId}): ${reply}` };
-                    else message = { "role": "assistant", "content": `from ${dice_name}(${diceId}) in ${group_name}(${groupId}): ${reply}` }
-                    data[id].aiCtx.unshift(message);
                     saveData(id)
                     return;
                 } else {
@@ -382,8 +380,8 @@ if (!seal.ext.find('aiplugin')) {
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
-                    reply = reply.replace('<｜end▁of▁sentence｜>','')
-                    console.log('返回活跃度:',reply)
+                    reply = reply.replace('<｜end▁of▁sentence｜>', '')
+                    console.log('返回活跃度:', reply)
 
                     // 解析 AI 返回的数字
                     const activityLevel = parseInt(reply.trim());
@@ -427,11 +425,11 @@ if (!seal.ext.find('aiplugin')) {
         let groupId = ctx.group.groupId
         let rawGroupId = groupId.replace(/\D+/g, "")
         let id = ctx.isPrivate ? userId : groupId;
-        if (!data.hasOwnProperty(id)) initGroupData(id)
+        if (!data.hasOwnProperty(id)) getData(id)
 
         switch (val) {
             case 'add': {
-                if (ctx.privilegeLevel < 100) { 
+                if (ctx.privilegeLevel < 100) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
@@ -446,7 +444,7 @@ if (!seal.ext.find('aiplugin')) {
                 return;
             }
             case 'del': {
-                if (ctx.privilegeLevel < 100) { 
+                if (ctx.privilegeLevel < 100) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return;
                 }
@@ -465,7 +463,7 @@ if (!seal.ext.find('aiplugin')) {
                 }
             }
             case 'priv': {
-                if (ctx.privilegeLevel == 100) { 
+                if (ctx.privilegeLevel == 100) {
                     let text = `当前权限列表：`
                     for (let rawGroupId in allow) {
                         text += `\n${rawGroupId}:权限${allow[rawGroupId][0]} 普通${allow[rawGroupId][1]} 插嘴${allow[rawGroupId][2]} 图片${allow[rawGroupId][3]}`
@@ -546,7 +544,7 @@ if (!seal.ext.find('aiplugin')) {
             }
             case 'fgt': {
                 if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
-                    if (val2 == 'img'){
+                    if (val2 == 'img') {
                         data[id].images = []
                         seal.replyToSender(ctx, msg, '图片已清除');
                         saveData(id)
@@ -556,7 +554,7 @@ if (!seal.ext.find('aiplugin')) {
                         data[id].timer = null
                         data[id].counter = 0
                         //console.log('清除计时器和计数器')
-                        
+
                         data[id].aiCtx = []
                         seal.replyToSender(ctx, msg, '上下文已清除');
                         saveData(id)
@@ -579,17 +577,18 @@ if (!seal.ext.find('aiplugin')) {
     ext.onNotCommandReceived = async (ctx, msg) => {
         let message = msg.message
         let userId = ctx.player.userId
+        let user_name = ctx.player.name
         let groupId = ctx.group.groupId
         let rawGroupId = groupId.replace(/\D+/g, "")
         let CQmodeMatch = message.match(/\[CQ:(.*?),.*?\]/)
         let CQmode = CQmodeMatch ? CQmodeMatch[1] : "default";
         let id = ctx.isPrivate ? userId : groupId;
-        if (!data.hasOwnProperty(id)) initGroupData(id)
+        if (!data.hasOwnProperty(id)) getData(id)
 
         if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
             if (message.includes(seal.ext.getStringConfig(ext, "非指令关键词"))) {
                 if (ctx.isPrivate && !seal.ext.getBoolConfig(ext, "能否私聊使用")) return;
-                if (await iteration(message, ctx, 'user', CQmode)) return;
+                if (await iteration(message, ctx, 'user', userId, user_name, CQmode)) return;
                 if (allow.hasOwnProperty(rawGroupId)) {
                     clearTimeout(data[id].timer)
                     data[id].timer = null
@@ -598,10 +597,10 @@ if (!seal.ext.find('aiplugin')) {
                 }
 
                 let ai = new DeepseekAI();
-                ai.chat(ctx, msg, true);
+                ai.chat(ctx, msg, seal.ext.getBoolConfig(ext, "非指令触发是否引用"));
             } else if (allow.hasOwnProperty(rawGroupId)) {
                 if (allow[rawGroupId][1]) {
-                    if (await iteration(message, ctx, 'user', CQmode)) return;
+                    if (await iteration(message, ctx, 'user', userId, user_name, CQmode)) return;
                     data[id].counter += 1
                     clearTimeout(data[id].timer)
                     data[id].timer = null
@@ -629,7 +628,7 @@ if (!seal.ext.find('aiplugin')) {
                         }, timerLimit + ran);
                     }
                 } else if (allow[rawGroupId][2]) {
-                    if (await iteration(message, ctx, 'user', CQmode)) return;
+                    if (await iteration(message, ctx, 'user', userId, user_name, CQmode)) return;
 
                     let ai = new DeepseekAI();
                     let adjustActivityPromise;
