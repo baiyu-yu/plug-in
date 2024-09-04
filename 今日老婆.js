@@ -35,7 +35,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         locks[groupId] = false;
     }
 
-    function initGroupData(groupId) {
+    function getData(groupId) {
         function tryInit() {
             if (acquireLock(groupId)) {
                 try {
@@ -77,7 +77,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
             const groupId = msg.groupId;
             const pureUserId = extractPureId(msg.sender.userId);
             const userInfo = { qqNumber: pureUserId, nickname: msg.sender.nickname };
-            if (!data.hasOwnProperty(groupId)) initGroupData(groupId)
+            if (!data.hasOwnProperty(groupId)) getData(groupId)
             // 确保在同一个群中不重复记录同一个用户
             const existingUser = data[groupId].userRecords.find(user => user.qqNumber === userInfo.qqNumber);
             if (existingUser) {
@@ -112,7 +112,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         const groupId = msg.groupId;
         const pureUserId = extractPureId(msg.sender.userId);
         const today = new Date().toISOString().split('T')[0]; // 获取当前日期
-        if (!data.hasOwnProperty(groupId)) initGroupData(groupId)
+        if (!data.hasOwnProperty(groupId)) getData(groupId)
 
         // 检查并处理子命令
         const subCommand = cmdArgs.getArgN(1);
