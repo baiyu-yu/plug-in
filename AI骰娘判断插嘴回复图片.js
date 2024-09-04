@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.3.0
+// @version      2.3.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.3.0');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.3.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -164,7 +164,7 @@ if (!seal.ext.find('aiplugin')) {
         let group_name = ctx.group.groupName
         let imagesign = false
 
-        text = text.replace(/\[CQ:reply,id=-\d+\]\[CQ:at,qq=\d+\]/g, '')
+        text = text.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, '')
         text = text.replace(/\[CQ:at,qq=(\d+)\]/g, `@$1`)
         if (CQmode == "image") {
             if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
