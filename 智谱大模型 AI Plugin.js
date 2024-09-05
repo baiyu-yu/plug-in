@@ -436,10 +436,10 @@ if (!seal.ext.find('BigModelai')) {
         }
     };
 
-    // 添加生成图片的指令
+    // 添加生成图片的指令，但是测试都是404，无法理解，如果有可以正常生成的让我康康
     const cmdGenerateImage = seal.ext.newCmdItemInfo();
-    cmdGenerateImage.name = 'generateImage';
-    cmdGenerateImage.help = '生成图片\n用法：.generateImage 生成描述';
+    cmdGenerateImage.name = 'AI绘图';
+    cmdGenerateImage.help = '生成图片\n用法：.AI绘图 生成描述';
     cmdGenerateImage.solve = async (ctx, msg, cmdArgs) => {
         let prompt = cmdArgs.getArgN(1);
         if (!prompt) {
@@ -475,5 +475,5 @@ if (!seal.ext.find('BigModelai')) {
         }
         return seal.ext.newCmdExecuteResult(true);
     };
-    ext.cmdMap['generateImage'] = cmdGenerateImage;
+    ext.cmdMap['AI绘图'] = cmdGenerateImage;
 }  
