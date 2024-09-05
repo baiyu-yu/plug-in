@@ -1,18 +1,18 @@
 // ==UserScript==
 // @name         今日老婆
 // @author       白鱼、错误
-// @version      2.0.3
+// @version      2.0.4
 // @description  今日老婆插件，允许自定义的看配置项，使用.今日老婆 help 查看使用教程
 // @timestamp    1724394115
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E4%BB%8A%E6%97%A5%E8%80%81%E5%A9%86.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E4%BB%8A%E6%97%A5%E8%80%81%E5%A9%86.js
-// @sealVersion  1.4.6
+// @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('wifeOfTheDay')) {
-    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.3');
+    const ext = seal.ext.new('wifeOfTheDay', 'baiyuanderror', '2.0.4');
     seal.ext.register(ext);
 
     // 正确地注册配置项
@@ -111,7 +111,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
     cmdWifeOfTheDay.solve = async (ctx, msg, cmdArgs) => {
         const groupId = msg.groupId;
         const pureUserId = extractPureId(msg.sender.userId);
-        const today = new Date().toISOString().split('T')[0]; // 获取当前日期
+        const today = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }).split(' ')[0]; // 获取当前日期
         if (!data.hasOwnProperty(groupId)) getData(groupId)
 
         // 检查并处理子命令
