@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.3.1
+// @version      2.4.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.3.1');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -39,21 +39,23 @@ if (!seal.ext.find('aiplugin')) {
         "群聊计数器基础值",
         "群聊计时器基础值（s）",
         "参与插嘴检测的上下文轮数",
+        "参与插嘴检测的最大字数",
         "插嘴活跃度的缓存时间（s）",
         "图片存储上限",
         "回复图片的概率（%）"
     ]
     const configDefaultsInt = [
-        "140",
-        "8",
-        "8",
-        "10",
-        "3",
-        "60",
-        "3",
-        "10",
-        "30",
-        "100"
+        140,
+        8,
+        8,
+        10,
+        3,
+        60,
+        8,
+        400,
+        10,
+        30,
+        100
     ]
     const configKeysFloat = [
         "触发插嘴的活跃度（1~10）",
@@ -63,11 +65,11 @@ if (!seal.ext.find('aiplugin')) {
         "top_p(0~1)"
     ]
     const configDefaultsFloat = [
-        "7",
-        "2",
-        "2",
-        "1.1",
-        "1"
+        7,
+        2,
+        2,
+        1.1,
+        1
     ]
     const configKeysBool = [
         "能否私聊使用",
@@ -338,13 +340,16 @@ if (!seal.ext.find('aiplugin')) {
 
             let id = ctx.isPrivate ? userId : groupId;
             let topics = seal.ext.getStringConfig(ext, "插嘴检测话题")
-            let systemContext = { "role": "system", "content": `你是QQ群里的群员，感兴趣的话题有:${topics}...\n你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字,需要分析的对话如下:` }
+            let systemContext = { "role": "system", "content": `你是QQ群里的群员，感兴趣的话题有:${topics}...\n你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字，请只回复1~10之间的数字，需要分析的对话如下:` }
             let text = ''
+            let reply = ''
             for (let i = 0; i < Math.min(ctxLength + 1, data[id].aiCtx.length); i++) {
                 if (data[id].aiCtx[i]["role"] == 'user') {
-                    text = data[id].aiCtx[i]["content"] + `\n` + text
+                    reply = data[id].aiCtx[i]["content"].replace(/from (.*?)\(QQ:.*?\):/, '  $1:');
+                    text = reply + text
                 }
             }
+            text = text.slice(-seal.ext.getIntConfig(ext, "参与插嘴检测的最大字数"))
             let message = { "role": 'user', "content": text }
             this.context = [systemContext, message]
             this.cleanContext(); // 清理上下文中的 null 值
@@ -380,14 +385,14 @@ if (!seal.ext.find('aiplugin')) {
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
-                    reply = reply.replace('<｜end▁of▁sentence｜>', '')
                     console.log('返回活跃度:', reply)
+                    reply = reply.replace('<｜end▁of▁sentence｜>', '')
 
                     // 解析 AI 返回的数字
-                    const activityLevel = parseInt(reply.trim());
+                    let activityLevel = parseInt(reply.trim());
                     if (isNaN(activityLevel) || activityLevel < 1 || activityLevel > 10) {
-                        console.error("AI 返回的积极性数值无效");
-                        return;
+                        console.log("AI 返回的积极性数值无效");
+                        activityLevel = 0
                     }
                     data[id].intrptAct = data[id].intrptAct * 0.2 + activityLevel * 0.8
                     // 更新缓存
@@ -416,7 +421,7 @@ if (!seal.ext.find('aiplugin')) {
 【.ai off】关闭AI，此时仍能用关键词触发
 【.ai off img】关闭获取图片
 【.ai fgt】遗忘上下文
-【.ai fgt img】遗忘图片`;
+【.ai fgt [ass/img]】遗忘ai自己的回复/遗忘图片`;
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         let val = cmdArgs.getArgN(1);
         let val2 = cmdArgs.getArgN(2);
@@ -522,20 +527,23 @@ if (!seal.ext.find('aiplugin')) {
             }
             case 'off': {
                 if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
-                    if (val2 == 'img') {
-                        allow[rawGroupId][3] = false
-                        seal.replyToSender(ctx, msg, 'AI(图片获取)已关闭')
-                        return;
-                    } else {
-                        clearTimeout(data[id].timer)
-                        data[id].timer = null
-                        data[id].counter = 0
-                        //console.log('清除计时器和计数器')
-                        allow[rawGroupId][1] = false
-                        allow[rawGroupId][2] = false
-                        seal.replyToSender(ctx, msg, 'AI已关闭');
-                        ext.storageSet("allow", JSON.stringify(allow));
-                        return;
+                    switch(val2) {
+                        case 'img':{
+                            allow[rawGroupId][3] = false
+                            seal.replyToSender(ctx, msg, 'AI(图片获取)已关闭')
+                            return;
+                        }
+                        default: {
+                            clearTimeout(data[id].timer)
+                            data[id].timer = null
+                            data[id].counter = 0
+                            //console.log('清除计时器和计数器')
+                            allow[rawGroupId][1] = false
+                            allow[rawGroupId][2] = false
+                            seal.replyToSender(ctx, msg, 'AI已关闭');
+                            ext.storageSet("allow", JSON.stringify(allow));
+                            return;
+                        }
                     }
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
@@ -544,21 +552,39 @@ if (!seal.ext.find('aiplugin')) {
             }
             case 'fgt': {
                 if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
-                    if (val2 == 'img') {
-                        data[id].images = []
-                        seal.replyToSender(ctx, msg, '图片已清除');
-                        saveData(id)
-                        return;
-                    } else {
-                        clearTimeout(data[id].timer)
-                        data[id].timer = null
-                        data[id].counter = 0
-                        //console.log('清除计时器和计数器')
-
-                        data[id].aiCtx = []
-                        seal.replyToSender(ctx, msg, '上下文已清除');
-                        saveData(id)
-                        return;
+                    switch (val2){
+                        case 'ass': {
+                            clearTimeout(data[id].timer)
+                            data[id].timer = null
+                            data[id].counter = 0
+                            //console.log('清除计时器和计数器')
+    
+                            for (let i = 0; i < data[id].aiCtx.length; i++) {
+                                if (data[id].aiCtx[i]["role"] == 'assistant') {
+                                    data[id].aiCtx.splice(i, 1)
+                                }
+                            }
+                            seal.replyToSender(ctx, msg, 'ai上下文已清除');
+                            saveData(id)
+                            return;
+                        }
+                        case 'img': {
+                            data[id].images = []
+                            seal.replyToSender(ctx, msg, '图片已清除');
+                            saveData(id)
+                            return;
+                        }
+                        default: {
+                            clearTimeout(data[id].timer)
+                            data[id].timer = null
+                            data[id].counter = 0
+                            //console.log('清除计时器和计数器')
+    
+                            data[id].aiCtx = []
+                            seal.replyToSender(ctx, msg, '上下文已清除');
+                            saveData(id)
+                            return;
+                        }
                     }
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
