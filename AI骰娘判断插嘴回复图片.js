@@ -516,7 +516,7 @@ if (!seal.ext.find('aiplugin')) {
                             return;
                         }
                         default: {
-                            seal.replyToSender(ctx, msg, '参数错误');
+                            seal.replyToSender(ctx, msg, '参数错误，请使用【.ai on [norm/intrpt/img]】开启普通聊天模式/插嘴模式/获取图片');
                             return;
                         }
                     }
