@@ -439,7 +439,7 @@ if (!seal.ext.find('aiplugin')) {
                     return;
                 }
                 if (!val2) {
-                    seal.replyToSender(ctx, msg, '参数错误');
+                    seal.replyToSender(ctx, msg, '参数错误，请使用【.ai add 群号 (权限，默认50)】添加权限');
                     return;
                 }
                 if (!val3) val3 = 50;
@@ -454,7 +454,7 @@ if (!seal.ext.find('aiplugin')) {
                     return;
                 }
                 if (!val2) {
-                    seal.replyToSender(ctx, msg, '参数错误');
+                    seal.replyToSender(ctx, msg, '参数错误，请使用【.ai del 群号】删除权限');
                     return;
                 }
                 if (!allow.hasOwnProperty(val2)) {
@@ -486,10 +486,6 @@ if (!seal.ext.find('aiplugin')) {
             }
             case 'on': {
                 if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
-                    if (!val2) {
-                        seal.replyToSender(ctx, msg, '参数错误');
-                        return;
-                    }
                     switch (val2) {
                         case 'norm': {
                             allow[rawGroupId][1] = true
