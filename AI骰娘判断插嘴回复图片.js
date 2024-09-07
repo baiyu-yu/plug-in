@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.4.0
+// @version      2.4.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.0');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -52,7 +52,7 @@ if (!seal.ext.find('aiplugin')) {
         3,
         60,
         8,
-        400,
+        600,
         10,
         30,
         100
@@ -74,10 +74,12 @@ if (!seal.ext.find('aiplugin')) {
     const configKeysBool = [
         "能否私聊使用",
         "非指令触发是否引用",
-        "是否在消息内添加前缀"
+        "是否在消息内添加前缀",
+        "是否打印日志细节"
     ]
     const configDefaultsBool = [
         false,
+        true,
         true,
         true
     ]
@@ -139,7 +141,7 @@ if (!seal.ext.find('aiplugin')) {
         if (data[id].normAct.act > 20) data[id].normAct.act = 5;
         if (data[id].normAct.act < 0) data[id].normAct.act = 0;
 
-        console.log('时间差：' + timeDiff + '当前活跃度：' + data[id].normAct.act)
+        if (seal.ext.getBoolConfig(ext, "是否打印日志细节")) console.log('时间差：' + timeDiff + '当前活跃度：' + data[id].normAct.act)
         data[id].normAct.lastTimestamp = timestamp;
 
         // 根据活跃度调整计数器和计时器上限
@@ -250,6 +252,7 @@ if (!seal.ext.find('aiplugin')) {
             let rawGroupId = groupId.replace(/\D+/g, "")
             let group_name = ctx.group.groupName
             let dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
+            let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
 
             let id = ctx.isPrivate ? userId : groupId;
             let arr = data[id].aiCtx.slice()
@@ -257,7 +260,15 @@ if (!seal.ext.find('aiplugin')) {
             this.cleanContext(); // 清理上下文中的 null 值
 
             try {
-                console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
+                if (printlog) {
+                    let log = ``
+                    for (let i = 1; i < this.context.length; i++) {
+                        log += `"${this.context[i].role}": "${this.context[i].content}"\n`
+                    }
+                    console.log(`请求发送前的上下文:\n`, log)
+                    //console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
+                }
+
                 const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
                     method: 'POST',
                     headers: {
@@ -281,28 +292,27 @@ if (!seal.ext.find('aiplugin')) {
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
                 const data_response = await response.json();
-                console.log('服务器响应:', JSON.stringify(data_response, null, 2)); // 调试输出，格式化为字符串
+                if (printlog) console.log('服务器响应:', JSON.stringify(data_response, null)); // 调试输出，格式化为字符串
 
                 if (data_response.error) throw new Error(`请求失败：${JSON.stringify(data_response.error)}`);
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
-                    //过滤文本
+                    //过滤文本，哇呀好可怕，AI坏，总是弄出莫名其妙的前缀来
                     reply = reply.replace(/from.*?\)：/, '');
                     reply = reply.replace(/from.*?\):/, '');
                     reply = reply.replace(/from.*?）：/, '');
                     reply = reply.replace(/from.*?）:/, '');
-                    reply = reply.replace(new RegExp(`${dice_name}：`), '');
-                    reply = reply.replace(new RegExp(`${dice_name}:`), '');
+                    reply = reply.replace(/from.*?QQ-Group:\d+/, '');
+                    reply = reply.replace(/from.*?QQ:\d+/, '');
                     reply = reply.replace('<｜end▁of▁sentence｜>', '')
-                    //reply = reply.replace(/\[CQ:[=:,-_/.a-zA-Z0-9]*(?!\])$/g, '');
-                    //reply = reply.replace(/(?!\[CQ:at,qq=\d+\]$)at,qq=\d+\]/g, '');
                     if (!ctx.isPrivate) {
                         //一般不会出现这种情况……吗？好叭，经常出现
                         reply = reply.replace(new RegExp(`from.*?${groupId}\\)`), '');
                         reply = reply.replace(new RegExp(`from.*?${groupId}）`), '');
-                        reply = reply.replace(/from.*?QQ-Group:\d+/, '');
                     }
+                    reply = reply.replace(new RegExp(`${dice_name}：`), '');
+                    reply = reply.replace(new RegExp(`${dice_name}:`), '');
 
                     reply = reply.replace(/@(\d+)/g, `[CQ:at,qq=$1]`)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
@@ -336,6 +346,7 @@ if (!seal.ext.find('aiplugin')) {
         async adjustActivityLevel(ctx) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
+            let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
             let ctxLength = seal.ext.getIntConfig(ext, "参与插嘴检测的上下文轮数");
 
             let id = ctx.isPrivate ? userId : groupId;
@@ -355,7 +366,8 @@ if (!seal.ext.find('aiplugin')) {
             this.cleanContext(); // 清理上下文中的 null 值
 
             try {
-                console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
+                if (printlog) console.log(`请求发送前的上下文:\n`, this.context[1].content)
+                //console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
                 const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
                     method: 'POST',
                     headers: {
@@ -366,7 +378,7 @@ if (!seal.ext.find('aiplugin')) {
                     body: JSON.stringify({
                         'model': seal.ext.getStringConfig(ext, "模型名称"),
                         'messages': this.context,
-                        'max_tokens': 1,
+                        'max_tokens': 2,
                         'frequency_penalty': 0,
                         'presence_penalty': 0,
                         'stop': null,
@@ -385,7 +397,7 @@ if (!seal.ext.find('aiplugin')) {
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
-                    console.log('返回活跃度:', reply)
+                    if (printlog) console.log('返回活跃度:', reply)
                     reply = reply.replace('<｜end▁of▁sentence｜>', '')
 
                     // 解析 AI 返回的数字
@@ -401,7 +413,7 @@ if (!seal.ext.find('aiplugin')) {
                         expires: Date.now() + seal.ext.getIntConfig(ext, "插嘴活跃度的缓存时间（s）") * 1000
                     };
 
-                    console.log("当前活跃等级：", data[id].intrptAct)
+                    if (printlog) console.log("当前活跃等级：", data[id].intrptAct)
                 } else {
                     console.error("服务器响应中没有choices或choices为空");
                 }
@@ -627,20 +639,23 @@ if (!seal.ext.find('aiplugin')) {
                     clearTimeout(data[id].timer)
                     data[id].timer = null
 
+                    //暂时加在这里，感觉能够优化，懒了
+                    let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
+
                     const { counterLimit, timerLimit } = updateActivity(id, parseInt(seal.format(ctx, "{$tTimestamp}")));
                     let ran = Math.floor(Math.random() * 100)
-                    console.log(`计数器上限：${counterLimit}，计时器上限：${timerLimit + ran}，当前计数器：${data[id].counter}`)
+                    if (printlog) console.log(`计数器上限：${counterLimit}，计时器上限：${timerLimit + ran}，当前计数器：${data[id].counter}`)
 
                     if (data[id].counter >= counterLimit) {
                         data[id].counter = 0
-                        console.log('计数器触发回复')
+                        if (printlog) console.log('计数器触发回复')
 
                         let ai = new DeepseekAI();
                         ai.chat(ctx, msg);
                     } else {
                         data[id].timer = setTimeout(() => {
                             data[id].counter = 0 //清除计数器
-                            console.log('计时器触发回复')
+                            if (printlog) console.log('计时器触发回复')
 
                             data[id].normAct.lastTimestamp += (timerLimit + ran) / 1000
                             data[id].normAct.act -= 4;
