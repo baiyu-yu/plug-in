@@ -68,7 +68,7 @@ if (!seal.ext.find('aiplugin')) {
         7,
         2,
         2,
-        1.1,
+        1,
         1
     ]
     const configKeysBool = [
