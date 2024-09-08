@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.4.2
+// @version      2.4.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.2');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.3');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -126,6 +126,7 @@ if (!seal.ext.find('aiplugin')) {
     // 计算群活跃度，根据活跃度调整计数器和计时器上限
     function updateActivity(id, timestamp) {
         const timeDiff = timestamp - data[id].normAct.lastTimestamp;
+        const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
 
         if (timeDiff <= 5) data[id].normAct.act += 2;
         else if (timeDiff <= 10) data[id].normAct.act += 1;
@@ -137,7 +138,7 @@ if (!seal.ext.find('aiplugin')) {
         if (data[id].normAct.act > 20) data[id].normAct.act = 5;
         if (data[id].normAct.act < 0) data[id].normAct.act = 0;
 
-        if (seal.ext.getBoolConfig(ext, "是否打印日志细节")) console.log('时间差：' + timeDiff + '当前活跃度：' + data[id].normAct.act)
+        if (printlog) console.log('时间差：' + timeDiff + '当前活跃度：' + data[id].normAct.act)
         data[id].normAct.lastTimestamp = timestamp;
 
         // 根据活跃度调整计数器和计时器上限
@@ -161,10 +162,14 @@ if (!seal.ext.find('aiplugin')) {
     }
 
     async function iteration(text, ctx, role, senderId, sender_name, CQmode = 'default') {
-        const MAX_CONTEXT_LENGTH = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
+        let userId = ctx.player.userId
         let groupId = ctx.group.groupId
-        let rawGroupId = groupId.replace(/\D+/g, "")
         let id = ctx.isPrivate ? userId : groupId;
+
+        const MAX_CONTEXT_LENGTH = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
+        const prefix = seal.ext.getBoolConfig(ext, "是否在消息内添加前缀")
+
+        let rawGroupId = groupId.replace(/\D+/g, "")
         let group_name = ctx.group.groupName
         let imagesign = false
 
@@ -182,7 +187,7 @@ if (!seal.ext.find('aiplugin')) {
             imagesign = true
         }
 
-        if (seal.ext.getBoolConfig(ext, "是否在消息内添加前缀")) {
+        if (prefix) {
             if (ctx.isPrivate) text = `from ${sender_name}(${senderId}): ${text}`
             else text = `from ${sender_name}(${senderId}) in ${group_name}(${groupId}): ${text}`
         }
@@ -197,6 +202,7 @@ if (!seal.ext.find('aiplugin')) {
         let userId = ctx.player.userId
         let groupId = ctx.group.groupId
         let id = ctx.isPrivate ? userId : groupId;
+
         let ranIndex = Math.floor(Math.random() * data[id].images.length);
         let imageToReply = data[id].images[ranIndex];
         data[id].images.splice(ranIndex, 1);
@@ -247,14 +253,23 @@ if (!seal.ext.find('aiplugin')) {
         async chat(ctx, msg, replymsg = false) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
+            let id = ctx.isPrivate ? userId : groupId;
+
+            const dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
+            const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
+            const url = seal.ext.getStringConfig(ext, "url地址")
+            const apiKey = seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")
+            const model = seal.ext.getStringConfig(ext, "模型名称")
+            const maxTokens = seal.ext.getIntConfig(ext, "最大回复tokens数（防止回复过长）")
+            const frequency_penalty = seal.ext.getFloatConfig(ext, "frequency_penalty(-2~2)")
+            const presence_penalty = seal.ext.getFloatConfig(ext, "presence_penalty(-2~2)")
+            const temperature = seal.ext.getFloatConfig(ext, "temperature(0~2)")
+            const top_p = seal.ext.getFloatConfig(ext, "top_p(0~1)")
+
             let diceId = ctx.endPoint.userId
             let rawUserId = userId.replace(/\D+/g, "")
             let rawGroupId = groupId.replace(/\D+/g, "")
-            let group_name = ctx.group.groupName
-            let dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
-            let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
 
-            let id = ctx.isPrivate ? userId : groupId;
             let arr = data[id].aiCtx.slice()
             this.context = [this.systemContext, ...arr.reverse()];
             this.cleanContext(); // 清理上下文中的 null 值
@@ -269,23 +284,23 @@ if (!seal.ext.find('aiplugin')) {
                     //console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
                 }
 
-                const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
+                const response = await fetch(`${url}`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")}`,
+                        'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        'model': seal.ext.getStringConfig(ext, "模型名称"),
+                        'model': model,
                         'messages': this.context,
-                        'max_tokens': seal.ext.getIntConfig(ext, "最大回复tokens数（防止回复过长）"),
-                        'frequency_penalty': seal.ext.getFloatConfig(ext, "frequency_penalty(-2~2)"),
-                        'presence_penalty': seal.ext.getFloatConfig(ext, "presence_penalty(-2~2)"),
+                        'max_tokens': maxTokens,
+                        'frequency_penalty': frequency_penalty,
+                        'presence_penalty': presence_penalty,
                         'stop': null,
                         'stream': false,
-                        'temperature': seal.ext.getFloatConfig(ext, "temperature(0~2)"),
-                        'top_p': seal.ext.getFloatConfig(ext, "top_p(0~1)"),
+                        'temperature': temperature,
+                        'top_p': top_p,
                     }),
                 });
 
@@ -304,7 +319,9 @@ if (!seal.ext.find('aiplugin')) {
                     reply = reply.replace(/from.*?）：/, '');
                     reply = reply.replace(/from.*?）:/, '');
                     reply = reply.replace(/from.*?QQ-Group:\d+/, '');
+                    reply = reply.replace(/from.*?QQ-Group:/, '');
                     reply = reply.replace(/from.*?QQ:\d+/, '');
+                    reply = reply.replace(/from.*?QQ:/, '');
                     reply = reply.replace('<｜end▁of▁sentence｜>', '')
                     if (!ctx.isPrivate) {
                         //一般不会出现这种情况……吗？好叭，经常出现
@@ -346,11 +363,17 @@ if (!seal.ext.find('aiplugin')) {
         async adjustActivityLevel(ctx) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
-            let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
-            let ctxLength = seal.ext.getIntConfig(ext, "参与插嘴检测的上下文轮数");
-
             let id = ctx.isPrivate ? userId : groupId;
-            let topics = seal.ext.getStringConfig(ext, "插嘴检测话题")
+
+            const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
+            const ctxLength = seal.ext.getIntConfig(ext, "参与插嘴检测的上下文轮数");
+            const topics = seal.ext.getStringConfig(ext, "插嘴检测话题")
+            const maxChar = seal.ext.getIntConfig(ext, "参与插嘴检测的最大字数")
+            const cacheTime = seal.ext.getIntConfig(ext, "插嘴活跃度的缓存时间（s）") * 1000
+            const url = seal.ext.getStringConfig(ext, "url地址")
+            const apiKey = seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")
+            const model = seal.ext.getStringConfig(ext, "模型名称")
+
             let systemContext = { "role": "system", "content": `你是QQ群里的群员，感兴趣的话题有:${topics}...\n你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字，请只回复1~10之间的数字，需要分析的对话如下:` }
             let text = ''
             let reply = ''
@@ -360,7 +383,7 @@ if (!seal.ext.find('aiplugin')) {
                     text = reply + text
                 }
             }
-            text = text.slice(-seal.ext.getIntConfig(ext, "参与插嘴检测的最大字数"))
+            text = text.slice(-maxChar)
             let message = { "role": 'user', "content": text }
             this.context = [systemContext, message]
             this.cleanContext(); // 清理上下文中的 null 值
@@ -368,15 +391,15 @@ if (!seal.ext.find('aiplugin')) {
             try {
                 if (printlog) console.log(`请求发送前的上下文:\n`, this.context[1].content)
                 //console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2)); // 调试输出，格式化为字符串
-                const response = await fetch(`${seal.ext.getStringConfig(ext, "url地址")}`, {
+                const response = await fetch(`${url}`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${seal.ext.getStringConfig(ext, "你的APIkeys（请在对应大模型获取并确定有token数）")}`,
+                        'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        'model': seal.ext.getStringConfig(ext, "模型名称"),
+                        'model': model,
                         'messages': this.context,
                         'max_tokens': 2,
                         'frequency_penalty': 0,
@@ -410,7 +433,7 @@ if (!seal.ext.find('aiplugin')) {
                     // 更新缓存
                     data[id].intrptActCache = {
                         act: data[id].intrptAct,
-                        expires: Date.now() + seal.ext.getIntConfig(ext, "插嘴活跃度的缓存时间（s）") * 1000
+                        expires: Date.now() + cacheTime
                     };
 
                     if (printlog) console.log("当前活跃等级：", data[id].intrptAct)
@@ -615,19 +638,26 @@ if (!seal.ext.find('aiplugin')) {
     };
 
     ext.onNotCommandReceived = async (ctx, msg) => {
-        let message = msg.message
         let userId = ctx.player.userId
-        let user_name = ctx.player.name
         let groupId = ctx.group.groupId
+        let id = ctx.isPrivate ? userId : groupId;
+
+        let user_name = ctx.player.name
         let rawGroupId = groupId.replace(/\D+/g, "")
+
+        let message = msg.message
         let CQmodeMatch = message.match(/\[CQ:(.*?),.*?\]/)
         let CQmode = CQmodeMatch ? CQmodeMatch[1] : "default";
-        let id = ctx.isPrivate ? userId : groupId;
+
         if (!data.hasOwnProperty(id)) getData(id)
 
         if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
-            if (message.includes(seal.ext.getStringConfig(ext, "非指令关键词"))) {
-                if (ctx.isPrivate && !seal.ext.getBoolConfig(ext, "能否私聊使用")) return;
+            const keyWord = seal.ext.getStringConfig(ext, "非指令关键词")
+            const canPrivate = seal.ext.getBoolConfig(ext, "能否私聊使用")
+            const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
+
+            if (message.includes(keyWord)) {
+                if (ctx.isPrivate && !canPrivate) return;
                 if (await iteration(message, ctx, 'user', userId, user_name, CQmode)) return;
                 if (allow.hasOwnProperty(rawGroupId)) {
                     clearTimeout(data[id].timer)
@@ -644,9 +674,6 @@ if (!seal.ext.find('aiplugin')) {
                     data[id].counter += 1
                     clearTimeout(data[id].timer)
                     data[id].timer = null
-
-                    //暂时加在这里，感觉能够优化，懒了
-                    let printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
 
                     const { counterLimit, timerLimit } = updateActivity(id, parseInt(seal.format(ctx, "{$tTimestamp}")));
                     let ran = Math.floor(Math.random() * 100)
@@ -673,6 +700,8 @@ if (!seal.ext.find('aiplugin')) {
                 } else if (allow[rawGroupId][2]) {
                     if (await iteration(message, ctx, 'user', userId, user_name, CQmode)) return;
 
+                    const intrptTrigger = seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")
+
                     let ai = new DeepseekAI();
                     let adjustActivityPromise;
                     if (data[id].intrptActCache.expires <= Date.now()) {
@@ -681,7 +710,7 @@ if (!seal.ext.find('aiplugin')) {
                     }
 
                     Promise.all([adjustActivityPromise]).then(() => {
-                        if (data[id].intrptAct >= seal.ext.getFloatConfig(ext, "触发插嘴的活跃度（1~10）")) {
+                        if (data[id].intrptAct >= intrptTrigger) {
                             data[id].intrptAct *= 0.5
                             ai.chat(ctx, msg);
                         } else return;
