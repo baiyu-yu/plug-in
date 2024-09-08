@@ -96,15 +96,15 @@ if (!seal.ext.find('aiplugin')) {
     function getData(id) {
         try {
             data[id] = {};
-            let groupData = JSON.parse(ext.storageGet(id) || '{}');
+            let idData = JSON.parse(ext.storageGet(id) || '{}');
             data[id] = {
-                aiCtx: groupData.aiCtx || [],
+                aiCtx: idData.aiCtx || [],
                 counter: 0,
                 timer: null,
-                normAct: groupData.normAct || { lastTimestamp: 0, act: 0 },
-                intrptAct: groupData.intrptAct || 0,
-                intrptActCache: groupData.intrptActCache || { act: 0, expires: Date.now() },
-                images: groupData.images || []
+                normAct: idData.normAct || { lastTimestamp: 0, act: 0 },
+                intrptAct: idData.intrptAct || 0,
+                intrptActCache: idData.intrptActCache || { act: 0, expires: Date.now() },
+                images: idData.images || []
             };
         } catch (error) {
             console.error(`Failed to initialize Id ${id}:`, error);
