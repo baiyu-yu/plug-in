@@ -1,18 +1,18 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼
-// @version      1.0.0
-// @description  随机记录群友发言并且储存在数据库里，然后随机放出一条的插件。使用.chatlog on/off控制开启关闭，可以在配置项配置一些东西。第一条会很快发出来，后面的就正常了，表情包图片可能过期会出现消息无法显示之类的，不管了。
+// @version      1.0.1
+// @description  随机记录群友发言并且储存在数据库里，然后随机放出一条的插件。使用.chatlog on/off控制开启关闭，可以在配置项配置一些东西。记录时间太长队列会很大可能难以抽出，数据库也会很大，请定时到插件数据库删除对应数据库（\data\default\extensions\randomChatLogger）（TODO：指令清空，虽然不能缓解数据库大的问题）。第一条会很快发出来，后面的就正常了，表情包图片可能过期会出现消息无法显示之类的，不管了。
 // @timestamp    1724394115
 // @license      MIT
-// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @homepageURL  https://github.com/sealdice/javascript
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
 // @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.0.0');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.0.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -50,16 +50,16 @@ if (!seal.ext.find('randomChatLogger')) {
     // 命令定义
     const cmdRandomChatLogger = seal.ext.newCmdItemInfo();
     cmdRandomChatLogger.name = 'chatlog';
-    cmdRandomChatLogger.help = '控制聊天记录\n用法：.chatlog on/off';
+    cmdRandomChatLogger.help = '随机记录群友发言并且储存在数据库里，然后随机放出一条\n用法：.chatlog on/off';
     cmdRandomChatLogger.solve = async (ctx, msg, cmdArgs) => {
         let val = cmdArgs.getArgN(1);
         const contextKey = msg.messageType === 'group' ? msg.groupId : ctx.player.userId;
 
         switch (val) {
             case 'help': {
-                const ret = seal.ext.newCmdExecuteResult(true);
-                ret.showHelp = true;
-                return ret;
+                const helpMessage = `随机记录群友发言并且储存在数据库里，然后随机放出一条\n用法：.chatlog on/off`;
+                seal.replyToSender(ctx, msg, helpMessage);
+                return seal.ext.newCmdExecuteResult(true);
             }
             case 'on': {
                 if (ctx.privilegeLevel >= 50) { 
