@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.4.7
+// @version      2.5.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。配置中的计时器、计数器用于普通聊天模式。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.4.7');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -73,13 +73,17 @@ if (!seal.ext.find('aiplugin')) {
         "能否私聊使用",
         "非指令触发是否引用",
         "是否在消息内添加前缀",
-        "是否打印日志细节"
+        "是否打印日志细节",
+        "是否录入所有发送的消息",
+        "是否录入指令消息"
     ]
     const configDefaultsBool = [
         false,
         true,
         true,
-        true
+        true,
+        true,
+        false
     ]
     configKeysString.forEach((key, index) => { seal.ext.registerStringConfig(ext, key, configDefaultsString[index]); });
     configKeysInt.forEach((key, index) => { seal.ext.registerIntConfig(ext, key, configDefaultsInt[index]); });
@@ -130,7 +134,6 @@ if (!seal.ext.find('aiplugin')) {
         async chat(ctx, msg, replymsg = false) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
-            let id = ctx.isPrivate ? userId : groupId;
 
             const systemContext = { role: "system", content: seal.ext.getStringConfig(ext, "角色设定") };
             const dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
@@ -144,6 +147,7 @@ if (!seal.ext.find('aiplugin')) {
             const presence_penalty = seal.ext.getFloatConfig(ext, "presence_penalty(-2~2)")
             const temperature = seal.ext.getFloatConfig(ext, "temperature(0~2)")
             const top_p = seal.ext.getFloatConfig(ext, "top_p(0~1)")
+            const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有发送的消息")
 
             let diceId = ctx.endPoint.userId
             let rawUserId = userId.replace(/\D+/g, "")
@@ -211,7 +215,7 @@ if (!seal.ext.find('aiplugin')) {
                     reply = reply.slice(0, maxChar)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
                     seal.replyToSender(ctx, msg, reply);
-                    await this.iteration(reply, ctx, 'assistant', diceId, dice_name)
+                    if (!allmsg) await this.iteration(reply, ctx, 'assistant', diceId, dice_name)
 
                     if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                         let p = seal.ext.getIntConfig(ext, "回复图片的概率（%）")
@@ -704,6 +708,42 @@ if (!seal.ext.find('aiplugin')) {
             }
         }
     };
+
+
+    //接受的指令
+    ext.onCommandReceived = async (ctx, msg, cmdArgs) => {
+        let userId = ctx.player.userId
+        let groupId = ctx.group.groupId
+        let id = ctx.isPrivate ? userId : groupId;
+
+        const allcmd = seal.ext.getBoolConfig(ext, "是否录入指令消息")
+
+        let rawGroupId = groupId.replace(/\D+/g, "")
+
+        if (allcmd && allow.hasOwnProperty(rawGroupId) && (allow[rawGroupId][1] || allow[rawGroupId][2])) {
+            let user_name = ctx.player.name
+            await data[id].iteration(msg.message, ctx, 'user', userId, user_name)
+            return;
+        }
+    }
+
+    //骰子发送的消息
+    ext.onMessageSend = async (ctx, msg) => {
+        let userId = ctx.player.userId
+        let groupId = ctx.group.groupId
+        let id = ctx.isPrivate ? userId : groupId;
+
+        const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有发送的消息")
+
+        let rawGroupId = groupId.replace(/\D+/g, "")
+
+        if (allmsg && allow.hasOwnProperty(rawGroupId) && (allow[rawGroupId][1] || allow[rawGroupId][2])) {
+            const dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
+            let diceId = ctx.endPoint.userId
+            await data[id].iteration(msg.message, ctx, 'assistant', diceId, dice_name)
+            return;
+        }
+    }
 
     // 将命令注册到扩展中
     ext.cmdMap['AI权限'] = cmdaiprivilege;
