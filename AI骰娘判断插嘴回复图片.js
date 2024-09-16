@@ -242,24 +242,7 @@ if (!seal.ext.find('aiplugin')) {
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
                     //过滤文本，哇呀好可怕，AI坏，总是弄出莫名其妙的前缀来
-                    reply = reply.replace(/from.*?\)：/, '');
-                    reply = reply.replace(/from.*?\):/, '');
-                    reply = reply.replace(/from.*?）：/, '');
-                    reply = reply.replace(/from.*?）:/, '');
-                    reply = reply.replace(/from.*?QQ-Group:\d+/, '');
-                    reply = reply.replace(/from.*?QQ-Group:/, '');
-                    reply = reply.replace(/from.*?QQ:\d+/, '');
-                    reply = reply.replace(/from.*?QQ:/, '');
-                    reply = reply.replace('<｜end▁of▁sentence｜>', '')
-                    if (!ctx.isPrivate) {
-                        //一般不会出现这种情况……吗？好叭，经常出现
-                        reply = reply.replace(new RegExp(`from.*?${groupId}\\)`), '');
-                        reply = reply.replace(new RegExp(`from.*?${groupId}）`), '');
-                    }
-                    reply = reply.replace(new RegExp(`${dice_name}：`), '');
-                    reply = reply.replace(new RegExp(`${dice_name}:`), '');
-
-                    reply = reply.replace(/@(\d+)/g, `[CQ:at,qq=$1]`)
+                    reply = handleReply(reply, groupId, dice_name);
                     reply = reply.slice(0, maxChar)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
                     seal.replyToSender(ctx, msg, reply);
@@ -477,6 +460,23 @@ if (!seal.ext.find('aiplugin')) {
             }
             return isValid;
         }
+    }
+
+    function handleReply(reply, groupId, dice_name) {
+        const patterns = [
+            /from.*?[\)）][:：]/,
+            /from.*?QQ-Group[:：]\d*/,
+            /from.*?QQ[:：]\d*/,
+            '<｜end▁of▁sentence｜>',
+            '【图片】',
+            new RegExp(`from.*?${groupId}[\\)）]`),
+            new RegExp(`${dice_name}[:：]`)
+        ]
+
+        patterns.forEach(pattern => { reply = reply.replace(pattern, ''); });
+
+        reply = reply.replace(/@(\d+)/g, `[CQ:at,qq=$1]`);
+        return reply;
     }
 
     const cmdaiprivilege = seal.ext.newCmdItemInfo();
