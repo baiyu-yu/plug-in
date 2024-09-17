@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.5.1
+// @version      2.5.2
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.1');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.2');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -284,14 +284,11 @@ if (!seal.ext.find('aiplugin')) {
                 role: "system", content: `你是QQ群里的群员，感兴趣的话题有:${topics.join(',')}...
 你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字，请只回复1~10之间的数字，需要分析的对话如下:` }
 
-            let text = ''
-            for (let i = 0; i < Math.min(ctxLength + 1, this.context.length); i++) {
-                if (this.context[i].role == 'user') {
-                    text = this.context[i].content.replace(/from (.*?)\(QQ:.*?\):/, '  $1:'); + text
-                }
-            }
+            let arr = this.context
+                .filter(item => item.role == 'user')
+                .map(item => item.content.replace(/from (.*?)\(QQ:.*?\):/, '  $1:'))
+            let text = arr.slice(-ctxLength).join(' ').slice(-maxChar)
 
-            text = text.slice(-maxChar)
             let message = { role: 'user', content: text }
             let context = [systemContext, message]
             this.cleanContext(); // 清理上下文中的 null 值
@@ -388,7 +385,7 @@ if (!seal.ext.find('aiplugin')) {
             };
         }
 
-        async iteration(text, ctx, role, senderId, sender_name, CQmode = 'default') {
+        async iteration(text, ctx, role, senderId, sender_name, CQmode = ['default']) {
             const maxLength = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
             const prefix = seal.ext.getBoolConfig(ext, "是否在消息内添加前缀")
 
@@ -397,7 +394,7 @@ if (!seal.ext.find('aiplugin')) {
             let group_name = ctx.group.groupName
             let imagesign = false
 
-            if (CQmode == "image") {
+            if (CQmode.includes('image')) {
                 if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                     let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
                     let imageCQCode = text.match(/\[CQ:image,file=https:.*?\]/)[0];
@@ -407,9 +404,11 @@ if (!seal.ext.find('aiplugin')) {
                 }
                 imagesign = true
             }
-            text = text.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, '')
-            text = text.replace(/\[CQ:at,qq=(\d+)\]/g, `@$1`)
-            text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+            text = text
+                .replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, '')
+                .replace(/\[CQ:at,qq=(\d+)\]/g, `@$1`)
+                .replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+                .replace(/\[CQ:face,id=.*?\]/g, '')
 
             let prefixCtx = ctx.isPrivate ? `from ${sender_name}(${senderId})` : `from ${sender_name}(${senderId}) in ${group_name}(${groupId})`
             if (this.context.length !== 0 && this.context[this.context.length - 1].content.includes(prefixCtx)) {
@@ -463,19 +462,16 @@ if (!seal.ext.find('aiplugin')) {
     }
 
     function handleReply(reply, groupId, dice_name) {
-        const patterns = [
-            /from.*?[\)）][:：]/,
-            /from.*?QQ-Group[:：]\d*/,
-            /from.*?QQ[:：]\d*/,
-            '<｜end▁of▁sentence｜>',
-            '【图片】',
-            new RegExp(`from.*?${groupId}[\\)）]`),
-            new RegExp(`${dice_name}[:：]`)
-        ]
+        reply = reply
+            .replace(/from.*?[\)）][:：]/, '')
+            .replace(/from.*?QQ-Group[:：]\d*/, '')
+            .replace(/from.*?QQ[:：]\d*/, '')
+            .replace('<｜end▁of▁sentence｜>', '')
+            .replace('【图片】', '')
+            .replace(new RegExp(`from.*?${groupId}[\\)）]`), '')
+            .replace(new RegExp(`${dice_name}[:：]`), '')
+            .replace(/@(\d+)/g, `[CQ:at,qq=$1]`)
 
-        patterns.forEach(pattern => { reply = reply.replace(pattern, ''); });
-
-        reply = reply.replace(/@(\d+)/g, `[CQ:at,qq=$1]`);
         return reply;
     }
 
@@ -510,7 +506,7 @@ if (!seal.ext.find('aiplugin')) {
                     seal.replyToSender(ctx, msg, '参数错误，请使用【.ai add 群号 (权限，默认50)】添加权限');
                     return;
                 }
-                if (!val3) val3 = 50;
+                if (!val3 || isNaN(val3)) val3 = 50;
                 allow[val2] = [val3, false, false, true]
                 seal.replyToSender(ctx, msg, '权限修改完成');
                 ext.storageSet("allow", JSON.stringify(allow));
@@ -685,12 +681,12 @@ if (!seal.ext.find('aiplugin')) {
         let rawGroupId = groupId.replace(/\D+/g, "")
 
         let message = msg.message
-        let CQmodeMatch = message.match(/\[CQ:(.*?),.*?\]/)
-        let CQmode = CQmodeMatch ? CQmodeMatch[1] : "default";
+        let CQmodeMatch = message.match(/\[CQ:([^,]*?),.*?\]/g)
+        let CQmode = CQmodeMatch ? CQmodeMatch.map(match => match.replace(/\[CQ:/, '').replace(/,.*\]$/, '')) : ["default"];
 
         if (!data.hasOwnProperty(id)) AI.getData(id)
 
-        if (CQmode == "at" || CQmode == "image" || CQmode == "reply" || CQmode == "default") {
+        if (CQmode.includes('at') || CQmode.includes('image') || CQmode.includes('reply') || CQmode.includes('face') || CQmode.includes('default')) {
             const keyWords = seal.ext.getTemplateConfig(ext, "非指令关键词")
             const canPrivate = seal.ext.getBoolConfig(ext, "能否私聊使用")
             const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
