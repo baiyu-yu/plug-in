@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.5.2
+// @version      2.5.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.2');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.3');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -76,21 +76,24 @@ if (!seal.ext.find('aiplugin')) {
         "frequency_penalty",
         "presence_penalty",
         "temperature",
-        "top_p"
+        "top_p",
+        "上下文的缓存时间(min)"
     ]
     const configDefaultsFloat = [
         7,
         0,
         0,
         1,
-        1
+        1,
+        240
     ]
     const configDescFloat = [
         "范围1~10，越低越活跃，可填小数",
         "范围-2~2，部分模型没有该项。该值为正=>减少重复文本",
         "范围-2~2，部分模型没有该项。该值为正=>减少重复主题",
         "范围0~2，部分模型为0~1",
-        "范围0~1"
+        "范围0~1",
+        "可填小数，例如0.5"
     ]
     const configKeysBool = [
         "能否私聊使用",
@@ -156,6 +159,7 @@ if (!seal.ext.find('aiplugin')) {
             this.normAct = { act: 0, timestamp: 0 };
             this.images = []
             this.context = [];
+            this.timestamp = 0
         }
 
         static getData(id) {
@@ -196,10 +200,15 @@ if (!seal.ext.find('aiplugin')) {
             const temperature = seal.ext.getFloatConfig(ext, "temperature")
             const top_p = seal.ext.getFloatConfig(ext, "top_p")
             const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有骰子发送的消息")
+            const ctxCacheTime = seal.ext.getFloatConfig(ext, "上下文的缓存时间(min)")
 
             let diceId = ctx.endPoint.userId
             let rawUserId = userId.replace(/\D+/g, "")
             let rawGroupId = groupId.replace(/\D+/g, "")
+
+            let timestamp = parseInt(seal.format(ctx, "{$tTimestamp}"))
+            if (timestamp - this.timestamp > ctxCacheTime * 60) this.context = this.context.slice(-1)
+            this.timestamp = timestamp
 
             let context = [systemContext, ...this.context];
             this.cleanContext(); // 清理上下文中的 null 值
