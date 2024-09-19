@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.5.3
+// @version      2.5.4
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.3');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.4');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -101,7 +101,8 @@ if (!seal.ext.find('aiplugin')) {
         "是否在消息内添加前缀",
         "是否打印日志细节",
         "是否录入所有骰子发送的消息",
-        "是否录入指令消息"
+        "是否录入指令消息",
+        "是否开启禁止复读"
     ]
     const configDefaultsBool = [
         false,
@@ -109,7 +110,8 @@ if (!seal.ext.find('aiplugin')) {
         true,
         true,
         true,
-        false
+        false,
+        true
     ]
     const configDescBool = [
         "",
@@ -183,7 +185,7 @@ if (!seal.ext.find('aiplugin')) {
             this.context = this.context.filter(message => message !== null);
         }
 
-        async chat(ctx, msg, replymsg = false) {
+        async chat(ctx, msg, replymsg = false, retry = 0) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
 
@@ -201,6 +203,7 @@ if (!seal.ext.find('aiplugin')) {
             const top_p = seal.ext.getFloatConfig(ext, "top_p")
             const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有骰子发送的消息")
             const ctxCacheTime = seal.ext.getFloatConfig(ext, "上下文的缓存时间(min)")
+            const stopRepeat = seal.ext.getBoolConfig(ext, "是否开启禁止复读")
 
             let diceId = ctx.endPoint.userId
             let rawUserId = userId.replace(/\D+/g, "")
@@ -250,12 +253,20 @@ if (!seal.ext.find('aiplugin')) {
 
                 if (data_response.choices && data_response.choices.length > 0) {
                     let reply = data_response.choices[0].message.content;
+                    //不准复读了！
+                    if (stopRepeat && this.context.some(item => item.role == 'assistant' && item.content.replace('【图片】', '') == reply)) {
+                        if (printlog) console.log(`发现复读，重试次数：${retry + 1}/3`)
+                        this.context = this.context.filter(item => !(item.role == 'assistant' && item.content.replace('【图片】', '') == reply))
+                        if (retry > 3) this.context = this.context.filter(item => item.role != 'assistant')
+                        await this.chat(ctx, msg, replymsg, retry + 1)
+                        return;
+                    }
                     //过滤文本，哇呀好可怕，AI坏，总是弄出莫名其妙的前缀来
                     reply = handleReply(reply, groupId, dice_name);
                     reply = reply.slice(0, maxChar)
                     if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
                     seal.replyToSender(ctx, msg, reply);
-                    if (!allmsg) await this.iteration(reply, ctx, 'assistant', diceId, dice_name)
+                    if (!allmsg || !allow.hasOwnProperty(rawGroupId)) await this.iteration(reply, ctx, 'assistant', diceId, dice_name)
 
                     if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                         let p = seal.ext.getIntConfig(ext, "回复图片的概率（%）")
