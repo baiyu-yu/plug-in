@@ -1,18 +1,17 @@
 // ==UserScript==
 // @name         智谱大模型 AI Plugin 指令非指令图片版
-// @description  智谱大模型插件，用于与智谱AI进行对话，并根据特定关键词或.chat指令触发回复。（但其实其它模型也行，比如现在偷偷配置了kimi）
-// @version      1.4.0
+// @description  智谱大模型插件，用于与智谱AI进行对话，并根据特定关键词或.chat指令触发回复。1.5.0新增可使用关键词或.clearchat清除上下文。（但其实其它模型也行，比如现在偷偷配置了kimi）
+// @version      1.5.0
 // @author       白鱼
 // @timestamp    1724850114
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
-// @sealVersion  1.4.6
 // ==/UserScript==
 
 if (!seal.ext.find('BigModelai')) {
-    const ext = seal.ext.new('BigModelai', 'baiyu', '1.4.0');
+    const ext = seal.ext.new('BigModelai', 'baiyu', '1.5.0');
     seal.ext.register(ext);
 
     // 配置项注册
@@ -32,6 +31,9 @@ if (!seal.ext.find('BigModelai')) {
     seal.ext.registerStringConfig(ext, "默认user_info", "对世界充满好奇的人或者是不幸的人");
     seal.ext.registerStringConfig(ext, "大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
     seal.ext.registerStringConfig(ext, "图片大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions"); 
+    seal.ext.registerStringConfig(ext, "清除上下文触发词", "清除上下文");
+    seal.ext.registerStringConfig(ext, "清除上下文完成", "上下文已清除");
+    seal.ext.registerStringConfig(ext, "清除上下文时无上下文", "没有可清除的上下文");
     
 
     // 特殊用户配置,为了charglm-3而设置
@@ -231,6 +233,7 @@ if (!seal.ext.find('BigModelai')) {
         // 发送至 Moonshot 模型的请求
         async sendMoonshotRequest(text, userInfo, userName, ctx, msg) {
             try {
+                this.context = this.context.filter(message => !(message.role === "assistant" && message.content === "" && message.partial === true));
                 // 添加 assistant 部分到上下文
                 this.context.push({
                     role: "assistant",
@@ -502,6 +505,7 @@ if (!seal.ext.find('BigModelai')) {
     // 处理非指令消息触发
     ext.onNotCommandReceived = async (ctx, msg) => {
         const text = msg.message.trim();
+        const clearTriggerWord = seal.ext.getStringConfig(ext, "清除上下文触发词");
         if (text.includes(NON_COMMAND_KEYWORD)) {
             let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
             if (globalThis.deepseekAIContextMap.has(contextKey)) {
@@ -513,5 +517,32 @@ if (!seal.ext.find('BigModelai')) {
                 await ai.processMessage(text, ctx, msg);
             }
         }
+        if (text === clearTriggerWord) {
+            let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
+    
+            if (globalThis.deepseekAIContextMap.has(contextKey)) {
+                globalThis.deepseekAIContextMap.delete(contextKey);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文完成"));
+            } else {
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文时无上下文"));
+            }
+        }
     }
-}
+
+    // Create the clear context command
+    const cmdClearContext = seal.ext.newCmdItemInfo();
+    cmdClearContext.name = 'clearchat';
+    cmdClearContext.help = '清除上下文消息队列\n用法：触发配置好的触发词来清除上下文';
+    cmdClearContext.solve = async (ctx, msg, cmdArgs) => {
+            let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
+
+            if (globalThis.deepseekAIContextMap.has(contextKey)) {
+                globalThis.deepseekAIContextMap.delete(contextKey);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文完成"));
+            } else {
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文时无上下文"));
+            }
+        }
+        return seal.ext.newCmdExecuteResult(true);
+    };
+    ext.cmdMap['clearchat'] = cmdClearContext;
