@@ -125,13 +125,19 @@ if (!seal.ext.find('aiplugin')) {
     ]
     const configKeysTemplate = [
         "插嘴检测话题",
-        "非指令关键词"
+        "非指令关键词",
+        "非指令清除上下文",
+        "清除成功回复"
     ]
     const configDefaultsTemplate = [
         ["吃饭", "跑团", "大成功", "大失败", "模组", "AI", "骰娘"],
-        ["黑鱼黑鱼"]
+        ["黑鱼黑鱼"],
+        ["遗忘吧"],
+        ["啥？"]
     ]
     const configDescTemplate = [
+        "",
+        "",
         "",
         ""
     ]
@@ -726,8 +732,31 @@ if (!seal.ext.find('aiplugin')) {
 
         if (CQmode.includes('at') || CQmode.includes('image') || CQmode.includes('reply') || CQmode.includes('face') || CQmode.includes('default')) {
             const keyWords = seal.ext.getTemplateConfig(ext, "非指令关键词")
+            const clearWords = seal.ext.getTemplateConfig(ext, "非指令清除上下文")
+            const clearReplys = seal.ext.getTemplateConfig(ext, "清除成功回复")
             const canPrivate = seal.ext.getBoolConfig(ext, "能否私聊使用")
             const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
+
+            if (clearWords.some(item => message.includes(item))) {
+                if (ctx.privilegeLevel >= 50) {
+                    if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
+                        clearTimeout(data[id].timer)
+                        data[id].timer = null
+                        data[id].counter = 0
+                        //console.log('清除计时器和计数器')
+                    }
+
+
+                    data[id].context = []
+                    seal.replyToSender(ctx, msg, clearReplys[Math.floor(Math.random() * clearReplys.length)]);
+                    data[id].saveData()
+                    return;
+                }
+                else {
+                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                    return;
+                }
+            }
 
             if (keyWords.some(item => message.includes(item))) {
                 if (ctx.isPrivate && !canPrivate) return;
