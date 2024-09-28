@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.5.5
+// @version      2.5.6
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.5');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.5.6');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -196,8 +196,9 @@ if (!seal.ext.find('aiplugin')) {
         async chat(ctx, msg, replymsg = false, retry = 0) {
             let userId = ctx.player.userId
             let groupId = ctx.group.groupId
+            let group_name = ctx.group.groupName
 
-            const systemContext = { role: "system", content: seal.ext.getStringConfig(ext, "角色设定") };
+            const systemContext = { role: "system", content: seal.ext.getStringConfig(ext, "角色设定") + `\n当前群聊:${group_name}` };
             const dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
             const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
             const url = seal.ext.getStringConfig(ext, "url地址")
@@ -313,7 +314,7 @@ if (!seal.ext.find('aiplugin')) {
 
             let arr = this.context
                 .filter(item => item.role == 'user')
-                .map(item => item.content.replace(/^<\|from(.*?)in.*?\|>/, '  $1:'))
+                .map(item => item.content.replace(/^<\|from(.*?)\|>/, '  $1:'))
             let text = arr.slice(-ctxLength).join(' ').slice(-maxChar)
 
             let message = { role: 'user', content: text }
@@ -440,11 +441,10 @@ if (!seal.ext.find('aiplugin')) {
                 .replace(/\[CQ:face,id=.*?\]/g, '')
                 .replace(/\[CQ:at,qq=(\d+)\]/g, (match, p1) => `@${getNameById(ctx.endPoint.userId, groupId, msg.guildId, `QQ:${p1}`, dice_name)}`)
 
-            let prefixCtx = ctx.isPrivate ? `<|from ${sender_name}|>` : `<|from ${sender_name} in Group ${group_name}|>`
-            if (this.context.length !== 0 && this.context[this.context.length - 1].content.includes(prefixCtx)) {
+            if (this.context.length !== 0 && this.context[this.context.length - 1].content.includes(`<|from ${sender_name}|>`)) {
                 this.context[this.context.length - 1].content += ` ${text}`
             } else {
-                if (prefix) text = `${prefixCtx} ${text}`
+                if (prefix) text = `<|from ${sender_name}|> ${text}`
                 let message = { role: role, content: text }
                 this.context.push(message);
             }
