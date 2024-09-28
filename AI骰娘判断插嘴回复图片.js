@@ -102,7 +102,8 @@ if (!seal.ext.find('aiplugin')) {
         "是否打印日志细节",
         "是否录入所有骰子发送的消息",
         "是否录入指令消息",
-        "是否开启禁止复读"
+        "是否开启禁止复读",
+        "是否截断换行后文本"
     ]
     const configDefaultsBool = [
         false,
@@ -111,7 +112,8 @@ if (!seal.ext.find('aiplugin')) {
         true,
         true,
         false,
-        true
+        true,
+        false
     ]
     const configDescBool = [
         "",
@@ -205,7 +207,6 @@ if (!seal.ext.find('aiplugin')) {
             const ctxCacheTime = seal.ext.getFloatConfig(ext, "上下文的缓存时间(min)")
             const stopRepeat = seal.ext.getBoolConfig(ext, "是否开启禁止复读")
 
-            let diceId = ctx.endPoint.userId
             let rawUserId = userId.replace(/\D+/g, "")
             let rawGroupId = groupId.replace(/\D+/g, "")
 
@@ -485,6 +486,9 @@ if (!seal.ext.find('aiplugin')) {
     }
 
     function handleReply(reply) {
+        const cut = seal.ext.getBoolConfig(ext, "是否截断换行后文本")
+
+        if (cut) reply = reply.split('\n')[0]
         reply = reply
             .replace(/<[\|｜].*[\|｜]>/g, '')
             .replace('【图片】', '')
