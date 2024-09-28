@@ -1,18 +1,17 @@
 // ==UserScript==
 // @name         智谱大模型 AI Plugin 指令非指令图片版
-// @description  智谱大模型插件，用于与智谱AI进行对话，并根据特定关键词或.chat指令触发回复。可以选择glm-4/charglm-3模型，配置项中user_info和user_name的几个只有选择charglm-3才可以使用。可以选择是否识别图片。具体修改看配置项，不懂不建议直接修改插件。不建议使用包含在图片url中字符的作为非指令触发词。在https://open.bigmodel.cn/usercenter/apikeys进行注册获取api和token。
-// @version      1.3.0
+// @description  智谱大模型插件，用于与智谱AI进行对话，并根据特定关键词或.chat指令触发回复。1.5.0新增可使用关键词或.clearchat清除上下文。（但其实其它模型也行，比如现在偷偷配置了kimi）
+// @version      1.5.0
 // @author       白鱼
 // @timestamp    1724850114
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
 // @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E6%99%BA%E8%B0%B1%E5%A4%A7%E6%A8%A1%E5%9E%8B%20AI%20Plugin.js
-// @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('BigModelai')) {
-    const ext = seal.ext.new('BigModelai', 'baiyu', '1.3.0');
+    const ext = seal.ext.new('BigModelai', 'baiyu', '1.5.0');
     seal.ext.register(ext);
 
     // 配置项注册
@@ -23,14 +22,21 @@ if (!seal.ext.find('BigModelai')) {
     seal.ext.registerStringConfig(ext, "角色设定", "黑鱼是一个可爱的有鲨鱼尾巴的小女孩...");
     seal.ext.registerStringConfig(ext, "非指令关键词", "黑鱼黑鱼");
     seal.ext.registerBoolConfig(ext, "允许上报图片(透明底图片会报错400)", false);
-    seal.ext.registerStringConfig(ext, "模型选择(glm-4/charglm-3)", "glm-4");
-    seal.ext.registerStringConfig(ext, "当使用charglm-3时bot名字", "黑鱼");
+    seal.ext.registerStringConfig(ext, "模型选择(charglm-3/moonshot-v1-auto/其它)", "glm-4");
+    seal.ext.registerStringConfig(ext, "图片大模型选择", "glm-4v"); 
+    seal.ext.registerStringConfig(ext, "bot名字", "黑鱼");
     seal.ext.registerBoolConfig(ext, "是否打印日志", false);
     seal.ext.registerBoolConfig(ext, "启用引用回复和@用户", true);
     seal.ext.registerStringConfig(ext, "二次上报自定义文本（识别图片时由于使用的模型无法添加角色设定，因此采用二次上报的方式让ai进行角色扮演，如果对图片识别返回文本不满意可以修改这里）", "你会将你之前发出的消息在保留原有大致意思的情况下以你自己的语气表述一遍，不会添加任何别的内容或者改变你收到的消息的意思，也不要表示你只是在转述消息，也不要对消息做出评论，不要表达自己的看法。");
     seal.ext.registerStringConfig(ext, "默认user_info", "对世界充满好奇的人或者是不幸的人");
+    seal.ext.registerStringConfig(ext, "大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+    seal.ext.registerStringConfig(ext, "图片大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions"); 
+    seal.ext.registerStringConfig(ext, "清除上下文触发词", "清除上下文");
+    seal.ext.registerStringConfig(ext, "清除上下文完成", "上下文已清除");
+    seal.ext.registerStringConfig(ext, "清除上下文时无上下文", "没有可清除的上下文");
+    
 
-    // 特殊用户配置
+    // 特殊用户配置,为了charglm-3而设置
     seal.ext.registerStringConfig(ext, "特殊用户ID配置1", "QQ:1004205930");
     seal.ext.registerStringConfig(ext, "特殊user_info和user_name1", "黑鱼的骰主|白鱼");
     seal.ext.registerStringConfig(ext, "特殊用户ID配置2", "QQ:1655009569");
@@ -38,14 +44,16 @@ if (!seal.ext.find('BigModelai')) {
     seal.ext.registerStringConfig(ext, "特殊用户ID配置3", "[空]");
     seal.ext.registerStringConfig(ext, "特殊user_info和user_name3", "[空]");
 
-    const DEEPSEEK_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+    const DEEPSEEK_IMAGE_API_URL = seal.ext.getStringConfig(ext, "图片大模型url");
+    const DEEPSEEK_API_URL = seal.ext.getStringConfig(ext, "大模型url");
     const API_KEYS = seal.ext.getStringConfig(ext, "你的APIkeys");
     const MAX_REPLY_TOKENS = parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数"));
     const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数")) * 2;
     const SYSTEM_CONTEXT_CONTENT = seal.ext.getStringConfig(ext, "角色设定");
     const NON_COMMAND_KEYWORD = seal.ext.getStringConfig(ext, "非指令关键词");
     const ALLOW_IMAGE_REPORT = seal.ext.getBoolConfig(ext, "允许上报图片(透明底图片会报错400)");
-    const MODEL_CHOICE = seal.ext.getStringConfig(ext, "模型选择(glm-4/charglm-3)");
+    const MODEL_CHOICE = seal.ext.getStringConfig(ext, "模型选择(charglm-3/moonshot-v1-auto/其它)");
+    const IMAGE_MODEL_CHOICE = seal.ext.getStringConfig(ext, "图片大模型选择");
     const MAX_REPLY_CHARS = parseInt(seal.ext.getStringConfig(ext, "最大回复字符数(防止AI抽风)"));
     const PRINT_LOGS = seal.ext.getBoolConfig(ext, "是否打印日志");
     const ENABLE_REPLY_AND_AT = seal.ext.getBoolConfig(ext, "启用引用回复和@用户");
@@ -133,7 +141,9 @@ if (!seal.ext.find('BigModelai')) {
             // 根据模型选择进行请求发送
             if (MODEL_CHOICE === "charglm-3") {
                 await this.sendZhipuRequest(text, userInfo, userName, ctx, msg);
-            } else {
+            } else if (MODEL_CHOICE === "moonshot-v1-auto") {
+                await this.sendMoonshotRequest(text, userInfo, userName, ctx, msg);
+            }else {
                 await this.sendRequest(ctx, msg);
             }
         }
@@ -166,7 +176,7 @@ if (!seal.ext.find('BigModelai')) {
             try {
                 if (PRINT_LOGS) console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
 
-                const response = await fetch(`${DEEPSEEK_API_URL}`, {
+                const response = await fetch(`this.hasImage ? ${DEEPSEEK_IMAGE_API_URL} : ${DEEPSEEK_API_URL}`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${API_KEYS}`,
@@ -174,7 +184,7 @@ if (!seal.ext.find('BigModelai')) {
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: this.hasImage ? "glm-4v" : "glm-4",
+                        model: this.hasImage ? IMAGE_MODEL_CHOICE : MODEL_CHOICE,
                         messages: this.context,
                         max_tokens: MAX_REPLY_TOKENS,
                         stream: false,
@@ -220,7 +230,77 @@ if (!seal.ext.find('BigModelai')) {
                 console.error("请求出错：", error);
             }
         }
-
+        // 发送至 Moonshot 模型的请求
+        async sendMoonshotRequest(text, userInfo, userName, ctx, msg) {
+            try {
+                this.context = this.context.filter(message => !(message.role === "assistant" && message.content === "" && message.partial === true));
+                // 添加 assistant 部分到上下文
+                this.context.push({
+                    role: "assistant",
+                    name: seal.ext.getStringConfig(ext, "bot名字"),
+                    content: "",
+                    partial: true, // 表示允许部分响应
+                });
+        
+                if (PRINT_LOGS) console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
+        
+                // 构建请求体
+                const payload = {
+                    model: "moonshot-v1-auto", // 使用 moonshot 模型
+                    messages: this.context,    // 已经在 chat 中构造了消息体
+                    temperature: 0.3,
+                    max_tokens: MAX_REPLY_TOKENS // 设置最大 token 数，确保长回复
+                };
+        
+                // 发送请求到 Moonshot API
+                const response = await fetch(`${DEEPSEEK_API_URL}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEYS}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+        
+                // 处理响应
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.json();
+                if (PRINT_LOGS) console.log('moonshot响应:', JSON.stringify(data, null, 2));
+        
+                if (data.error) {
+                    console.error(`moonshot请求失败：${JSON.stringify(data.error)}`);
+                    return;
+                }
+        
+                // 捕获返回的消息并将其添加到最后一个 assistant 的 content 中
+                if (data.choices && data.choices.length > 0) {
+                    let responseContent = data.choices[0].message.content;
+                    responseContent = responseContent.replace(/from .+?: /g, ''); // 清除多余的 "from" 字段
+        
+                    // 更新最后一个 assistant 消息的 content
+                    this.context[this.context.length - 1].content = responseContent;
+        
+                    // 截断回复内容并限制最大长度
+                    if (responseContent.length > MAX_REPLY_CHARS) {
+                        responseContent = responseContent.slice(0, MAX_REPLY_CHARS) + `（以下省略${responseContent.length - MAX_REPLY_CHARS}字）`;
+                    }
+        
+                    // 是否启用引用回复
+                    if (ENABLE_REPLY_AND_AT) {
+                        seal.replyToSender(ctx, msg, `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${msg.sender.userId.split(':')[1]}] ${responseContent}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, responseContent);
+                    }
+                } else {
+                    console.error("moonshot响应中没有choices或choices为空");
+                }
+            } catch (error) {
+                console.error("moonshot请求出错：", error);
+            }
+        }        
+        
         // 发送charglm-3模型请求
         async sendZhipuRequest(text, userInfo, userName, ctx, msg) {
             try {
@@ -238,10 +318,12 @@ if (!seal.ext.find('BigModelai')) {
                         meta: {
                             "user_info": userInfo,
                             "bot_info": SYSTEM_CONTEXT_CONTENT,
-                            "bot_name": seal.ext.getStringConfig(ext, "当使用charglm-3时bot名字"),
+                            "bot_name": seal.ext.getStringConfig(ext, "bot名字"),
                             "user_name": userName
                         },
-                        messages: this.context.concat([{"role": "user", "content": text}])
+                        messages: this.context.concat([{"role": "user", "content": text}]),
+                        temperature: 0.3,
+                        max_tokens: MAX_REPLY_TOKENS
                     })
                 });
 
@@ -294,7 +376,7 @@ if (!seal.ext.find('BigModelai')) {
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: "glm-4",
+                        model: MODEL_CHOICE,
                         messages: secondReportContext,
                         max_tokens: MAX_REPLY_TOKENS,
                         stream: false,
@@ -423,6 +505,7 @@ if (!seal.ext.find('BigModelai')) {
     // 处理非指令消息触发
     ext.onNotCommandReceived = async (ctx, msg) => {
         const text = msg.message.trim();
+        const clearTriggerWord = seal.ext.getStringConfig(ext, "清除上下文触发词");
         if (text.includes(NON_COMMAND_KEYWORD)) {
             let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
             if (globalThis.deepseekAIContextMap.has(contextKey)) {
@@ -434,46 +517,32 @@ if (!seal.ext.find('BigModelai')) {
                 await ai.processMessage(text, ctx, msg);
             }
         }
-    };
-
-    // 添加生成图片的指令，但是测试都是404，无法理解，如果有可以正常生成的让我康康
-    const cmdGenerateImage = seal.ext.newCmdItemInfo();
-    cmdGenerateImage.name = 'AI绘图';
-    cmdGenerateImage.help = '生成图片\n用法：.AI绘图 生成描述';
-    cmdGenerateImage.solve = async (ctx, msg, cmdArgs) => {
-        let prompt = cmdArgs.getArgN(1);
-        if (!prompt) {
-            seal.replyToSender(ctx, msg, `请输入描述`);
-            return seal.ext.newCmdExecuteResult(true);
-        }
-
-        try {
-            const response = await fetch('https://open.bigmodel.cn/api/paas/v4/image/generations', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${API_KEYS}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: 'cogview-3',
-                    prompt: prompt
-                })
-            });
-
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            const data = await response.json();
-            if (data.data && data.data.length > 0) {
-                const imageUrl = data.data[0].url;
-                seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
+        if (text === clearTriggerWord) {
+            let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
+    
+            if (globalThis.deepseekAIContextMap.has(contextKey)) {
+                globalThis.deepseekAIContextMap.delete(contextKey);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文完成"));
             } else {
-                seal.replyToSender(ctx, msg, `未生成图片，请重试。`);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文时无上下文"));
             }
-        } catch (error) {
-            console.error("图片生成请求出错：", error);
-            seal.replyToSender(ctx, msg, `图片生成失败，请稍后重试。`);
+        }
+    }
+
+    // Create the clear context command
+    const cmdClearContext = seal.ext.newCmdItemInfo();
+    cmdClearContext.name = 'clearchat';
+    cmdClearContext.help = '清除上下文消息队列\n用法：触发配置好的触发词来清除上下文';
+    cmdClearContext.solve = async (ctx, msg, cmdArgs) => {
+            let contextKey = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
+
+            if (globalThis.deepseekAIContextMap.has(contextKey)) {
+                globalThis.deepseekAIContextMap.delete(contextKey);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文完成"));
+            } else {
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, "清除上下文时无上下文"));
+            }
         }
         return seal.ext.newCmdExecuteResult(true);
     };
-    ext.cmdMap['AI绘图'] = cmdGenerateImage;
-}  
+    ext.cmdMap['clearchat'] = cmdClearContext;
