@@ -27,8 +27,8 @@ if (!seal.ext.find('deepseekaichaos')) {
         "开启AI回复词",
         "关闭AI回复词",
         "特殊关键词强制触发",
-        "清空上下文关键词（暂时没用，悲鸣）",
-        "清空上下文回复词（暂时没用，悲鸣）",
+        "清空上下文关键词",
+        "清空上下文回复词",
         "允许开启AI权限等级（100为骰主，70为白名单，60为群主，50为管理，40为邀请者，0为所有人）"
     ];
     const configDefaults = [
@@ -171,9 +171,8 @@ if (!seal.ext.find('deepseekaichaos')) {
             { keyword: DISABLE_AI_KEYWORD, response: DISABLE_AI_RESPONSE, action: () => aiStateMap[contextKey] = false },
             { keyword: CLEAR_CONTEXT_KEYWORD, response: CLEAR_CONTEXT_RESPONSE, action: () => {
                 if (globalThis.deepseekAIContextMap.has(contextKey)) {
-                    const aiInstance = globalThis.deepseekAIContextMap.get(contextKey);
-                    aiInstance.clearAllUserContext();
-                }//哈哈，没用，怎么一回事呢
+                    globalThis.deepseekAIContextMap.delete(contextKey);
+                }
             }},
             { keyword: "statusAI", response: () => {
                 const aiStatus = aiStateMap[contextKey] ? "已开启" : "未开启";
