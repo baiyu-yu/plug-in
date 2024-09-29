@@ -16,7 +16,7 @@ if (!seal.ext.find('BigModelai')) {
 
     // 配置项注册
     seal.ext.registerStringConfig(ext, "你的APIkeys", "yours");
-    seal.ext.registerStringConfig(ext, "你的图片大模型APIkeys", "yours");    
+    seal.ext.registerStringConfig(ext, "图像APIkeys", "your_image_model_key");  
     seal.ext.registerStringConfig(ext, "最大回复tokens数", "100");
     seal.ext.registerStringConfig(ext, "最大回复字符数(防止AI抽风)", "100");
     seal.ext.registerStringConfig(ext, "存储上下文对话限制轮数", "4");
@@ -48,7 +48,6 @@ if (!seal.ext.find('BigModelai')) {
     const DEEPSEEK_IMAGE_API_URL = seal.ext.getStringConfig(ext, "图片大模型url");
     const DEEPSEEK_API_URL = seal.ext.getStringConfig(ext, "大模型url");
     const API_KEYS = seal.ext.getStringConfig(ext, "你的APIkeys");
-    const IMAGE_API_KEYs = seal.ext.getStringConfig(ext, "你的图片大模型APIkeys");
     const MAX_REPLY_TOKENS = parseInt(seal.ext.getStringConfig(ext, "最大回复tokens数"));
     const MAX_CONTEXT_LENGTH = parseInt(seal.ext.getStringConfig(ext, "存储上下文对话限制轮数")) * 2;
     const SYSTEM_CONTEXT_CONTENT = seal.ext.getStringConfig(ext, "角色设定");
@@ -178,11 +177,11 @@ if (!seal.ext.find('BigModelai')) {
             try {
                 if (PRINT_LOGS) console.log('请求发送前的上下文:', JSON.stringify(this.context, null, 2));
                 const apiUrl = this.hasImage ? DEEPSEEK_IMAGE_API_URL : DEEPSEEK_API_URL;
-                const apiKey = this.hasImage ? IMAGE_API_KEYs : API_KEYS;
+                const apiKey = this.hasImage ? seal.ext.getStringConfig(ext, "图像APIkeys") : API_KEYS;
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer apiKey`,
+                        'Authorization': `Bearer ${apiKey}`,
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
