@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         识图AI
 // @author       错误
-// @version      1.0.0
+// @version      1.0.1
 // @description  为aiplugin插件提供识别图片信息的能力。
 // @timestamp    1728126311
 // 2024-10-05 19:05:11
@@ -13,22 +13,26 @@
 // 首先检查是否已经存在
 let ext = seal.ext.find('imageAI');
 if (!ext) {
-    ext = seal.ext.new('imageAI', '错误', '1.0.0');
+    ext = seal.ext.new('imageAI', '错误', '1.0.1');
     // 注册扩展
     seal.ext.register(ext);
 
-    seal.ext.registerOptionConfig(ext, "图片大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions", ["https://open.bigmodel.cn/api/paas/v4/chat/completions"], "没有更多选择了喵")
+    seal.ext.registerOptionConfig(ext, "图片大模型url", "https://open.bigmodel.cn/api/paas/v4/chat/completions", ["https://open.bigmodel.cn/api/paas/v4/chat/completions", "其他"])
+    seal.ext.registerStringConfig(ext, "其他图片大模型url", "yours");
     seal.ext.registerStringConfig(ext, "APIkeys", "yours");
-    seal.ext.registerOptionConfig(ext, "模型选择", "glm-4v", ["glm-4v", "glm-4v-plus"])
+    seal.ext.registerOptionConfig(ext, "模型选择", "glm-4v", ["glm-4v", "glm-4v-plus", "其他"]);
+    seal.ext.registerStringConfig(ext, "其他模型名称", "yours");
     seal.ext.registerIntConfig(ext, "最大回复tokens数", "100");
     seal.ext.registerIntConfig(ext, "最大回复字符数", "100");
 
 
     async function imageAI(imageUrl, text = '') {
         try {
-            const apiUrl = seal.ext.getOptionConfig(ext, "图片大模型url");
+            let apiUrl = seal.ext.getOptionConfig(ext, "图片大模型url")
+            if (apiUrl == "其他") apiUrl = seal.ext.getStringConfig(ext, "其他图片大模型url")
             const apiKey = seal.ext.getStringConfig(ext, "APIkeys");
-            const MODEL_CHOICE = seal.ext.getOptionConfig(ext, "模型选择");
+            let MODEL_CHOICE = seal.ext.getOptionConfig(ext, "模型选择");
+            if (MODEL_CHOICE == "其他") MODEL_CHOICE = seal.ext.getStringConfig(ext, "其他模型名称")
             const MAX_REPLY_TOKENS = seal.ext.getIntConfig(ext, "最大回复tokens数");
             const MAX_REPLY_CHARS = seal.ext.getIntConfig(ext, "最大回复字符数");
             const context = [{
@@ -68,7 +72,7 @@ if (!ext) {
 
             if (data.error) {
                 console.error(`请求失败：${JSON.stringify(data.error)}`);
-                return '【图片】';
+                return '<|图片|>';
             }
 
             if (data.choices && data.choices.length > 0) {
@@ -76,11 +80,11 @@ if (!ext) {
                 return reply.slice(0, MAX_REPLY_CHARS);
             } else {
                 console.error("服务器响应中没有choices或choices为空");
-                return '【图片】';
+                return '<|图片|>';
             }
         } catch (error) {
             console.error("请求出错：", error);
-            return '【图片】';
+            return '<|图片|>';
         }
     }
 
