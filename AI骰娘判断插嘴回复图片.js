@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.6.0
+// @version      2.6.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.0');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -288,7 +288,6 @@ if (!seal.ext.find('aiplugin')) {
 
             let groupId = ctx.group.groupId
             let rawGroupId = groupId.replace(/\D+/g, "")
-            let group_name = ctx.group.groupName
             let dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
             let imagesign = false
 
@@ -298,15 +297,30 @@ if (!seal.ext.find('aiplugin')) {
                     let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
                     let imageCQCode = text.match(/\[CQ:image,file=https:.*?\]/)[0];
                     this.images.push(imageCQCode);
-
                     if (this.images.length > max_images) this.images = this.images.slice(-max_images);
+
+                    const imageAIExt = seal.ext.find('imageAI')
+                    if (!imageAIExt) {
+                        text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+                    } else {
+                        let match = msg.message.match(/\[CQ:image,file=(.*?)\]/);
+                        if (match) {
+                            let url = match[1];
+                            try {
+                                let reply = await globalThis.imageAI(url)
+                                text = text.replace(/\[CQ:image,file=http.*?\]/g, reply)
+                            } catch (error) {
+                                text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+                                console.error('Error in imageAI:', error);
+                            }
+                        }
+                    }
                 }
                 imagesign = true
             }
             //处理文本
             text = text
                 .replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, '')
-                .replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
                 .replace(/\[CQ:face,id=.*?\]/g, '')
                 .replace(/\[CQ:at,qq=(\d+)\]/g, (match, p1) => `@${getNameById(ctx.endPoint.userId, groupId, msg.guildId, `QQ:${p1}`, dice_name)}`)
 
