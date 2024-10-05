@@ -177,9 +177,9 @@ if (!seal.ext.find('aiplugin')) {
             let reply = await chat(context, frequency_penalty, presence_penalty, temperature, top_p)
 
             //不准复读了！
-            if (stopRepeat && this.context.some(item => item.role == 'assistant' && item.content.replace('【图片】', '') == reply)) {
+            if (stopRepeat && this.context.some(item => item.role == 'assistant' && item.content.replace('<|图片|>', '') == reply)) {
                 if (printlog) console.log(`发现复读，重试次数：${retry + 1}/3`)
-                this.context = this.context.filter(item => !(item.role == 'assistant' && item.content.replace('【图片】', '') == reply))
+                this.context = this.context.filter(item => !(item.role == 'assistant' && item.content.replace('<|图片|>', '') == reply))
                 if (retry > 3) this.context = this.context.filter(item => item.role != 'assistant')
                 await this.getReply(ctx, msg, replymsg, retry + 1)
                 return;
@@ -301,16 +301,16 @@ if (!seal.ext.find('aiplugin')) {
 
                     const imageAIExt = seal.ext.find('imageAI')
                     if (!imageAIExt) {
-                        text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+                        text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
                     } else {
                         let match = msg.message.match(/\[CQ:image,file=(.*?)\]/);
                         if (match) {
                             let url = match[1];
                             try {
                                 let reply = await globalThis.imageAI(url)
-                                text = text.replace(/\[CQ:image,file=http.*?\]/g, reply)
+                                text = text.replace(/\[CQ:image,file=http.*?\]/g, `<|${reply}|>`)
                             } catch (error) {
-                                text = text.replace(/\[CQ:image,file=http.*?\]/g, '【图片】')
+                                text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
                                 console.error('Error in imageAI:', error);
                             }
                         }
@@ -380,7 +380,7 @@ if (!seal.ext.find('aiplugin')) {
         if (cut) reply = reply.split('\n')[0]
         reply = reply
             .replace(/<[\|｜].*[\|｜]>/g, '')
-            .replace('【图片】', '')
+            .replace('<|图片|>', '')
 
         return reply;
     }
