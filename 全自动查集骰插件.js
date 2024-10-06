@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         全自动查集骰插件
-// @description  全自动查集骰插件
+// @description  全自动查集骰插件，可通过添加http上报每日定时扫群列表和群成员列表检测是否在集骰群，可通过.whitelist add/remove/list group/dice <ID> 添加/移除/查看 白名单 群/骰（ID不需要前缀），可通过.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态到后端（0 或 1），可通过.移除骰号 <骰号> // 移除该骰号。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。
 // @version      1.0.0
 // @license      MIT
-// @author       白鱼
+// @author       白鱼&错误
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // ==/UserScript==
 
 if (!seal.ext.find("dicePeriodicCheck")) {
-    const ext = seal.ext.new("dicePeriodicCheck", "白鱼", "1.0.0");
+    const ext = seal.ext.new("dicePeriodicCheck", "白鱼&错误", "1.0.0");
 
     // 注册配置项，支持多个 groupApiHost
     seal.ext.register(ext);
@@ -18,7 +18,6 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     seal.ext.registerIntConfig(ext, "pauseBetweenBatches", 60, "每批请求后的等待时间（秒）");
     seal.ext.registerIntConfig(ext, "clusterDiceThreshold", 3, "多少个骰号判定为集骰");
     seal.ext.registerIntConfig(ext, "leaveGroupThreshold", 7, "超过该数值将自动退群");
-    seal.ext.registerIntConfig(ext, "集骰通知阈值", 3);
     seal.ext.registerBoolConfig(ext, "是否监听全部指令", false, "");
     seal.ext.registerTemplateConfig(ext, "监听指令名称", ["bot", "r"], "");
     seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
@@ -411,7 +410,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     //监听到指令计入消息，超过阈值时通知
     ext.onNotCommandReceived = (ctx, msg) => {
         if (ctx.isPrivate) return;
-        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        const noticeLimit = seal.ext.getIntConfig(ext, "clusterDiceThreshold");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
