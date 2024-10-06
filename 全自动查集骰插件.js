@@ -109,7 +109,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                     console.error(`无法获取登录信息，跳过 groupApiHost: ${groupApiHost}`);
                     continue;
                 }
-                
+
                 const groups = await getGroupList(groupApiHost);
                 if (!groups) {
                     console.error(`无法获取群列表，跳过 groupApiHost: ${groupApiHost}`);
@@ -315,7 +315,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
 
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && tempWhiteList[rawGroupId] && parseInt(msg.time) - tempWhiteList[rawGroupId].time < time) {
             if (!tempWhiteList[rawGroupId].dices.includes(ctx.player.userId)) tempWhiteList[rawGroupId].dices.push(ctx.player.userId);
-            if (tempWhiteList[rawGroupId].dices.length >= noticeLimit && !tempWhiteList[rawGroupId].notice) {
+            if (tempWhiteList[rawGroupId].dices.length + 1 >= noticeLimit && !tempWhiteList[rawGroupId].notice) {
                 ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${tempWhiteList[rawGroupId].dices.join('\n')}`)
                 tempWhiteList[rawGroupId].notice = true;
                 ext.storageSet("tempWhiteList", JSON.stringify(tempWhiteList));
