@@ -5,6 +5,9 @@
 // @license      MIT
 // @author       白鱼&错误
 // @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E6%9F%A5%E9%9B%86%E9%AA%B0%E6%8F%92%E4%BB%B6.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E6%9F%A5%E9%9B%86%E9%AA%B0%E6%8F%92%E4%BB%B6.js
+// @sealVersion  1.4.6
 // ==/UserScript==
 
 if (!seal.ext.find("dicePeriodicCheck")) {
