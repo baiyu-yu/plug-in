@@ -48,16 +48,62 @@ if (!seal.ext.find("集骰检查")) {
         let eps = seal.getEndPoints()
         for (let i = 0; i < eps.length; i++) {
             if (eps[i].userId === epId) {
-                let mmsg = seal.newMessage();
-                mmsg.messageType = "group";
-                mmsg.groupId = groupId;
-                mmsg.guildId = guildId;
-                mmsg.sender.userId = senderId;
-                let mctx = seal.createTempCtx(eps[i], mmsg)
-                return { mctx, mmsg };
+                let msg = seal.newMessage();
+                msg.messageType = "group";
+                msg.groupId = groupId;
+                msg.guildId = guildId;
+                msg.sender.userId = senderId;
+                let mctx = seal.createTempCtx(eps[i], msg)
+                return { mctx, msg };
             }
         }
         return undefined;
+    }
+
+    /**
+     * 通过ID发送通知
+     * @param {string} epId 
+     * @param {string} groupId 
+     * @param {string} guildId 
+     * @param {string} senderId 
+     * @param {string} text
+     */
+    function noticeById(epId, groupId, guildId, senderId, text) {
+        let eps = seal.getEndPoints()
+        for (let i = 0; i < eps.length; i++) {
+            if (eps[i].userId === epId) {
+                let msg = seal.newMessage();
+                msg.messageType = "group";
+                msg.groupId = groupId;
+                msg.guildId = guildId;
+                msg.sender.userId = senderId;
+                let mctx = seal.createTempCtx(eps[i], msg)
+                mctx.notice(text)
+            }
+        }
+    }
+
+    /**
+     * 通过ID回复
+     * @param {string} epId
+     * @param {string} groupId
+     * @param {string} guildId
+     * @param {string} senderId
+     * @param {string} text
+     */
+    function replyById(epId, groupId, guildId, senderId, text) {
+        let eps = seal.getEndPoints()
+        for (let i = 0; i < eps.length; i++) {
+            if (eps[i].userId === epId) {
+                let msg = seal.newMessage();
+                msg.messageType = "group";
+                msg.groupId = groupId;
+                msg.guildId = guildId;
+                msg.sender.userId = senderId;
+                let mctx = seal.createTempCtx(eps[i], msg)
+                seal.replyToSender(mctx, msg, text)
+            }
+        }
     }
 
     /**
@@ -241,11 +287,8 @@ if (!seal.ext.find("集骰检查")) {
                                 let adiceQQfiction = `QQ:114514`
                                 console.log('agroupIdWithPrefix:', agroupIdWithPrefix);
 
-                                let { mctx, mmsg } = getCtxAndMsgById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction);
-                                console.log(JSON.stringify(mctx, null, 1))
-                                console.log(JSON.stringify(mmsg, null, 1))
-                                mctx.notice(awarningMessage);
-                                seal.replyToSender(mctx, mmsg, awarningMessage)
+                                noticeById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction, awarningMessage);
+                                replyById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction, awarningMessage);
 
                                 console.log(`暂停5秒后尝试退群`);
                                 await new Promise(resolve => setTimeout(resolve, 5000));
@@ -265,9 +308,7 @@ if (!seal.ext.find("集骰检查")) {
                                 let diceQQfiction = `QQ:114514`
                                 console.log('groupIdWithPrefix:', groupIdWithPrefix);
 
-                                let { mctx, _ } = getCtxAndMsgById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction);
-                                console.log(JSON.stringify(mctx, null, 1))
-                                mctx.notice(warningMessage);
+                                noticeById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction, warningMessage);
                                 console.log(`警告已发送: ${warningMessage}`);
                             }
 
