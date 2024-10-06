@@ -39,6 +39,61 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     const threshold = seal.ext.getIntConfig(ext, "clusterDiceThreshold");
     const leaveThreshold = seal.ext.getIntConfig(ext, "leaveGroupThreshold");
 
+    /**
+     * 获取登录信息
+     * @param {string} groupApiHost - 群API主机地址
+     * @returns {Promise<string>} 用户ID
+     */
+    async function getLoginInfo(groupApiHost) {
+        try {
+            const loginInfoResponse = await fetch(`${groupApiHost}/get_login_info`);
+            const loginInfo = await loginInfoResponse.json();
+            console.log(`获取登录信息成功，user_id: ${loginInfo.data.user_id}`);
+            return loginInfo.data.user_id
+        } catch (error) {
+            console.error(`获取登录信息失败: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * 获取群列表
+     * @param {string} groupApiHost - 群API主机地址
+     * @returns {Promise<Array>} 群列表
+     */
+    async function getGroupList(groupApiHost) {
+        try {
+            const groupListResponse = await fetch(`${groupApiHost}/get_group_list`);
+            const groupList = await groupListResponse.json();
+            console.log(`获取群列表成功，数量: ${groupList.data.length}`);
+            return groupList.data;
+        } catch (error) {
+            console.error(`获取群列表失败: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * 获取群成员列表
+     * @param {string} groupApiHost - 群API主机地址
+     * @param {string} groupId - 群ID
+     * @returns {Promise<Array>} 群成员列表
+     */
+    async function getGroupMemberList(groupApiHost, groupId) {
+        try {
+            const memberListResponse = await fetch(`${groupApiHost}/get_group_member_list?group_id=${groupId}`);
+            const membersData = await memberListResponse.json();
+            const membersArray = Array.from(membersData.data);  // 从 data 字段获取成员数组
+            console.log(`群 ${groupId} 成员列表获取成功，数量: ${membersArray.length}`);
+            return membersArray;
+        } catch (error) {
+            console.error(`获取群 ${groupId} 成员列表失败: ${error.message}`);
+            return [];
+        }
+    }
+
+
+
     // 定义定时检查任务，针对每个 groupApiHost 进行独立处理
     seal.ext.registerTask(ext, "cron", "*/1 * * * *", async (taskCtx) => {
         try {
@@ -49,31 +104,17 @@ if (!seal.ext.find("dicePeriodicCheck")) {
 
                 console.log(`正在处理 groupApiHost: ${groupApiHost}`);
 
-                // 获取登录信息，获取 user_id
-                let loginInfoResponse, loginInfo;
-                try {
-                    loginInfoResponse = await fetch(`${groupApiHost}/get_login_info`);
-                    loginInfo = await loginInfoResponse.json();
-                    console.log(`获取登录信息成功，user_id: ${loginInfo.data.user_id}`);
-                } catch (error) {
-                    console.error(`获取登录信息失败: ${error.message}`);
+                const selfAccount = await getLoginInfo(groupApiHost);
+                if (!selfAccount) {
+                    console.error(`无法获取登录信息，跳过 groupApiHost: ${groupApiHost}`);
                     continue;
                 }
-
-                const selfAccount = loginInfo.data.user_id; // 使用登录信息中的 user_id 作为 selfAccount
-
-                // 获取群列表
-                let groupListResponse, groupList;
-                try {
-                    groupListResponse = await fetch(`${groupApiHost}/get_group_list`);
-                    groupList = await groupListResponse.json();
-                    console.log(`获取群列表成功，数量: ${groupList.data.length}`);
-                } catch (error) {
-                    console.error(`获取群列表失败: ${error.message}`);
+                
+                const groups = await getGroupList(groupApiHost);
+                if (!groups) {
+                    console.error(`无法获取群列表，跳过 groupApiHost: ${groupApiHost}`);
                     continue;
                 }
-
-                const groups = groupList.data;
 
                 // 通过方法1上报自身账号的存活状态
                 try {
@@ -107,17 +148,9 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                     for (const group of groupBatch) {
                         const groupId = group.group_id;
 
-                        // 获取群成员列表
-                        let memberListResponse, membersArray;
-                        try {
-                            memberListResponse = await fetch(`${groupApiHost}/get_group_member_list?group_id=${groupId}`);
-                            const membersData = await memberListResponse.json();
-
-                            // 解析成员列表数据
-                            membersArray = Array.from(membersData.data);  // 从 data 字段获取成员数组
-                            console.log(`群 ${groupId} 成员列表获取成功，数量: ${membersArray.length}`);
-                        } catch (error) {
-                            console.error(`获取群 ${groupId} 成员列表失败: ${error.message}`);
+                        const membersArray = await getGroupMemberList(groupApiHost, groupId);
+                        if (!membersArray) {
+                            console.error(`无法获取群 ${groupId} 成员列表，跳过`);
                             continue;
                         }
 
