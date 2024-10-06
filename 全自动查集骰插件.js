@@ -14,7 +14,7 @@
 if (!seal.ext.find("集骰检查")) {
     const ext = seal.ext.new("集骰检查", "白鱼&错误", "1.0.0");
 
-    // 注册配置项，支持多个 groupApiHost
+    // 注册配置项
     seal.ext.register(ext);
     seal.ext.registerBoolConfig(ext, "是否开启HTTP请求功能", false, '该项修改并保存后请重载js');
     seal.ext.registerTemplateConfig(ext, "HTTP端口", ["例：http://127.0.0.1:8097"]);
@@ -35,6 +35,30 @@ if (!seal.ext.find("集骰检查")) {
     const whiteListGroups = JSON.parse(ext.storageGet("whiteListGroups") || '[]');
     const whiteListDice = JSON.parse(ext.storageGet("whiteListDice") || '[]');
     const whiteListTemp = JSON.parse(ext.storageGet("whiteListTemp") || '{}');
+
+    /**
+     * 根据 ID 获取 ctx 和 msg
+     * @param {string} epId - 端点 ID
+     * @param {string} groupId - 群 ID
+     * @param {string} guildId - 频道 ID
+     * @param {string} senderId - 发送者 ID
+     * @returns {Object} ctx 和 msg 对象
+     */
+    function getCtxAndMsgById(epId, groupId, guildId, senderId) {
+        let eps = seal.getEndPoints()
+        for (let i = 0; i < eps.length; i++) {
+            if (eps[i].userId === epId) {
+                let mmsg = seal.newMessage();
+                mmsg.messageType = "group";
+                mmsg.groupId = groupId;
+                mmsg.guildId = guildId;
+                mmsg.sender.userId = senderId;
+                let mctx = seal.createTempCtx(eps[i], mmsg)
+                return { mctx, mmsg };
+            }
+        }
+        return undefined;
+    }
 
     /**
      * 获取登录信息
@@ -86,6 +110,27 @@ if (!seal.ext.find("集骰检查")) {
         } catch (error) {
             console.error(`获取群 ${groupId} 成员列表失败: ${error.message}`);
             return [];
+        }
+    }
+
+    /**
+     * 自动退群
+     * @param {string} groupApiHost - 群API主机地址
+     * @param {string} groupId - 群ID
+     * @returns {Promise<boolean>} 成功返回 true，失败返回 false
+     */
+    async function setGroupLeave(groupApiHost, groupId) {
+        try {
+            await fetch(`${groupApiHost}/set_group_leave`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ group_id: groupId, is_dismiss: false })
+            });
+            console.log(`群 ${groupId} 超过阈值，已自动退群`);
+            return true;
+        } catch (error) {
+            console.error(`自动退群失败: ${error.message}`);
+            return false;
         }
     }
 
@@ -177,10 +222,7 @@ if (!seal.ext.find("集骰检查")) {
 
                             // 获取群成员列表
                             const membersArray = await getGroupMemberList(groupApiHost, groupId);
-                            if (!membersArray) {
-                                console.error(`无法获取群 ${groupId} 成员列表`);
-                                continue;
-                            }
+                            if (!membersArray) continue;
 
                             // 过滤白名单中的骰号
                             let matchedDice = membersArray
@@ -189,38 +231,28 @@ if (!seal.ext.find("集骰检查")) {
                             console.log(`群 ${groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
 
                             if (matchedDice.length > leaveThreshold) {
-                                try {
-                                    // 发送严重警告信息
-                                    let adiceOwners = matchedDice.map(dice => dice.user_id).join(', ');
-                                    let awarningMessage = `严重警告！群号: ${groupId} 极有可能集骰。匹配到的骰号: ${adiceOwners}。将在5秒后自动退群。`;
+                                // 发送严重警告信息
+                                let adiceOwners = matchedDice.map(dice => dice.user_id).join(', ');
+                                let awarningMessage = `严重警告！群号: ${groupId} 极有可能集骰。匹配到的骰号: ${adiceOwners}。将在5秒后自动退群。`;
 
-                                    let aselfAccountWithPrefix = `QQ:${selfAccount}`;
-                                    let agroupIdWithPrefix = `QQ-Group:${groupId}`;
-                                    let aguildIdfiction = ""
-                                    let adiceQQfiction = `QQ:114514`
-                                    console.log('agroupIdWithPrefix:', agroupIdWithPrefix);
-                                    let mmmsg = seal.newMessage();
-                                    mmmsg.messageType = "group";
-                                    mmmsg.groupId = agroupIdWithPrefix;
-                                    mmmsg.guildId = aguildIdfiction;
-                                    mmmsg.sender.userId = adiceQQfiction;
-                                    let mctx = getctxById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction);
-                                    console.log(JSON.stringify(mctx, null, 1))
-                                    console.log(JSON.stringify(mmmsg, null, 1))
-                                    mctx.notice(awarningMessage);
-                                    seal.replyToSender(mctx, mmmsg, awarningMessage)
-                                    console.log(`暂停5秒后尝试退群`);
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
-                                    // 自动退群
-                                    await fetch(`${groupApiHost}/set_group_leave`, {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ group_id: groupId, is_dismiss: false })
-                                    });
-                                    console.log(`群 ${groupId} 超过阈值，已自动退群`);
-                                } catch (error) {
-                                    console.error(`尝试退群失败: ${error.message}`);
-                                }
+                                let aselfAccountWithPrefix = `QQ:${selfAccount}`;
+                                let agroupIdWithPrefix = `QQ-Group:${groupId}`;
+                                let aguildIdfiction = ""
+                                let adiceQQfiction = `QQ:114514`
+                                console.log('agroupIdWithPrefix:', agroupIdWithPrefix);
+
+                                let { mctx, mmsg } = getCtxAndMsgById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction);
+                                console.log(JSON.stringify(mctx, null, 1))
+                                console.log(JSON.stringify(mmsg, null, 1))
+                                mctx.notice(awarningMessage);
+                                seal.replyToSender(mctx, mmsg, awarningMessage)
+
+                                console.log(`暂停5秒后尝试退群`);
+                                await new Promise(resolve => setTimeout(resolve, 5000));
+
+                                // 自动退群
+                                if (!await setGroupLeave(groupApiHost, groupId)) continue;
+
                             } else if (matchedDice.length >= threshold) {
                                 // 触发警告
                                 let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
@@ -232,7 +264,8 @@ if (!seal.ext.find("集骰检查")) {
                                 let guildIdfiction = ""
                                 let diceQQfiction = `QQ:114514`
                                 console.log('groupIdWithPrefix:', groupIdWithPrefix);
-                                let mctx = getctxById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction);
+
+                                let { mctx, _ } = getCtxAndMsgById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction);
                                 console.log(JSON.stringify(mctx, null, 1))
                                 mctx.notice(warningMessage);
                                 console.log(`警告已发送: ${warningMessage}`);
@@ -252,22 +285,6 @@ if (!seal.ext.find("集骰检查")) {
                 console.error("定期检查任务执行失败:", error);
             }
         });
-    }
-
-
-    function getctxById(epId, groupId, guildId, senderId) {
-        let eps = seal.getEndPoints()
-        for (let i = 0; i < eps.length; i++) {
-            if (eps[i].userId === epId) {
-                let mmsg = seal.newMessage();
-                mmsg.messageType = "group";
-                mmsg.groupId = groupId;
-                mmsg.guildId = guildId;
-                mmsg.sender.userId = senderId;
-                return seal.createTempCtx(eps[i], mmsg);
-            }
-        }
-        return undefined;
     }
 
     // 指令：管理群号和骰号白名单
