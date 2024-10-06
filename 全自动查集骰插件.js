@@ -92,6 +92,44 @@ if (!seal.ext.find("dicePeriodicCheck")) {
         }
     }
 
+    /**
+     * 通过方法1上报自身账号的存活状态
+     * @param {string} backendHost - 后端服务器地址
+     * @param {string} selfAccount - 自身账号
+     * @returns {Promise<boolean>} 上报成功返回 true，失败返回 false
+     */
+    async function reportSelfAliveStatus(backendHost, selfAccount) {
+        try {
+            await fetch(`${backendHost}/api/report_alive_method1`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dice_id: selfAccount })
+            });
+            console.log(`上报自身账号存活状态成功`);
+            return true;
+        } catch (error) {
+            console.error(`上报自身账号存活状态失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * 获取存活骰号列表
+     * @param {string} backendHost - 后端服务器地址
+     * @returns {Promise<Array>} 存活骰号列表
+     */
+    async function getAliveDiceList(backendHost) {
+        try {
+            const diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
+            const aliveDice = await diceResponse.json();
+            console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
+            return aliveDice;
+        } catch (error) {
+            console.error(`获取存活骰号失败: ${error.message}`);
+            return [];
+        }
+    }
+
 
 
     // 定义定时检查任务，针对每个 groupApiHost 进行独立处理
@@ -105,40 +143,16 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                 console.log(`正在处理 groupApiHost: ${groupApiHost}`);
 
                 const selfAccount = await getLoginInfo(groupApiHost);
-                if (!selfAccount) {
-                    console.error(`无法获取登录信息，跳过 groupApiHost: ${groupApiHost}`);
-                    continue;
-                }
+                if (!selfAccount) continue;
 
                 const groups = await getGroupList(groupApiHost);
-                if (!groups) {
-                    console.error(`无法获取群列表，跳过 groupApiHost: ${groupApiHost}`);
-                    continue;
-                }
+                if (!groups) continue;
 
-                // 通过方法1上报自身账号的存活状态
-                try {
-                    await fetch(`${backendHost}/api/report_alive_method1`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ dice_id: selfAccount })
-                    });
-                    console.log(`账号 ${selfAccount} 存活状态上报成功`);
-                } catch (error) {
-                    console.error(`存活状态上报失败: ${error.message}`);
-                    continue;
-                }
+                if (!await reportSelfAliveStatus(backendHost, selfAccount)) continue;
 
                 // 获取存活骰号列表
-                let diceResponse, aliveDice;
-                try {
-                    diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
-                    aliveDice = await diceResponse.json();
-                    console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
-                } catch (error) {
-                    console.error(`获取存活骰号失败: ${error.message}`);
-                    continue;
-                }
+                const aliveDice = await getAliveDiceList(backendHost);
+                if (!aliveDice) continue;
 
                 // 按批次处理群成员检查
                 for (let j = 0; j < groups.length; j += maxGroups) {
