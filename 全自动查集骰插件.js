@@ -7,7 +7,7 @@
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // ==/UserScript==
 
-if (!seal.ext.find("dicePeriodicCheck")) { 
+if (!seal.ext.find("dicePeriodicCheck")) {
     const ext = seal.ext.new("dicePeriodicCheck", "白鱼", "1.0.0");
 
     // 注册配置项，支持多个 groupApiHost 和 selfAccount
@@ -18,8 +18,18 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     seal.ext.registerIntConfig(ext, "pauseBetweenBatches", 60, "每批请求后的等待时间（秒）");
     seal.ext.registerIntConfig(ext, "clusterDiceThreshold", 5, "多少个骰号判定为集骰");
     seal.ext.registerIntConfig(ext, "leaveGroupThreshold", 10, "超过该数值将自动退群");
+    seal.ext.registerIntConfig(ext, "集骰通知阈值", 3);
+    seal.ext.registerBoolConfig(ext, "是否监听全部指令", false, "");
+    seal.ext.registerTemplateConfig(ext, "监听指令名称", ["bot", "r"], "");
+    seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
+    seal.ext.registerTemplateConfig(ext, "计入消息模版", ["SealDice|Shiki|AstralDice|OlivaDice|SitaNya", "[Dd]\\d"], "使用正则表达式");
+    seal.ext.registerIntConfig(ext, "指令后n秒内计入", 5, "");
+    seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单");
 
     const backendHost = "http://110.41.69.149:8889"; // 后端服务器地址，写死
+
+    const tempWhiteList = JSON.parse(ext.storageGet("tempWhiteList") || '{}');
+
 
     // 获取配置项
     let groupApiHosts = seal.ext.getTemplateConfig(ext, "groupApiHost");
@@ -114,20 +124,20 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                         // 比对存活骰号
                         let matchedDice = membersArray.filter(member => aliveDice.includes(member.user_id));
                         console.log(`群 ${groupId} 匹配到的存活骰号数量: ${matchedDice.length}`);
-                        
+
                         // 如果匹配的骰号数量超过 leaveGroupThreshold，调用 set_group_leave API
                         if (matchedDice.length > leaveThreshold) {
                             try {
                                 let adiceOwners = matchedDice.map(dice => dice.user_id).join(', ');
-                                let awarningMessage = `严重警告！群号: ${groupId} 极有可能集骰。匹配到的骰号: ${adiceOwners}。将尝试自动退群。`; 
+                                let awarningMessage = `严重警告！群号: ${groupId} 极有可能集骰。匹配到的骰号: ${adiceOwners}。将尝试自动退群。`;
                                 let aselfAccountWithPrefix = `QQ:${selfAccount}`;
                                 let agroupIdWithPrefix = `QQ-Group:${groupId}`;
                                 let aguildIdfiction = ""
                                 let adiceQQfiction = `QQ:114514`
                                 console.log('groupIdWithPrefix:', groupIdWithPrefix);
                                 let mctx = getctxById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction);
-                                    mctx.notice(awarningMessage);                                    
-                                    console.log(`警告已发送: ${awarningMessage}`);                                                  
+                                mctx.notice(awarningMessage);
+                                console.log(`警告已发送: ${awarningMessage}`);
                                 await fetch(`${groupApiHost}/set_group_leave`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -138,7 +148,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                                 console.error(`调用 set_group_leave 失败: ${error.message}`);
                             }
                         }
-                        
+
                         if (matchedDice.length >= threshold) {
                             // 触发警告
                             let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
@@ -151,8 +161,8 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                             let diceQQfiction = `QQ:114514`
                             console.log('groupIdWithPrefix:', groupIdWithPrefix);
                             let mctx = getctxById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction);
-                                mctx.notice(warningMessage);
-                                console.log(`警告已发送: ${warningMessage}`);                       
+                            mctx.notice(warningMessage);
+                            console.log(`警告已发送: ${warningMessage}`);
                         }
 
 
@@ -175,7 +185,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     function getctxById(epId, groupId, guildId, senderId) {
         let eps = seal.getEndPoints()
         for (let i = 0; i < eps.length; i++) {
-            if (eps[i].userId === epId) {                
+            if (eps[i].userId === epId) {
                 let mmsg = seal.newMessage();
                 mmsg.messageType = "group";
                 mmsg.groupId = groupId;
@@ -245,4 +255,38 @@ if (!seal.ext.find("dicePeriodicCheck")) {
         }
     };
     ext.cmdMap["移除骰号"] = cmdRemoveDice;
+
+    //监听指令
+    ext.onCommandReceived = (ctx, msg, cmdArgs) => {
+        if (ctx.isPrivate) return;
+        const isAll = seal.ext.getBoolConfig(ext, "是否监听全部指令");
+        const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
+        const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
+        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+
+        if ((isAll || commands.includes(cmdArgs.command)) && (!tempWhiteList[rawGroupId] || parseInt(msg.time) - tempWhiteList[rawGroupId].time > whiteListTime)) {
+            console.log(`监听指令:群号${rawGroupId}`)
+            tempWhiteList[rawGroupId] = { time: parseInt(msg.time), dices: [], notice: false };
+            ext.storageSet("tempWhiteList", JSON.stringify(tempWhiteList));
+        }
+    }
+
+    //监听到指令计入消息，超过阈值时通知
+    ext.onNotCommandReceived = (ctx, msg) => {
+        if (ctx.isPrivate) return;
+        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
+        const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
+        const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
+        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+
+        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && tempWhiteList[rawGroupId] && parseInt(msg.time) - tempWhiteList[rawGroupId].time < time) {
+            if (!tempWhiteList[rawGroupId].dices.includes(ctx.player.userId)) tempWhiteList[rawGroupId].dices.push(ctx.player.userId);
+            if (tempWhiteList[rawGroupId].dices.length >= noticeLimit && !tempWhiteList[rawGroupId].notice) {
+                ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${tempWhiteList[rawGroupId].dices.join('\n')}`)
+                tempWhiteList[rawGroupId].notice = true;
+                ext.storageSet("tempWhiteList", JSON.stringify(tempWhiteList));
+            }
+        }
+    }
 }
