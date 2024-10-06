@@ -36,7 +36,7 @@ if (!seal.ext.find("集骰检查")) {
     const whiteListDice = JSON.parse(ext.storageGet("whiteListDice") || '[]');
     const whiteListTemp = JSON.parse(ext.storageGet("whiteListTemp") || '{}');
 
-    /**
+    /** 已弃用
      * 根据 ID 获取 ctx 和 msg
      * @param {string} epId - 端点 ID
      * @param {string} groupId - 群 ID
