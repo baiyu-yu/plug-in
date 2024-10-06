@@ -7,7 +7,7 @@
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // ==/UserScript==
 
-if (!seal.ext.find("dicePeriodicCheck")) { 
+if (!seal.ext.find("dicePeriodicCheck")) {
     const ext = seal.ext.new("dicePeriodicCheck", "白鱼", "1.0.0");
 
     // 注册配置项，支持多个 groupApiHost
@@ -18,6 +18,13 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     seal.ext.registerIntConfig(ext, "pauseBetweenBatches", 60, "每批请求后的等待时间（秒）");
     seal.ext.registerIntConfig(ext, "clusterDiceThreshold", 3, "多少个骰号判定为集骰");
     seal.ext.registerIntConfig(ext, "leaveGroupThreshold", 7, "超过该数值将自动退群");
+    seal.ext.registerIntConfig(ext, "集骰通知阈值", 3);
+    seal.ext.registerBoolConfig(ext, "是否监听全部指令", false, "");
+    seal.ext.registerTemplateConfig(ext, "监听指令名称", ["bot", "r"], "");
+    seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
+    seal.ext.registerTemplateConfig(ext, "计入消息模版", ["SealDice|Shiki|AstralDice|OlivaDice|SitaNya", "[Dd]\\d"], "使用正则表达式");
+    seal.ext.registerIntConfig(ext, "指令后n秒内计入", 5, "");
+    seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单");
 
     const backendHost = "http://110.41.69.149:8889"; // 后端服务器地址，写死
     let whiteListGroups = [];
@@ -29,6 +36,9 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     if (storedWhiteListGroups) whiteListGroups = JSON.parse(storedWhiteListGroups);
     if (storedWhiteListDice) whiteListDice = JSON.parse(storedWhiteListDice);
 
+    const tempWhiteList = JSON.parse(ext.storageGet("tempWhiteList") || '{}');
+
+
     // 获取配置项
     let groupApiHosts = seal.ext.getTemplateConfig(ext, "groupApiHost");
     const maxGroups = seal.ext.getIntConfig(ext, "maxGroupsPerCheck");
@@ -36,6 +46,99 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     const pauseBatch = seal.ext.getIntConfig(ext, "pauseBetweenBatches");
     const threshold = seal.ext.getIntConfig(ext, "clusterDiceThreshold");
     const leaveThreshold = seal.ext.getIntConfig(ext, "leaveGroupThreshold");
+
+    /**
+     * 获取登录信息
+     * @param {string} groupApiHost - 群API主机地址
+     * @returns {Promise<string>} 用户ID
+     */
+    async function getLoginInfo(groupApiHost) {
+        try {
+            const loginInfoResponse = await fetch(`${groupApiHost}/get_login_info`);
+            const loginInfo = await loginInfoResponse.json();
+            console.log(`获取登录信息成功，user_id: ${loginInfo.data.user_id}`);
+            return loginInfo.data.user_id
+        } catch (error) {
+            console.error(`获取登录信息失败: ${error.message}`);
+            return null;
+        }
+    }
+
+    /**
+     * 获取群列表
+     * @param {string} groupApiHost - 群API主机地址
+     * @returns {Promise<Array>} 群列表
+     */
+    async function getGroupList(groupApiHost) {
+        try {
+            const groupListResponse = await fetch(`${groupApiHost}/get_group_list`);
+            const groupList = await groupListResponse.json();
+            console.log(`获取群列表成功，数量: ${groupList.data.length}`);
+            return groupList.data;
+        } catch (error) {
+            console.error(`获取群列表失败: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * 获取群成员列表
+     * @param {string} groupApiHost - 群API主机地址
+     * @param {string} groupId - 群ID
+     * @returns {Promise<Array>} 群成员列表
+     */
+    async function getGroupMemberList(groupApiHost, groupId) {
+        try {
+            const memberListResponse = await fetch(`${groupApiHost}/get_group_member_list?group_id=${groupId}`);
+            const membersData = await memberListResponse.json();
+            const membersArray = Array.from(membersData.data);  // 从 data 字段获取成员数组
+            console.log(`群 ${groupId} 成员列表获取成功，数量: ${membersArray.length}`);
+            return membersArray;
+        } catch (error) {
+            console.error(`获取群 ${groupId} 成员列表失败: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * 通过方法1上报自身账号的存活状态
+     * @param {string} backendHost - 后端服务器地址
+     * @param {string} selfAccount - 自身账号
+     * @returns {Promise<boolean>} 上报成功返回 true，失败返回 false
+     */
+    async function reportSelfAliveStatus(backendHost, selfAccount) {
+        try {
+            await fetch(`${backendHost}/api/report_alive_method1`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dice_id: selfAccount })
+            });
+            console.log(`上报自身账号存活状态成功`);
+            return true;
+        } catch (error) {
+            console.error(`上报自身账号存活状态失败: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * 获取存活骰号列表
+     * @param {string} backendHost - 后端服务器地址
+     * @returns {Promise<Array>} 存活骰号列表
+     */
+    async function getAliveDiceList(backendHost) {
+        try {
+            const diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
+            const aliveDice = await diceResponse.json();
+            console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
+            return aliveDice;
+        } catch (error) {
+            console.error(`获取存活骰号失败: ${error.message}`);
+            return [];
+        }
+    }
+
+
 
     // 定义定时检查任务，针对每个 groupApiHost 进行独立处理
     seal.ext.registerTask(ext, "cron", "*/1 * * * *", async (taskCtx) => {
@@ -49,55 +152,17 @@ if (!seal.ext.find("dicePeriodicCheck")) {
 
                 console.log(`正在处理 groupApiHost: ${groupApiHost}`);
 
-                // 获取登录信息
-                let loginInfo;
-                try {
-                    const loginInfoResponse = await fetch(`${groupApiHost}/get_login_info`);
-                    loginInfo = await loginInfoResponse.json();
-                    console.log(`获取登录信息成功，user_id: ${loginInfo.data.user_id}`);
-                } catch (error) {
-                    console.error(`获取登录信息失败: ${error.message}`);
-                    continue;
-                }
+                const selfAccount = await getLoginInfo(groupApiHost);
+                if (!selfAccount) continue;
 
-                const selfAccount = loginInfo.data.user_id;
+                const groups = await getGroupList(groupApiHost);
+                if (!groups) continue;
 
-                // 获取群列表
-                let groupList;
-                try {
-                    const groupListResponse = await fetch(`${groupApiHost}/get_group_list`);
-                    groupList = await groupListResponse.json();
-                    console.log(`获取群列表成功，数量: ${groupList.data.length}`);
-                } catch (error) {
-                    console.error(`获取群列表失败: ${error.message}`);
-                    continue;
-                }
-
-                const groups = groupList.data;
-
-                // 上报账号存活状态
-                try {
-                    await fetch(`${backendHost}/api/report_alive_method1`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ dice_id: selfAccount })
-                    });
-                    console.log(`账号 ${selfAccount} 存活状态上报成功`);
-                } catch (error) {
-                    console.error(`存活状态上报失败: ${error.message}`);
-                    continue;
-                }
+                if (!await reportSelfAliveStatus(backendHost, selfAccount)) continue;
 
                 // 获取存活骰号列表
-                let aliveDice;
-                try {
-                    const diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
-                    aliveDice = await diceResponse.json();
-                    console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
-                } catch (error) {
-                    console.error(`获取存活骰号失败: ${error.message}`);
-                    continue;
-                }
+                const aliveDice = await getAliveDiceList(backendHost);
+                if (!aliveDice) continue;
 
                 // 按批次处理群成员检查
                 for (let j = 0; j < groups.length; j += maxGroups) {
@@ -114,21 +179,16 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                         }
 
                         // 获取群成员列表
-                        let membersArray;
-                        try {
-                            const memberListResponse = await fetch(`${groupApiHost}/get_group_member_list?group_id=${groupId}`);
-                            const membersData = await memberListResponse.json();
-                            membersArray = Array.from(membersData.data);
-                            console.log(`群 ${groupId} 成员列表获取成功，数量: ${membersArray.length}`);
-                        } catch (error) {
-                            console.error(`获取群 ${groupId} 成员列表失败: ${error.message}`);
+                        const membersArray = await getGroupMemberList(groupApiHost, groupId);
+                        if (!membersArray) {
+                            console.error(`无法获取群 ${groupId} 成员列表`);
                             continue;
                         }
 
                         // 过滤白名单中的骰号
                         let matchedDice = membersArray
                             .filter(member => aliveDice.includes(member.user_id) && !whiteListDice.includes(member.user_id));
-                        
+
                         console.log(`群 ${groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
 
                         if (matchedDice.length > leaveThreshold) {
@@ -136,7 +196,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                                 // 发送严重警告信息
                                 let adiceOwners = matchedDice.map(dice => dice.user_id).join(', ');
                                 let awarningMessage = `严重警告！群号: ${groupId} 极有可能集骰。匹配到的骰号: ${adiceOwners}。将在5秒后自动退群。`;
-                                
+
                                 let aselfAccountWithPrefix = `QQ:${selfAccount}`;
                                 let agroupIdWithPrefix = `QQ-Group:${groupId}`;
                                 let aguildIdfiction = ""
@@ -148,12 +208,12 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                                 mmmsg.guildId = aguildIdfiction;
                                 mmmsg.sender.userId = adiceQQfiction;
                                 let mctx = getctxById(aselfAccountWithPrefix, agroupIdWithPrefix, aguildIdfiction, adiceQQfiction);
-                                    console.log(JSON.stringify(mctx,null,1))
-                                    console.log(JSON.stringify(mmmsg,null,1))
-                                    mctx.notice(awarningMessage);
-                                    seal.replyToSender(mctx, mmmsg, awarningMessage)    
-                                    console.log(`暂停5秒后尝试退群`);
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
+                                console.log(JSON.stringify(mctx, null, 1))
+                                console.log(JSON.stringify(mmmsg, null, 1))
+                                mctx.notice(awarningMessage);
+                                seal.replyToSender(mctx, mmmsg, awarningMessage)
+                                console.log(`暂停5秒后尝试退群`);
+                                await new Promise(resolve => setTimeout(resolve, 5000));
                                 // 自动退群
                                 await fetch(`${groupApiHost}/set_group_leave`, {
                                     method: "POST",
@@ -164,9 +224,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                             } catch (error) {
                                 console.error(`尝试退群失败: ${error.message}`);
                             }
-                        }
-                        
-                        if (matchedDice.length >= threshold  && matchedDice.length <= leaveThreshold) {
+                        } else if (matchedDice.length >= threshold) {
                             // 触发警告
                             let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
                             let warningMessage = `警告！群号: ${groupId} 可能集骰。匹配到的骰号: ${diceOwners}`;
@@ -178,9 +236,9 @@ if (!seal.ext.find("dicePeriodicCheck")) {
                             let diceQQfiction = `QQ:114514`
                             console.log('groupIdWithPrefix:', groupIdWithPrefix);
                             let mctx = getctxById(selfAccountWithPrefix, groupIdWithPrefix, guildIdfiction, diceQQfiction);
-                                console.log(JSON.stringify(mctx,null,1))
-                                mctx.notice(warningMessage);
-                                console.log(`警告已发送: ${warningMessage}`);                       
+                            console.log(JSON.stringify(mctx, null, 1))
+                            mctx.notice(warningMessage);
+                            console.log(`警告已发送: ${warningMessage}`);
                         }
 
                         // 每个群请求后暂停
@@ -201,7 +259,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
     function getctxById(epId, groupId, guildId, senderId) {
         let eps = seal.getEndPoints()
         for (let i = 0; i < eps.length; i++) {
-            if (eps[i].userId === epId) {                
+            if (eps[i].userId === epId) {
                 let mmsg = seal.newMessage();
                 mmsg.messageType = "group";
                 mmsg.groupId = groupId;
@@ -221,7 +279,7 @@ if (!seal.ext.find("dicePeriodicCheck")) {
         const action = cmdArgs.getArgN(1);
         const type = cmdArgs.getArgN(2);
         const id = cmdArgs.getArgN(3);
-        
+
         if (!id && action !== "list") {
             seal.replyToSender(ctx, msg, "请提供 ID（群号或骰号）。");
             return;
@@ -334,4 +392,38 @@ if (!seal.ext.find("dicePeriodicCheck")) {
         }
     };
     ext.cmdMap["移除骰号"] = cmdRemoveDice;
+
+    //监听指令
+    ext.onCommandReceived = (ctx, msg, cmdArgs) => {
+        if (ctx.isPrivate) return;
+        const isAll = seal.ext.getBoolConfig(ext, "是否监听全部指令");
+        const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
+        const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
+        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+
+        if ((isAll || commands.includes(cmdArgs.command)) && (!tempWhiteList[rawGroupId] || parseInt(msg.time) - tempWhiteList[rawGroupId].time > whiteListTime)) {
+            console.log(`监听指令:群号${rawGroupId}`)
+            tempWhiteList[rawGroupId] = { time: parseInt(msg.time), dices: [], notice: false };
+            ext.storageSet("tempWhiteList", JSON.stringify(tempWhiteList));
+        }
+    }
+
+    //监听到指令计入消息，超过阈值时通知
+    ext.onNotCommandReceived = (ctx, msg) => {
+        if (ctx.isPrivate) return;
+        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
+        const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
+        const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
+        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+
+        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && tempWhiteList[rawGroupId] && parseInt(msg.time) - tempWhiteList[rawGroupId].time < time) {
+            if (!tempWhiteList[rawGroupId].dices.includes(ctx.player.userId)) tempWhiteList[rawGroupId].dices.push(ctx.player.userId);
+            if (tempWhiteList[rawGroupId].dices.length + 1 >= noticeLimit && !tempWhiteList[rawGroupId].notice) {
+                ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${tempWhiteList[rawGroupId].dices.join('\n')}`)
+                tempWhiteList[rawGroupId].notice = true;
+                ext.storageSet("tempWhiteList", JSON.stringify(tempWhiteList));
+            }
+        }
+    }
 }
