@@ -475,7 +475,7 @@ if (!seal.ext.find("集骰检查")) {
     //监听到指令计入消息，超过阈值时通知
     ext.onNotCommandReceived = (ctx, msg) => {
         if (ctx.isPrivate) return;
-        const noticeLimit = seal.ext.getIntConfig(ext, "clusterDiceThreshold");
+        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
