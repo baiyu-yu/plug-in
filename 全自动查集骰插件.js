@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         全自动查集骰插件
-// @description  全自动查集骰插件，可通过添加http上报每日定时扫群列表和群成员列表检测是否在集骰群，可通过.whitelist add/remove/list group/dice <ID> 添加/移除/查看 白名单 群/骰（ID不需要前缀），可通过.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态到后端（0 或 1），可通过.移除骰号 <骰号> // 移除该骰号。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。将在定时任务启动时自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。
+// @description  全自动查集骰插件，可通过添加http上报每日定时扫群列表和群成员列表检测是否在集骰群，可通过.集骰白名单 add/rm/list group/dice <ID> 添加/移除/查看 白名单 群/骰（ID不需要前缀），可通过.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态到后端（0 或 1），可通过.移除骰号 <骰号> // 移除该骰号。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。将在定时任务启动时自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。
 // @version      1.0.0
 // @license      MIT
 // @author       白鱼&错误
@@ -32,8 +32,8 @@ if (!seal.ext.find("集骰检查")) {
     seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单");
 
     const backendHost = "http://110.41.69.149:8889"; // 后端服务器地址，写死
-    const whiteListGroups = JSON.parse(ext.storageGet("whiteListGroups") || '[]');
-    const whiteListDice = JSON.parse(ext.storageGet("whiteListDice") || '[]');
+    const whiteListGroups = JSON.parse(ext.storageGet("whiteListGroups") || '[]').map(String);
+    const whiteListDice = JSON.parse(ext.storageGet("whiteListDice") || '[]').map(String);
     const whiteListTemp = JSON.parse(ext.storageGet("whiteListTemp") || '{}');
 
     /** 已弃用
@@ -211,7 +211,7 @@ if (!seal.ext.find("集骰检查")) {
             const diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
             const aliveDice = await diceResponse.json();
             console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
-            return aliveDice;
+            return aliveDice.map(String);
         } catch (error) {
             console.error(`获取存活骰号失败: ${error.message}`);
             return [];
@@ -258,21 +258,22 @@ if (!seal.ext.find("集骰检查")) {
                         console.log(`处理第 ${j + 1} 批群成员检查，批量大小: ${groupBatch.length}`);
 
                         for (const group of groupBatch) {
-                            const groupId = group.group_id;
+                            const groupId = String(group.group_id);  // 将 groupId 转为字符串
 
-                            // 跳过白名单中的群
                             if (whiteListGroups.includes(groupId)) {
                                 console.log(`群 ${groupId} 在白名单中，跳过处理`);
                                 continue;
                             }
 
-                            // 获取群成员列表
+                            // 获取群成员列表，这个函数自己会抛出错误
                             const membersArray = await getGroupMemberList(groupApiHost, groupId);
                             if (!membersArray) continue;
 
                             // 过滤白名单中的骰号
-                            let matchedDice = membersArray
-                                .filter(member => aliveDice.includes(member.user_id) && !whiteListDice.includes(member.user_id));
+                            let matchedDice = membersArray.filter(member => {
+                                const memberIdStr = String(member.user_id);  // 转为字符串
+                                return aliveDice.includes(memberIdStr) && !whiteListDice.includes(memberIdStr);
+                            });
 
                             console.log(`群 ${groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
 
@@ -330,8 +331,8 @@ if (!seal.ext.find("集骰检查")) {
 
     // 指令：管理群号和骰号白名单
     let cmdWhitelist = seal.ext.newCmdItemInfo();
-    cmdWhitelist.name = "whitelist";
-    cmdWhitelist.help = "管理群号和骰号白名单\n用法：.whitelist add/remove/list group/dice <ID>";
+    cmdWhitelist.name = "集骰白名单";
+    cmdWhitelist.help = "管理群号和骰号白名单\n用法：.集骰白名单 add/rm/list group/dice <ID>";
     cmdWhitelist.solve = async (ctx, msg, cmdArgs) => {
         const action = cmdArgs.getArgN(1);
         const type = cmdArgs.getArgN(2);
@@ -363,7 +364,7 @@ if (!seal.ext.find("集骰检查")) {
                 }
                 break;
 
-            case "remove":
+            case "rm":
                 if (type === "group") {
                     if (whiteListGroups.includes(id)) {
                         whiteListGroups = whiteListGroups.filter(g => g !== id);
@@ -397,7 +398,7 @@ if (!seal.ext.find("集骰检查")) {
                 seal.replyToSender(ctx, msg, "未知命令。请使用 add/remove/list group/dice");
         }
     };
-    ext.cmdMap["whitelist"] = cmdWhitelist;
+    ext.cmdMap["集骰白名单"] = cmdWhitelist;
 
     // 上报骰号和存活状态（方法2）
     let cmdReportDice = seal.ext.newCmdItemInfo();
