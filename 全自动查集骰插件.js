@@ -401,7 +401,7 @@ if (!seal.ext.find("集骰检查")) {
                 break;
 
             default:
-                seal.replyToSender(ctx, msg, "未知命令。请使用 add/remove/list group/dice");
+                seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/list group/dice");
         }
     };
     ext.cmdMap["集骰白名单"] = cmdWhitelist;
@@ -413,6 +413,11 @@ if (!seal.ext.find("集骰检查")) {
     cmdReportDice.solve = async (ctx, msg, cmdArgs) => {
         const diceId = cmdArgs.getArgN(1);
         const aliveStatus = cmdArgs.getArgN(2);
+        if (diceId === 'help') {
+            const helpMessage = `用法：.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）`;
+            seal.replyToSender(ctx, msg, helpMessage);
+            return seal.ext.newCmdExecuteResult(true);
+        }
         if (!diceId || !aliveStatus) {
             seal.replyToSender(ctx, msg, "请提供骰号和存活状态（0: 不存活, 1: 存活）。");
             return;
@@ -438,6 +443,11 @@ if (!seal.ext.find("集骰检查")) {
     cmdRemoveDice.help = "用法：.移除骰号 <骰号> // 移除该骰号";
     cmdRemoveDice.solve = async (ctx, msg, cmdArgs) => {
         const diceId = cmdArgs.getArgN(1);
+        if (diceId === 'help') {
+            const helpMessage = `用法：.移除骰号 <骰号> // 移除该骰号`;
+            seal.replyToSender(ctx, msg, helpMessage);
+            return seal.ext.newCmdExecuteResult(true);
+        }
         if (!diceId) {
             seal.replyToSender(ctx, msg, "请提供骰号。");
             return;
