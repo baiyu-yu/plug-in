@@ -282,7 +282,7 @@ if (!seal.ext.find('aiplugin')) {
             };
         }
 
-        async iteration(text, ctx, msg, role, sender_name, CQmode = ['default']) {
+        async iteration(text, ctx, msg, role, sender_name) {
             const maxLength = seal.ext.getIntConfig(ext, "存储上下文对话限制轮数");
             const prefix = seal.ext.getBoolConfig(ext, "是否在消息内添加前缀")
 
@@ -290,6 +290,9 @@ if (!seal.ext.find('aiplugin')) {
             let rawGroupId = groupId.replace(/\D+/g, "")
             let dice_name = seal.formatTmpl(ctx, "核心:骰子名字")
             let imagesign = false
+
+            let CQmodeMatch = text.match(/\[CQ:([^,]*?),.*?\]/g)
+            let CQmode = CQmodeMatch ? CQmodeMatch.map(match => match.replace(/\[CQ:/, '').replace(/,.*\]$/, '')) : ["default"];
 
             //获取图片
             if (CQmode.includes('image')) {
@@ -315,14 +318,16 @@ if (!seal.ext.find('aiplugin')) {
                             }
                         }
                     }
+                } else {
+                    text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
                 }
                 imagesign = true
             }
             //处理文本
             text = text
                 .replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, '')
-                .replace(/\[CQ:face,id=.*?\]/g, '')
                 .replace(/\[CQ:at,qq=(\d+)\]/g, (match, p1) => `@${getNameById(ctx.endPoint.userId, groupId, msg.guildId, `QQ:${p1}`, dice_name)}`)
+                .replace(/\[CQ:.*?\]/g, '')
 
             if (this.context.length !== 0 && this.context[this.context.length - 1].content.includes(`<|from ${sender_name}|>`)) {
                 this.context[this.context.length - 1].content += ` ${text}`
@@ -607,12 +612,13 @@ if (!seal.ext.find('aiplugin')) {
         let rawGroupId = groupId.replace(/\D+/g, "")
 
         let message = msg.message
-        let CQmodeMatch = message.match(/\[CQ:([^,]*?),.*?\]/g)
-        let CQmode = CQmodeMatch ? CQmodeMatch.map(match => match.replace(/\[CQ:/, '').replace(/,.*\]$/, '')) : ["default"];
+        const CQmodeMatch = message.match(/\[CQ:([^,]*?),.*?\]/g)
+        const CQmode = CQmodeMatch ? CQmodeMatch.map(match => match.replace(/\[CQ:/, '').replace(/,.*\]$/, '')) : ["default"];
+        const CQmodeAllow = ["at", "image", "reply", "face", "default"]
 
         if (!data.hasOwnProperty(id)) AI.getData(id)
 
-        if (CQmode.includes('at') || CQmode.includes('image') || CQmode.includes('reply') || CQmode.includes('face') || CQmode.includes('default')) {
+        if (CQmode.every(item => CQmodeAllow.includes(item))) {
             const keyWords = seal.ext.getTemplateConfig(ext, "非指令关键词")
             const clearWords = seal.ext.getTemplateConfig(ext, "非指令清除上下文")
             const clearReplys = seal.ext.getTemplateConfig(ext, "清除成功回复")
@@ -642,7 +648,7 @@ if (!seal.ext.find('aiplugin')) {
 
             if (keyWords.some(item => message.includes(item))) {
                 if (ctx.isPrivate && !canPrivate) return;
-                if (await data[id].iteration(message, ctx, msg, 'user', user_name, CQmode)) return;
+                if (await data[id].iteration(message, ctx, msg, 'user', user_name)) return;
                 if (allow.hasOwnProperty(rawGroupId)) {
                     clearTimeout(data[id].timer)
                     data[id].timer = null
@@ -655,7 +661,7 @@ if (!seal.ext.find('aiplugin')) {
                 let timestamp = parseInt(seal.format(ctx, "{$tTimestamp}"))
 
                 if (allow[rawGroupId][1]) {
-                    if (await data[id].iteration(message, ctx, msg, 'user', user_name, CQmode)) return;
+                    if (await data[id].iteration(message, ctx, msg, 'user', user_name)) return;
                     data[id].counter += 1
                     clearTimeout(data[id].timer)
                     data[id].timer = null
@@ -681,7 +687,7 @@ if (!seal.ext.find('aiplugin')) {
                         }, timerLimit + ran);
                     }
                 } else if (allow[rawGroupId][2]) {
-                    if (await data[id].iteration(message, ctx, msg, 'user', user_name, CQmode)) return;
+                    if (await data[id].iteration(message, ctx, msg, 'user', user_name)) return;
 
                     const intrptTrigger = seal.ext.getFloatConfig(ext, "触发插嘴的活跃度")
 
