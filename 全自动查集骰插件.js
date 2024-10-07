@@ -128,22 +128,6 @@ if (!seal.ext.find("集骰检查")) {
     }
 
     /**
-     * 获取登录信息2
-     * @returns {Promise<string>} 用户ID
-     */
-    function getEnabledQQ() {
-        const eps = seal.getEndPoints();
-        for (let i = 0; i < eps.length; i++) {
-            if (eps[i].baseInfo.enable && eps[i].userId.startsWith("QQ:")) {
-                const qqNumber = eps[i].userId.replace('QQ:', '');
-                return qqNumber;
-            }
-        }
-        return null;
-    }
-
-
-    /**
      * 获取群列表
      * @param {string} groupApiHost - 群API主机地址
      * @returns {Promise<Array>} 群列表
@@ -491,11 +475,11 @@ if (!seal.ext.find("集骰检查")) {
         const isAll = seal.ext.getBoolConfig(ext, "是否监听全部指令");
         const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
         const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
-        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+        const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
-        if ((isAll || commands.includes(cmdArgs.command)) && (!whiteListMonitor[rawGroupId] || parseInt(msg.time) - whiteListMonitor[rawGroupId].time > whiteListTime)) {
-            console.log(`监听指令:群号${rawGroupId}`)
-            whiteListMonitor[rawGroupId] = { time: parseInt(msg.time), dices: [], noticed: false };
+        if ((isAll || commands.includes(cmdArgs.command)) && (!whiteListMonitor[raw_groupId] || parseInt(msg.time) - whiteListMonitor[raw_groupId].time > whiteListTime)) {
+            console.log(`监听指令:群号${raw_groupId}`)
+            whiteListMonitor[raw_groupId] = { time: parseInt(msg.time), dices: [], noticed: false };
             ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
         }
     }
@@ -507,31 +491,22 @@ if (!seal.ext.find("集骰检查")) {
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
-        const rawGroupId = ctx.group.groupId.replace(/\D+/g, "")
+        const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
-        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[rawGroupId] && parseInt(msg.time) - whiteListMonitor[rawGroupId].time < time) {
-            if (!whiteListMonitor[rawGroupId].dices.includes(ctx.player.userId)) whiteListMonitor[rawGroupId].dices.push(ctx.player.userId);
-            if (whiteListMonitor[rawGroupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[rawGroupId].noticed) {
-                const qqNumber = getEnabledQQ();
-                if (!qqNumber) {
-                console.log("未找到启用的QQ账号");
-                    return;
-                }
-                await reportSelfAliveStatus(backendHost, qqNumber);
+        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
+            if (!whiteListMonitor[raw_groupId].dices.includes(ctx.player.userId)) whiteListMonitor[raw_groupId].dices.push(ctx.player.userId);
+            if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
+                const epId = ctx.endPoint.userId
+                const raw_epId = epId.replace(/\D+/g, "");
+                await reportSelfAliveStatus(backendHost, raw_epId);
                 // 获取服务器存活骰号列表并与疑似骰号进行比对
                 const aliveDiceList = await getAliveDiceList(backendHost);
-                const suspectedDice = whiteListMonitor[rawGroupId].dices;            
-                // 对在服务器有记录存活骰号进行标记
-                const markedDice = suspectedDice.map(dice => {
-                    if (aliveDiceList.includes(dice)) {
-                        return `${dice} (在服务器有记录)`;
-                    } else {
-                        return dice;
-                    }
+                const markedDice = whiteListMonitor[raw_groupId].dices.map(dice => {
+                    if (aliveDiceList.includes(dice)) return dice;
+                    else return `${dice} (未登记)`;
                 });
-                // 发布带标记的公告
-                ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${markedDice.join('\n')}`);
-                whiteListMonitor[rawGroupId].noticed = true;
+                ctx.notice(`疑似集骰警告:群号${raw_groupId}，请注意检查\n疑似骰子QQ号:\n${markedDice.join('\n')}`);
+                whiteListMonitor[raw_groupId].noticed = true;
                 ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
             }
         }
