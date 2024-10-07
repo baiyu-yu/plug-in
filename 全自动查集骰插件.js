@@ -301,7 +301,7 @@ if (!seal.ext.find("集骰检查")) {
                             if (whiteListLeave[raw_groupId] && whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
                                 if (matchedDice.length >= leaveThreshold) {
                                     // 发送严重警告信息
-                                    let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
+                                    let diceOwners = matchedDice.map(dice => dice.user_id);
                                     let warningMessage = `严重警告！群号: ${raw_groupId} 极有可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}。\n将在5秒后自动退群。`;
 
                                     let epId = `QQ:${raw_epId}`;
@@ -324,7 +324,7 @@ if (!seal.ext.find("集骰检查")) {
 
                                 } else if (matchedDice.length >= threshold) {
                                     // 触发警告
-                                    let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
+                                    let diceOwners = matchedDice.map(dice => dice.user_id);
                                     let warningMessage = `警告！群号: ${raw_groupId} 可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}`;
 
                                     // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
@@ -501,7 +501,7 @@ if (!seal.ext.find("集骰检查")) {
     }
 
     //监听到指令计入消息，超过阈值时通知
-    ext.onNotCommandReceived = (ctx, msg) => {
+    ext.onNotCommandReceived = async (ctx, msg) => {
         if (ctx.isPrivate) return;
         const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
