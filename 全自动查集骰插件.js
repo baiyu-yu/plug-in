@@ -22,8 +22,8 @@ if (!seal.ext.find("集骰检查")) {
     seal.ext.registerIntConfig(ext, "每个群处理间隔（s）", 2);
     seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);
     seal.ext.registerOptionConfig(ext, "定时任务方式", "daily", ["daily", "cron"], "该项修改并保存后请重载js");
-    seal.ext.registerStringConfig(ext, "定时任务表达式", "04:00", "该项修改并保存后请重载js\n选择cron请自行查找使用方法");
-
+    seal.ext.registerStringConfig(ext, "定时任务表达式", "06:00", "该项修改并保存后请重载js\n选择cron请自行查找使用方法");
+    seal.ext.registerStringConfig(ext, "达到退群阈值往群内发送文本", "检测到该群有多个记录存活骰娘，将在五秒后退群", "");
 
     seal.ext.registerIntConfig(ext, "集骰通知阈值", 3, "包括自己");
     seal.ext.registerIntConfig(ext, "自动退群阈值", 7);
@@ -302,14 +302,16 @@ if (!seal.ext.find("集骰检查")) {
                                 if (matchedDice.length >= leaveThreshold) {
                                     // 发送严重警告信息
                                     let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
-                                    let warningMessage = `严重警告！群号: ${raw_groupId} 极有可能集骰。匹配到的骰号: ${diceOwners}。将在5秒后自动退群。`;
+                                    let warningMessage = `严重警告！群号: ${raw_groupId} 极有可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}。\n将在5秒后自动退群。`;
 
                                     let epId = `QQ:${raw_epId}`;
                                     let groupId = `QQ-Group:${raw_groupId}`;
                                     console.log('groupId:', groupId);
+                                    
+                                    const ingroupwarningMessage = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本")
 
                                     noticeById(epId, groupId, "", "QQ:114514", warningMessage);
-                                    replyById(epId, groupId, "", "QQ:114514", warningMessage);
+                                    replyById(epId, groupId, "", "QQ:114514", ingroupwarningMessage);
 
                                     console.log(`暂停5秒后尝试退群`);
                                     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -323,7 +325,7 @@ if (!seal.ext.find("集骰检查")) {
                                 } else if (matchedDice.length >= threshold) {
                                     // 触发警告
                                     let diceOwners = matchedDice.map(dice => dice.user_id).join(', ');
-                                    let warningMessage = `警告！群号: ${raw_groupId} 可能集骰。匹配到的骰号: ${diceOwners}`;
+                                    let warningMessage = `警告！群号: ${raw_groupId} 可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}`;
 
                                     // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
                                     let epId = `QQ:${raw_epId}`;
