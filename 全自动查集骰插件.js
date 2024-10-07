@@ -128,6 +128,22 @@ if (!seal.ext.find("集骰检查")) {
     }
 
     /**
+     * 获取登录信息2
+     * @returns {Promise<string>} 用户ID
+     */
+    function getEnabledQQ() {
+        const eps = seal.getEndPoints();
+        for (let i = 0; i < eps.length; i++) {
+            if (eps[i].baseInfo.enable && eps[i].userId.startsWith("QQ:")) {
+                const qqNumber = eps[i].userId.replace('QQ:', '');
+                return qqNumber;
+            }
+        }
+        return null;
+    }
+
+
+    /**
      * 获取群列表
      * @param {string} groupApiHost - 群API主机地址
      * @returns {Promise<Array>} 群列表
@@ -494,7 +510,25 @@ if (!seal.ext.find("集骰检查")) {
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[rawGroupId] && parseInt(msg.time) - whiteListMonitor[rawGroupId].time < time) {
             if (!whiteListMonitor[rawGroupId].dices.includes(ctx.player.userId)) whiteListMonitor[rawGroupId].dices.push(ctx.player.userId);
             if (whiteListMonitor[rawGroupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[rawGroupId].noticed) {
-                ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${whiteListMonitor[rawGroupId].dices.join('\n')}`)
+                const qqNumber = getEnabledQQ();
+                if (!qqNumber) {
+                console.log("未找到启用的QQ账号");
+                    return;
+                }
+                await reportSelfAliveStatus(backendHost, qqNumber);
+                // 获取服务器存活骰号列表并与疑似骰号进行比对
+                const aliveDiceList = await getAliveDiceList(backendHost);
+                const suspectedDice = whiteListMonitor[rawGroupId].dices;            
+                // 对在服务器有记录存活骰号进行标记
+                const markedDice = suspectedDice.map(dice => {
+                    if (aliveDiceList.includes(dice)) {
+                        return `${dice} (在服务器有记录)`;
+                    } else {
+                        return dice;
+                    }
+                });
+                // 发布带标记的公告
+                ctx.notice(`疑似集骰警告:群号${rawGroupId}，请注意检查\n疑似骰子QQ号:\n${markedDice.join('\n')}`);
                 whiteListMonitor[rawGroupId].noticed = true;
                 ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
             }
