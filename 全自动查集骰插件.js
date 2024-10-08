@@ -204,28 +204,28 @@ if (!seal.ext.find("集骰检查")) {
             return false;
         }
     }
-    
+
     /**
      * 通过方法2上报自身账号的存活状态
      * @param {string} backendHost - 后端服务器地址
      * @param {string} raw_epId - 自身账号
-     * @param {Promise<boolean>} alive_status - 存活为 true，不存活为 false
+     * @param {boolean} status - 存活为 true，不存活为 false
      * @returns {Promise<boolean>} 上报成功返回 true，失败返回 false
      */
-        async function reportSelfAliveStatusanother(backendHost, raw_epId, alive_status) {
-            try {
-                await fetch(`${backendHost}/api/report_alive_method2`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ dice_id: raw_epId, alive: alive_status })
-                });
-                console.log(`方法2上报自身账号存活状态成功`);
-                return true;
-            } catch (error) {
-                console.error(`方法2上报自身账号存活状态失败: ${error.message}`);
-                return false;
-            }
+    async function reportSelfAliveStatusanother(backendHost, raw_epId, status) {
+        try {
+            await fetch(`${backendHost}/api/report_alive_method2`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dice_id: raw_epId, alive: status })
+            });
+            console.log(`方法2上报自身账号存活状态成功`);
+            return true;
+        } catch (error) {
+            console.error(`方法2上报自身账号存活状态失败: ${error.message}`);
+            return false;
         }
+    }
 
     /**
      * 获取存活骰号列表
@@ -313,7 +313,7 @@ if (!seal.ext.find("集骰检查")) {
                                     let epId = `QQ:${raw_epId}`;
                                     let groupId = `QQ-Group:${raw_groupId}`;
                                     console.log('groupId:', groupId);
-                                    
+
                                     const ingroupwarningMessage = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本")
 
                                     noticeById(epId, groupId, "", "QQ:114514", warningMessage);
@@ -435,28 +435,24 @@ if (!seal.ext.find("集骰检查")) {
     cmdReportDice.name = "上报骰号";
     cmdReportDice.help = "用法：.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态（0 或 1）";
     cmdReportDice.solve = async (ctx, msg, cmdArgs) => {
-        const diceId = cmdArgs.getArgN(1);
+        const raw_diceId = cmdArgs.getArgN(1);
         const aliveStatus = cmdArgs.getArgN(2);
-        if (diceId === 'help') {
+        if (raw_diceId === 'help') {
             const helpMessage = `用法：.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）`;
             seal.replyToSender(ctx, msg, helpMessage);
             return seal.ext.newCmdExecuteResult(true);
         }
-        if (!diceId || !aliveStatus) {
+        if (!raw_diceId || (aliveStatus !== '0' && aliveStatus !== '1')) {
             seal.replyToSender(ctx, msg, "请提供骰号和存活状态（0: 不存活, 1: 存活）。");
             return;
         }
-        try {
-            let status = aliveStatus === '1'; 
-            const result = await reportSelfAliveStatusanother(backendHost, diceId, status);
-            if (result) {
-                seal.replyToSender(ctx, msg, "上报成功");
-            } else {
-                seal.replyToSender(ctx, msg, "上报失败，请查看日志。");
-            }
-        } catch (error) {
-            console.error("上报失败:", error);
-            seal.replyToSender(ctx, msg, "上报失败，请稍后再试。");
+        let status = aliveStatus === '1';
+        if (await reportSelfAliveStatusanother(backendHost, raw_diceId, status)) {
+            seal.replyToSender(ctx, msg, "上报成功");
+            return;
+        } else {
+            seal.replyToSender(ctx, msg, "上报失败，请查看日志。");
+            return;
         }
     };
     ext.cmdMap["上报骰号"] = cmdReportDice;
