@@ -174,11 +174,11 @@ if (!seal.ext.find("集骰检查")) {
      * @param {object} ctx
      * @param {object} msg
      * @param {Array<string>} dices - 骰子QQ号列表
-     * @param {string} backendHost - 后端服务器地址
      * @param {string} raw_groupId
      * @param {string} raw_epId
+     * @param {string} backendHost - 后端服务器地址
      */
-    async function warningSuspector(ctx, msg, dices, backendHost, raw_groupId, raw_epId) {
+    async function warningSuspector(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '', backendHost) {
         await reportSelfAliveStatusanother(backendHost, raw_epId, true);
         // 获取服务器存活骰号列表并与疑似骰号进行比对
         const aliveDiceList = await getAliveDiceList(backendHost);
@@ -570,7 +570,7 @@ if (!seal.ext.find("集骰检查")) {
                 const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
                 const dices = whiteListMonitor[raw_groupId].dices;
-                await warningSuspector(ctx, msg, dices, backendHost, raw_groupId, raw_epId);
+                await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId, backendHost);
             }
         }
     }
