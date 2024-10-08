@@ -296,31 +296,29 @@ if (!seal.ext.find('aiplugin')) {
 
             //获取图片
             if (CQmode.includes('image')) {
+                //添加图片
                 if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                     let max_images = seal.ext.getIntConfig(ext, "图片存储上限");
                     let imageCQCode = text.match(/\[CQ:image,file=https:.*?\]/)[0];
                     this.images.push(imageCQCode);
                     if (this.images.length > max_images) this.images = this.images.slice(-max_images);
+                }
 
-                    const imageAIExt = seal.ext.find('imageAI')
-                    if (!imageAIExt) {
-                        text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
-                    } else {
-                        let match = msg.message.match(/\[CQ:image,file=(.*?)\]/);
-                        if (match) {
-                            let url = match[1];
-                            try {
-                                let reply = await globalThis.imageAI(url)
-                                text = text.replace(/\[CQ:image,file=http.*?\]/g, `<|${reply}|>`)
-                            } catch (error) {
-                                text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
-                                console.error('Error in imageAI:', error);
-                            }
+                //识图
+                const imageAIExt = seal.ext.find('imageAI')
+                if (imageAIExt) {
+                    let match = text.match(/\[CQ:image,file=(.*?)\]/);
+                    if (match) {
+                        let url = match[1];
+                        try {
+                            let reply = await globalThis.imageAI(url)
+                            text = text.replace(/\[CQ:image,file=http.*?\]/g, `<|${reply}|>`)
+                        } catch (error) {
+                            console.error('Error in imageAI:', error);
                         }
                     }
-                } else {
-                    text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
                 }
+                text = text.replace(/\[CQ:image,file=http.*?\]/g, '<|图片|>')
                 imagesign = true
             }
             //处理文本
