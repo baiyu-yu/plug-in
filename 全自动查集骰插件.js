@@ -17,7 +17,7 @@ if (!seal.ext.find("集骰检查")) {
     // 注册配置项
     seal.ext.register(ext);
     seal.ext.registerBoolConfig(ext, "是否开启HTTP请求功能", false, '该项修改并保存后请重载js');
-    seal.ext.registerTemplateConfig(ext, "HTTP端口", ["例：http://127.0.0.1:8097"], '该项修改并保存后请重载js');
+    seal.ext.registerTemplateConfig(ext, "HTTP端口", ["http://127.0.0.1:8097"], '该项修改并保存后请重载js');
     seal.ext.registerIntConfig(ext, "每次最大检查群数", 10);
     seal.ext.registerIntConfig(ext, "每个群处理间隔（s）", 2);
     seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);
@@ -366,61 +366,61 @@ if (!seal.ext.find("集骰检查")) {
             }
         }
 
-        if (useHttp && httpData) {
+        if (httpData) {
             const taskKey = seal.ext.getOptionConfig(ext, "定时任务方式");
             const taskValue = seal.ext.getStringConfig(ext, "定时任务表达式")
             // 定义定时检查任务，针对每个 httpHost 进行独立处理
             seal.ext.registerTask(ext, taskKey, taskValue, async (taskCtx) => {
                 try {
                     console.log("开始定期检查任务");
-    
+
                     //获取配置项
                     const maxGroups = seal.ext.getIntConfig(ext, "每次最大检查群数");
                     const pauseGroup = seal.ext.getIntConfig(ext, "每个群处理间隔（s）");
                     const pauseBatch = seal.ext.getIntConfig(ext, "每批处理间隔（s）");
                     const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
                     const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
-    
+
                     const raw_epIdList = Object.keys(httpData);
                     for (let i = 0; i < raw_epIdList.length; i++) {
                         const raw_epId = raw_epIdList[i];
                         const httpHost = httpData[raw_epId];
-    
+
                         console.log(`正在处理: ${raw_epId}(${httpHost})`);
-    
+
                         if (!await reportSelfAliveStatus(backendHost, raw_epId)) continue;
-    
+
                         const groupList = await getGroupList(httpHost);
                         if (!groupList) continue;
-    
+
                         const aliveDiceList = await getAliveDiceList(backendHost);
                         if (!aliveDiceList) continue;
-    
+
                         // 按批次处理群成员检查
                         for (let j = 0; j < groupList.length; j += maxGroups) {
                             let groupBatch = groupList.slice(j, j + maxGroups);
                             console.log(`处理第 ${j + 1} 批群成员检查，批量大小: ${groupBatch.length}`);
-    
+
                             for (const group of groupBatch) {
                                 const raw_groupId = String(group.group_id);  // 将 groupId 转为字符串
-    
+
                                 if (whiteListGroup.includes(raw_groupId)) {
                                     console.log(`群 ${raw_groupId} 在白名单中，跳过处理`);
                                     continue;
                                 }
-    
+
                                 // 获取群成员列表
                                 const memberList = await getGroupMemberList(httpHost, raw_groupId);
                                 if (!memberList) continue;
-    
+
                                 // 过滤白名单中的骰号
                                 let matchedDice = memberList.filter(member => {
                                     const memberId = String(member.user_id);  // 转为字符串
                                     return aliveDiceList.includes(memberId) && !whiteListDice.includes(memberId);
                                 });
-    
+
                                 console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
-    
+
                                 if (whiteListLeave[raw_groupId] && whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
                                     if (matchedDice.length >= leaveThreshold) {
                                         let dices = matchedDice.map(dice => dice.user_id);
@@ -430,12 +430,12 @@ if (!seal.ext.find("集骰检查")) {
                                         warn(undefined, undefined, dices, raw_groupId, raw_epId);
                                     }
                                 }
-    
+
                                 // 每个群请求后暂停
                                 console.log(`暂停 ${pauseGroup} 秒后继续处理下一个群`);
                                 await new Promise(resolve => setTimeout(resolve, pauseGroup * 1000));
                             }
-    
+
                             // 每批次处理完后暂停
                             console.log(`暂停 ${pauseBatch} 秒后继续处理下一个批次`);
                             await new Promise(resolve => setTimeout(resolve, pauseBatch * 1000));
@@ -449,9 +449,12 @@ if (!seal.ext.find("集骰检查")) {
     }
 
     // 初始化时获取登录信息
-    initialize().catch(err => {
-        console.error("初始化过程中发生错误:", err);
-    });;
+    if (useHttp) {
+        initialize().catch(err => {
+            console.error("初始化过程中发生错误:", err);
+        });;
+    }
+
 
     // 指令：管理群号和骰号白名单
     let cmdWhitelist = seal.ext.newCmdItemInfo();
