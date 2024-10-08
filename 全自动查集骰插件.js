@@ -421,7 +421,7 @@ if (!seal.ext.find("集骰检查")) {
 
                                 console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
 
-                                if (whiteListLeave[raw_groupId] && whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
+                                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
                                     if (matchedDice.length >= leaveThreshold) {
                                         let dices = matchedDice.map(dice => dice.user_id);
                                         if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, taskCtx.now)) continue;
@@ -628,7 +628,7 @@ if (!seal.ext.find("集骰检查")) {
                 });
 
                 //活骰达到数量，执行警告
-                if (whiteListLeave[raw_groupId] && whiteListLeave[raw_groupId] + 604800 < msg.time) {
+                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
                     if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
                         let dices = matchedDice.map(dice => dice.user_id);
                         const httpHost = httpData[raw_epId]
