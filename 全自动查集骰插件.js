@@ -40,15 +40,15 @@ if (!seal.ext.find("集骰检查")) {
     const whiteListMonitor = JSON.parse(ext.storageGet("whiteListMonitor") || '{}');
     const whiteListLeave = JSON.parse(ext.storageGet("whiteListLeave") || '{}');
 
-    /** 已弃用
-     * 根据 ID 获取 ctx 和 msg
+    /**
+     * 根据 ID 获取 ctx
      * @param {string} epId - 端点 ID
      * @param {string} groupId - 群 ID
      * @param {string} guildId - 频道 ID
      * @param {string} senderId - 发送者 ID
-     * @returns {Object} ctx 和 msg 对象
+     * @returns {Object} ctx 对象
      */
-    function getCtxAndMsgById(epId, groupId, guildId, senderId) {
+    function getCtxById(epId, groupId, guildId, senderId) {
         let eps = seal.getEndPoints()
         for (let i = 0; i < eps.length; i++) {
             if (eps[i].userId === epId) {
@@ -57,10 +57,10 @@ if (!seal.ext.find("集骰检查")) {
                 msg.groupId = groupId;
                 msg.guildId = guildId;
                 msg.sender.userId = senderId;
-                let mctx = seal.createTempCtx(eps[i], msg)
-                return { mctx, msg };
+                return seal.createTempCtx(eps[i], msg);
             }
         }
+        console.log('未获取到正确的epId')
         return undefined;
     }
 
@@ -108,6 +108,88 @@ if (!seal.ext.find("集骰检查")) {
                 seal.replyToSender(mctx, msg, text)
             }
         }
+    }
+
+    /**
+     * 发送集骰警告
+     * @param {object} ctx 
+     * @param {object} msg 
+     * @param {Array<string>} dices - 骰子QQ号列表
+     * @param {string} raw_groupId 
+     * @param {string} raw_epId 
+     */
+    function warn(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '') {
+        const message = `警告！群号: ${raw_groupId} 可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}`;
+
+        if (!ctx) {
+            // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
+            const epId = `QQ:${raw_epId}`;
+            const groupId = `QQ-Group:${raw_groupId}`;
+            noticeById(epId, groupId, "", "QQ:114514", message);
+        } else {
+            ctx.notice(message);
+        }
+
+        console.log(`警告已发送: ${message}`);
+    }
+
+    /**
+     * 发送集骰警告并退群
+     * @param {object} ctx 
+     * @param {object} msg 
+     * @param {Array<string>} dices  - 骰子QQ号列表
+     * @param {string} raw_groupId 
+     * @param {string} raw_epId 
+     * @param {string} groupApiHost - 群API地址
+     * @param {number} now 
+     * @returns {Promise<boolean>} 是否成功退群
+     */
+    async function warnAndLeave(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '', groupApiHost, now) {
+        const message = `严重警告！群号: ${raw_groupId} 极有可能集骰。匹配到的骰号:\n ${dices.join('\n')}。\n将在5秒后自动退群。`;
+        const inGroupWarning = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本");
+
+        if (!ctx) {
+            const epId = `QQ:${raw_epId}`;
+            const groupId = `QQ-Group:${raw_groupId}`;
+            noticeById(epId, groupId, "", "QQ:114514", message);
+            replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
+        } else {
+            ctx.notice(message);
+            seal.replyToSender(ctx, msg, inGroupWarning);
+        }
+
+        console.log(`暂停5秒后尝试退群`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // 自动退群
+        if (!await setGroupLeave(groupApiHost, raw_groupId)) return false;
+        whiteListLeave[raw_groupId] = now;
+        ext.storageSet("whiteListLeave", JSON.stringify(whiteListLeave));
+        console.log('加入退群白名单:', now);
+        return true;
+    }
+
+    /**
+     * 发送疑似集骰警告
+     * @param {object} ctx
+     * @param {object} msg
+     * @param {Array<string>} dices - 骰子QQ号列表
+     * @param {string} backendHost - 后端服务器地址
+     * @param {string} raw_groupId
+     * @param {string} raw_epId
+     */
+    async function warningSuspector(ctx, msg, dices, backendHost, raw_groupId, raw_epId) {
+        await reportSelfAliveStatusanother(backendHost, raw_epId, true);
+        // 获取服务器存活骰号列表并与疑似骰号进行比对
+        const aliveDiceList = await getAliveDiceList(backendHost);
+        const markedDice = dices.map(dice => {
+            if (aliveDiceList.includes(dice)) return dice;
+            else return `${dice} (未登记)`;
+        });
+        
+        ctx.notice(`疑似集骰警告:群号${raw_groupId}，请注意检查\n疑似骰子QQ号:\n${markedDice.join('\n')}`);
+        whiteListMonitor[raw_groupId].noticed = true;
+        ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
     }
 
     /**
@@ -266,7 +348,7 @@ if (!seal.ext.find("集骰检查")) {
                 for (let i = 0; i < groupApiHosts.length; i++) {
                     const groupApiHost = groupApiHosts[i];
 
-                    console.log(`正在处理 groupApiHost: ${groupApiHost}`);
+                    console.log(`正在处理: ${groupApiHost}`);
 
                     const raw_epId = await getLoginInfo(groupApiHost);
                     if (!raw_epId) continue;
@@ -306,40 +388,11 @@ if (!seal.ext.find("集骰检查")) {
 
                             if (whiteListLeave[raw_groupId] && whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
                                 if (matchedDice.length >= leaveThreshold) {
-                                    // 发送严重警告信息
-                                    let diceOwners = matchedDice.map(dice => dice.user_id);
-                                    let warningMessage = `严重警告！群号: ${raw_groupId} 极有可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}。\n将在5秒后自动退群。`;
-
-                                    let epId = `QQ:${raw_epId}`;
-                                    let groupId = `QQ-Group:${raw_groupId}`;
-                                    console.log('groupId:', groupId);
-
-                                    const ingroupwarningMessage = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本")
-
-                                    noticeById(epId, groupId, "", "QQ:114514", warningMessage);
-                                    replyById(epId, groupId, "", "QQ:114514", ingroupwarningMessage);
-
-                                    console.log(`暂停5秒后尝试退群`);
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
-
-                                    // 自动退群
-                                    if (!await setGroupLeave(groupApiHost, raw_groupId)) continue;
-                                    whiteListLeave[raw_groupId] = taskCtx.now
-                                    ext.storageSet("whiteListLeave", JSON.stringify(whiteListLeave))
-                                    console.log('加入退群白名单:', taskCtx.now)
-
+                                    let dices = matchedDice.map(dice => dice.user_id);
+                                    if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, groupApiHost, taskCtx.now)) continue;
                                 } else if (matchedDice.length >= threshold) {
-                                    // 触发警告
-                                    let diceOwners = matchedDice.map(dice => dice.user_id);
-                                    let warningMessage = `警告！群号: ${raw_groupId} 可能集骰。匹配到的骰号:\n ${diceOwners.join('\n')}`;
-
-                                    // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
-                                    let epId = `QQ:${raw_epId}`;
-                                    let groupId = `QQ-Group:${raw_groupId}`;
-                                    console.log('groupId:', groupId);
-
-                                    noticeById(epId, groupId, "", "QQ:114514", warningMessage);
-                                    console.log(`警告已发送: ${warningMessage}`);
+                                    let dices = matchedDice.map(dice => dice.user_id);
+                                    warn(undefined, undefined, dices, raw_groupId, raw_epId);
                                 }
                             }
 
@@ -514,18 +567,10 @@ if (!seal.ext.find("集骰检查")) {
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
             if (!whiteListMonitor[raw_groupId].dices.includes(ctx.player.userId)) whiteListMonitor[raw_groupId].dices.push(ctx.player.userId);
             if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
-                const epId = ctx.endPoint.userId
+                const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
-                await reportSelfAliveStatusanother(backendHost, raw_epId, true);
-                // 获取服务器存活骰号列表并与疑似骰号进行比对
-                const aliveDiceList = await getAliveDiceList(backendHost);
-                const markedDice = whiteListMonitor[raw_groupId].dices.map(dice => {
-                    if (aliveDiceList.includes(dice)) return dice;
-                    else return `${dice} (未登记)`;
-                });
-                ctx.notice(`疑似集骰警告:群号${raw_groupId}，请注意检查\n疑似骰子QQ号:\n${markedDice.join('\n')}`);
-                whiteListMonitor[raw_groupId].noticed = true;
-                ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
+                const dices = whiteListMonitor[raw_groupId].dices;
+                await warningSuspector(ctx, msg, dices, backendHost, raw_groupId, raw_epId);
             }
         }
     }
