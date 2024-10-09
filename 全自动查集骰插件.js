@@ -200,7 +200,6 @@ if (!seal.ext.find("集骰检查")) {
         const groupName = ctx.group.groupName
         const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
         ctx.notice(message);
-        whiteListMonitor[raw_groupId].noticed = true;
         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
     }
 
@@ -628,11 +627,10 @@ if (!seal.ext.find("集骰检查")) {
             const userId = ctx.player.userId
             if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(userId);
             if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
+                whiteListMonitor[raw_groupId].noticed = true;
                 const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
                 const raw_userId = userId.replace(/\D+/g, "");
-
-                await reportSelfAliveStatusanother(backendHost, raw_epId, true);
 
                 if (whiteListGroup.includes(raw_groupId)) {
                     console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
@@ -661,14 +659,17 @@ if (!seal.ext.find("集骰检查")) {
                         let dices = matchedDice.map(dice => dice.user_id);
                         const httpHost = httpData[raw_epId]
                         await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time)
+                        await reportSelfAliveStatusanother(backendHost, raw_epId, true);
                     } else if (aliveDicesNum >= threshold) {
                         let dices = matchedDice.map(dice => dice.user_id);
                         warn(ctx, msg, dices, raw_groupId, raw_epId);
                     } else {
                         await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
+                        await reportSelfAliveStatusanother(backendHost, raw_epId, true);
                     }
                 } else {
                     await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
+                    await reportSelfAliveStatusanother(backendHost, raw_epId, true);
                 }
             }
         }
