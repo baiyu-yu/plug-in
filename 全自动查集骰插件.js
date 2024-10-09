@@ -154,9 +154,7 @@ if (!seal.ext.find("集骰检查")) {
      * @returns {Promise<boolean>} 是否成功退群
      */
     async function warnAndLeave(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '', httpHost, now) {
-        const message = ``;
         const inGroupWarning = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本");
-
         if (!ctx) {
             const epId = `QQ:${raw_epId}`;
             const groupId = `QQ-Group:${raw_groupId}`;
@@ -196,11 +194,24 @@ if (!seal.ext.find("集骰检查")) {
      * @param {string} raw_epId
      */
     async function warningSuspector(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '') {
-        const groupId = `QQ-Group:${raw_groupId}`;
-        const inviteUserId = ctx.group.inviteUserId
-        const groupName = ctx.group.groupName
-        const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
-        ctx.notice(message);
+        if (!ctx) {
+            // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
+            const epId = `QQ:${raw_epId}`;
+            const groupId = `QQ-Group:${raw_groupId}`;
+            const mctx = getCtxById(epId, groupId, "", "QQ:114514");
+
+            const inviteUserId = mctx.group.inviteUserId
+            const groupName = mctx.group.groupName
+            const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+
+            noticeById(epId, groupId, "", "QQ:114514", message);
+        } else {
+            const groupId = `QQ-Group:${raw_groupId}`;
+            const inviteUserId = ctx.group.inviteUserId
+            const groupName = ctx.group.groupName
+            const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+            ctx.notice(message);
+        }
         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
     }
 
@@ -340,9 +351,10 @@ if (!seal.ext.find("集骰检查")) {
 
     /**
      * 执行群列表和群成员列表检查
+     * @param {*} now
      * @returns {Promise<boolean>} 执行成功返回 true，失败返回 false
      */
-    async function runTaskLogic() {
+    async function runTaskLogic(now) {
         try {
             console.log("开始定期检查任务");
 
@@ -391,12 +403,11 @@ if (!seal.ext.find("集骰检查")) {
 
                         console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
 
-                        if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
-                            if (matchedDice.length >= leaveThreshold) {
-                                let dices = matchedDice.map(dice => dice.user_id);
-                                if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, taskCtx.now)) continue;
-                            } else if (matchedDice.length >= threshold) {
-                                let dices = matchedDice.map(dice => dice.user_id);
+                        if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
+                            const dices = matchedDice.map(dice => dice.user_id);
+                            if (dices.length >= leaveThreshold) {
+                                if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, now)) continue;
+                            } else if (dices.length >= threshold) {
                                 warn(undefined, undefined, dices, raw_groupId, raw_epId);
                             }
                         }
@@ -418,6 +429,10 @@ if (!seal.ext.find("集骰检查")) {
         }
     }
 
+    /**
+     * 上报自身账号存活状态
+     * @returns {Promise<void>}
+     */
     async function reportTask() {
         let eps = seal.getEndPoints()
         for (let ep of eps) {
@@ -426,10 +441,57 @@ if (!seal.ext.find("集骰检查")) {
         }
     }
 
+    async function monitorDealTask(now) {
+        for (let raw_groupId in whiteListMonitor) {
+            const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
+            const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
+            const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
+            const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
+            if (now - whiteListMonitor[raw_groupId].time > whiteListTime) {
+                delete whiteListMonitor[raw_groupId];
+                continue;
+            }
+            if (now - whiteListMonitor[raw_groupId].time < time) {
+                continue;
+            }
+            if (whiteListGroup.includes(raw_groupId)) {
+                console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
+                continue;
+            }
+            if (!whiteListMonitor[raw_groupId].noticed && whiteListMonitor[raw_groupId].dices.length + 1 >= threshold) {
+                whiteListMonitor[raw_groupId].noticed = true;
+                const epId = whiteListMonitor[raw_groupId].epId;
+                const raw_epId = epId.replace(/\D+/g, "");
+
+                // 获取服务器存活骰号列表并与疑似骰号进行比对
+                const aliveDiceList = await getAliveDiceList(backendHost);
+                const aliveDiceSet = new Set(aliveDiceList);
+                const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
+                const aliveDicesNum = aliveDices.length;
+                const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
+
+                //活骰达到数量，执行警告
+                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
+                    if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
+                        const httpHost = httpData[raw_epId]
+                        await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, now);
+                    } else if (aliveDicesNum >= threshold) {
+                        warn(ctx, msg, dices, raw_groupId, raw_epId);
+                    } else {
+                        await warningSuspector(undefined, undefined, dices, raw_groupId, raw_epId)
+                    }
+                } else {
+                    await warningSuspector(undefined, undefined, dices, raw_groupId, raw_epId)
+                }
+            }
+        }
+    }
+
     const httpData = {};
     const useHttp = seal.ext.getBoolConfig(ext, "是否开启HTTP请求功能");
     const usetimedtask = seal.ext.getBoolConfig(ext, "是否开启定时清查集骰群");
     let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
+    let isMonitorTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
     async function initialize() {
         // 上报自身账号存活状态
         await reportTask();
@@ -443,6 +505,16 @@ if (!seal.ext.find("集骰检查")) {
             await reportTask();
         });
 
+        //启动监听定时任务
+        setInterval(() => {
+            if (!isMonitorTaskRunning) {
+                //console.log("开始执行监听上报定时任务")
+                isMonitorTaskRunning = true;
+                monitorDealTask(Math.floor(Date.now() / 1000)).then(() => {
+                    isMonitorTaskRunning = false;
+                });
+            }
+        }, 5 * 1000);
 
         if (useHttp) {
             //获取HTTP对应的骰号
@@ -482,7 +554,7 @@ if (!seal.ext.find("集骰检查")) {
                         return;
                     }
                     isTaskRunning = true;
-                    const result = await runTaskLogic();
+                    const result = await runTaskLogic(taskCtx.now);
                     if (result) {
                         console.log("已成功执行一次集骰清查任务。");
                     } else {
@@ -514,7 +586,7 @@ if (!seal.ext.find("集骰检查")) {
         }
         isTaskRunning = true;
         seal.replyToSender(ctx, msg, "即将启动一次集骰清查任务，请等待。");
-        const result = await runTaskLogic();
+        const result = await runTaskLogic(msg.time);
         if (result) {
             seal.replyToSender(ctx, msg, "已成功执行一次集骰清查任务。");
         } else {
@@ -676,9 +748,14 @@ if (!seal.ext.find("集骰检查")) {
         const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
 
-        if ((isAll || commands.includes(cmdArgs.command)) && (!whiteListMonitor[raw_groupId] || parseInt(msg.time) - whiteListMonitor[raw_groupId].time > whiteListTime)) {
+        if ((isAll || commands.includes(cmdArgs.command)) && (!whiteListMonitor[raw_groupId] || msg.time - whiteListMonitor[raw_groupId].time > whiteListTime)) {
             console.log(`监听指令:群号${raw_groupId}`)
-            whiteListMonitor[raw_groupId] = { time: parseInt(msg.time), dices: [], noticed: false };
+            whiteListMonitor[raw_groupId] = {
+                time: msg.time,
+                dices: [],
+                noticed: false,
+                epId: ctx.endPoint.userId,
+            };
             ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
         }
     }
@@ -687,53 +764,19 @@ if (!seal.ext.find("集骰检查")) {
     ext.onNotCommandReceived = async (ctx, msg) => {
         if (ctx.isPrivate) return;
 
-        const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
-        const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
         const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
-        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
+        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && msg.time - whiteListMonitor[raw_groupId].time < time) {
             const userId = ctx.player.userId
             const raw_userId = userId.replace(/\D+/g, "");
-            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(raw_userId);
-            if (whiteListMonitor[raw_groupId].dices.length + 1 >= threshold && !whiteListMonitor[raw_groupId].noticed) {
-                whiteListMonitor[raw_groupId].noticed = true;
-                const epId = ctx.endPoint.userId;
-                const raw_epId = epId.replace(/\D+/g, "");
-
-                if (whiteListGroup.includes(raw_groupId)) {
-                    console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
-                    return;
-                }
-
-                if (whiteListDice.includes(raw_userId)) {
-                    console.log(`骰号 ${raw_userId} 在白名单中，跳过检测`)
-                    return;
-                }
-
-                // 获取服务器存活骰号列表并与疑似骰号进行比对
-                const aliveDiceList = await getAliveDiceList(backendHost);
-                const aliveDiceSet = new Set(aliveDiceList);
-                const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
-                const aliveDicesNum = aliveDices.length;
-                const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
-
-                //活骰达到数量，执行警告
-                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
-                    if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
-                        const httpHost = httpData[raw_epId]
-                        await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time);
-                    } else if (aliveDicesNum >= threshold) {
-                        warn(ctx, msg, dices, raw_groupId, raw_epId);
-                    } else {
-                        await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId)
-                    }
-                } else {
-                    await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId)
-                }
+            if (whiteListDice.includes(raw_userId)) {
+                console.log(`骰号 ${raw_userId} 在白名单中，跳过检测`)
+                return;
             }
+            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(raw_userId);
         }
     }
 }
