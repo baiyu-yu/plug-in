@@ -505,13 +505,13 @@ if (!seal.ext.find("集骰检查")) {
                         ext.storageSet("whiteListLeave", JSON.stringify(whiteListLeave));
                         removed = true;
                         seal.replyToSender(ctx, msg, `群 ${id} 已从退群白名单移除。`);
-                    }    
+                    }
                     if (whiteListMonitor[id]) {
                         delete whiteListMonitor[id];
                         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
                         removed = true;
                         seal.replyToSender(ctx, msg, `群 ${id} 已从监听白名单移除。`);
-                    }    
+                    }
                     if (!removed) {
                         seal.replyToSender(ctx, msg, `群 ${id} 不在任何白名单中。`);
                     }
@@ -528,11 +528,7 @@ if (!seal.ext.find("集骰检查")) {
 
             case "list":
                 if (type === "group") {
-                    const groupList = `本地白名单群号: ${whiteListGroup.join('\n')}`;
-                    const leaveList = `退群白名单群号: ${Object.keys(whiteListLeave).join('\n')}`;
-                    const monitorList = `监听白名单群号: ${Object.keys(whiteListMonitor).join('\n ')}`;
-                    const result = [groupList, leaveList, monitorList].join('\n');
-                    seal.replyToSender(ctx, msg, result);
+                    seal.replyToSender(ctx, msg, `白名单群号列表: ${whiteListGroup.join('\n')}`);
                 } else if (type === "dice") {
                     seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join(', ')}`);
                 } else {
@@ -610,7 +606,7 @@ if (!seal.ext.find("集骰检查")) {
         const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
         const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
         const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
-        
+
 
         if ((isAll || commands.includes(cmdArgs.command)) && (!whiteListMonitor[raw_groupId] || parseInt(msg.time) - whiteListMonitor[raw_groupId].time > whiteListTime)) {
             console.log(`监听指令:群号${raw_groupId}`)
@@ -629,18 +625,25 @@ if (!seal.ext.find("集骰检查")) {
         const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
-            if (!whiteListMonitor[raw_groupId].dices.includes(ctx.player.userId)) whiteListMonitor[raw_groupId].dices.push(ctx.player.userId);
+            const userId = ctx.player.userId
+            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(userId);
             if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
                 const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
+                const raw_userId = userId.replace(/\D+/g, "");
 
                 await reportSelfAliveStatusanother(backendHost, raw_epId, true);
 
-                if (whiteListGroup.includes(raw_groupId) || whiteListLeave[raw_groupId] || whiteListMonitor[raw_groupId]) {
+                if (whiteListGroup.includes(raw_groupId)) {
                     console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
                     return;
                 }
-                
+
+                if (whiteListDice.includes(raw_userId)) {
+                    console.log(`骰号 ${raw_userId} 在白名单中，跳过检测`)
+                    return;
+                }
+
                 // 获取服务器存活骰号列表并与疑似骰号进行比对
                 const aliveDiceList = await getAliveDiceList(backendHost);
                 let aliveDicesNum = 0
