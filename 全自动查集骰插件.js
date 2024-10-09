@@ -360,8 +360,6 @@ if (!seal.ext.find("集骰检查")) {
 
                 console.log(`正在处理: ${raw_epId}(${httpHost})`);
 
-                if (!await reportSelfAliveStatus(backendHost, raw_epId)) continue;
-
                 const groupList = await getGroupList(httpHost);
                 if (!groupList) continue;
 
@@ -477,6 +475,22 @@ if (!seal.ext.find("集骰检查")) {
             console.error("初始化过程中发生错误:", err);
         });;
     }
+    
+    async function reportdicealive() {
+        function generateRandomTime() {
+            const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
+            const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
+            return `${hour}:${minute}`;
+        }
+        const randomTime = generateRandomTime();    
+        seal.ext.registerTask(ext, daily, randomTime, async (taskCtx) => {
+            await reportSelfAliveStatus(backendHost, raw_epId);
+        });
+    }
+    
+    reportdicealive().catch(error => {
+        console.error('执行 reportdicealive 函数时发生错误:', error);
+    });
     
     // 指令：对群列表和群成员列表执行一次清查
     let cmdRunTask = seal.ext.newCmdItemInfo();
@@ -703,17 +717,14 @@ if (!seal.ext.find("集骰检查")) {
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
                     if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
                         const httpHost = httpData[raw_epId]
-                        await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time)
-                        await reportSelfAliveStatusanother(backendHost, raw_epId, true);
+                        await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time);
                     } else if (aliveDicesNum >= threshold) {
                         warn(ctx, msg, dices, raw_groupId, raw_epId);
                     } else {
-                        await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
-                        await reportSelfAliveStatusanother(backendHost, raw_epId, true);
+                        await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId)
                     }
                 } else {
-                    await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
-                    await reportSelfAliveStatusanother(backendHost, raw_epId, true);
+                    await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId)
                 }
             }
         }
