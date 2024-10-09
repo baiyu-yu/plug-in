@@ -20,7 +20,8 @@ if (!seal.ext.find("集骰检查")) {
     seal.ext.registerTemplateConfig(ext, "HTTP端口", ["http://127.0.0.1:8097"], '该项修改并保存后请重载js');
     seal.ext.registerIntConfig(ext, "每次最大检查群数", 10);
     seal.ext.registerIntConfig(ext, "每个群处理间隔（s）", 2);
-    seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);
+    seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);  
+    seal.ext.registerBoolConfig(ext, "是否开启定时清查集骰群", false, '该项修改并保存后请重载js,并且需要先开启http请求开关 ');
     seal.ext.registerOptionConfig(ext, "定时任务方式", "daily", ["daily", "cron"], "该项修改并保存后请重载js");
     seal.ext.registerStringConfig(ext, "定时任务表达式", "06:00", "该项修改并保存后请重载js\n选择cron请自行查找使用方法");
     seal.ext.registerStringConfig(ext, "达到退群阈值往群内发送文本", "检测到该群有多个记录存活骰娘，将在五秒后退群", "");
@@ -336,10 +337,95 @@ if (!seal.ext.find("集骰检查")) {
             return [];
         }
     }
+    
+    /**
+     * 执行群列表和群成员列表检查
+     * @returns {Promise<boolean>} 执行成功返回 true，失败返回 false
+     */
+    async function runTaskLogic() {
+        try {
+            console.log("开始定期检查任务");
+
+            //获取配置项
+            const maxGroups = seal.ext.getIntConfig(ext, "每次最大检查群数");
+            const pauseGroup = seal.ext.getIntConfig(ext, "每个群处理间隔（s）");
+            const pauseBatch = seal.ext.getIntConfig(ext, "每批处理间隔（s）");
+            const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
+            const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
+
+            const raw_epIdList = Object.keys(httpData);
+            for (let i = 0; i < raw_epIdList.length; i++) {
+                const raw_epId = raw_epIdList[i];
+                const httpHost = httpData[raw_epId];
+
+                console.log(`正在处理: ${raw_epId}(${httpHost})`);
+
+                if (!await reportSelfAliveStatus(backendHost, raw_epId)) continue;
+
+                const groupList = await getGroupList(httpHost);
+                if (!groupList) continue;
+
+                const aliveDiceList = await getAliveDiceList(backendHost);
+                if (!aliveDiceList) continue;
+
+                // 按批次处理群成员检查
+                for (let j = 0; j < groupList.length; j += maxGroups) {
+                    let groupBatch = groupList.slice(j, j + maxGroups);
+                    console.log(`处理第 ${j + 1} 批群成员检查，批量大小: ${groupBatch.length}`);
+
+                    for (const group of groupBatch) {
+                        const raw_groupId = String(group.group_id);  
+
+                        if (whiteListGroup.includes(raw_groupId)) {
+                            console.log(`群 ${raw_groupId} 在白名单中，跳过处理`);
+                            continue;
+                        }
+
+                        // 获取群成员列表
+                        const memberList = await getGroupMemberList(httpHost, raw_groupId);
+                        if (!memberList) continue;
+
+                        // 过滤白名单中的骰号
+                        let matchedDice = memberList.filter(member => {
+                            const memberId = String(member.user_id);  
+                            return aliveDiceList.includes(memberId) && !whiteListDice.includes(memberId);
+                        });
+
+                        console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
+
+                        if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
+                            if (matchedDice.length >= leaveThreshold) {
+                                let dices = matchedDice.map(dice => dice.user_id);
+                                if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, taskCtx.now)) continue;
+                            } else if (matchedDice.length >= threshold) {
+                                let dices = matchedDice.map(dice => dice.user_id);
+                                warn(undefined, undefined, dices, raw_groupId, raw_epId);
+                            }
+                        }
+
+                        // 每个群请求后暂停
+                        console.log(`暂停 ${pauseGroup} 秒后继续处理下一个群`);
+                        await new Promise(resolve => setTimeout(resolve, pauseGroup * 1000));
+                    }
+
+                    // 每批次处理完后暂停
+                    console.log(`暂停 ${pauseBatch} 秒后继续处理下一个批次`);
+                    await new Promise(resolve => setTimeout(resolve, pauseBatch * 1000));
+                }
+            }
+            return true;
+        } catch (error) {
+            console.error("定期检查任务执行失败:", error);
+            return false;
+        }
+    }
+
+    let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
 
     //获取HTTP对应的骰号
     const httpData = {};
     const useHttp = seal.ext.getBoolConfig(ext, "是否开启HTTP请求功能");
+    const usetimedtask = seal.ext.getBoolConfig(ext, "是否开启定时清查集骰群");
     async function initialize() {
         const httpHosts = seal.ext.getTemplateConfig(ext, "HTTP端口");
         for (let i = 0; i < httpHosts.length; i++) {
@@ -364,85 +450,23 @@ if (!seal.ext.find("集骰检查")) {
                 if (!found) console.error(`未找到账号信息: ${raw_epId}`);
             }
         }
-
-        if (httpData) {
+        if (httpData && usetimedtask) {
             const taskKey = seal.ext.getOptionConfig(ext, "定时任务方式");
-            const taskValue = seal.ext.getStringConfig(ext, "定时任务表达式")
-            // 定义定时检查任务，针对每个 httpHost 进行独立处理
+            const taskValue = seal.ext.getStringConfig(ext, "定时任务表达式");
+        
             seal.ext.registerTask(ext, taskKey, taskValue, async (taskCtx) => {
-                try {
-                    console.log("开始定期检查任务");
-
-                    //获取配置项
-                    const maxGroups = seal.ext.getIntConfig(ext, "每次最大检查群数");
-                    const pauseGroup = seal.ext.getIntConfig(ext, "每个群处理间隔（s）");
-                    const pauseBatch = seal.ext.getIntConfig(ext, "每批处理间隔（s）");
-                    const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
-                    const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
-
-                    const raw_epIdList = Object.keys(httpData);
-                    for (let i = 0; i < raw_epIdList.length; i++) {
-                        const raw_epId = raw_epIdList[i];
-                        const httpHost = httpData[raw_epId];
-
-                        console.log(`正在处理: ${raw_epId}(${httpHost})`);
-
-                        if (!await reportSelfAliveStatus(backendHost, raw_epId)) continue;
-
-                        const groupList = await getGroupList(httpHost);
-                        if (!groupList) continue;
-
-                        const aliveDiceList = await getAliveDiceList(backendHost);
-                        if (!aliveDiceList) continue;
-
-                        // 按批次处理群成员检查
-                        for (let j = 0; j < groupList.length; j += maxGroups) {
-                            let groupBatch = groupList.slice(j, j + maxGroups);
-                            console.log(`处理第 ${j + 1} 批群成员检查，批量大小: ${groupBatch.length}`);
-
-                            for (const group of groupBatch) {
-                                const raw_groupId = String(group.group_id);  // 将 groupId 转为字符串
-
-                                if (whiteListGroup.includes(raw_groupId)) {
-                                    console.log(`群 ${raw_groupId} 在白名单中，跳过处理`);
-                                    continue;
-                                }
-
-                                // 获取群成员列表
-                                const memberList = await getGroupMemberList(httpHost, raw_groupId);
-                                if (!memberList) continue;
-
-                                // 过滤白名单中的骰号
-                                let matchedDice = memberList.filter(member => {
-                                    const memberId = String(member.user_id);  // 转为字符串
-                                    return aliveDiceList.includes(memberId) && !whiteListDice.includes(memberId);
-                                });
-
-                                console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
-
-                                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < taskCtx.now) {
-                                    if (matchedDice.length >= leaveThreshold) {
-                                        let dices = matchedDice.map(dice => dice.user_id);
-                                        if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, taskCtx.now)) continue;
-                                    } else if (matchedDice.length >= threshold) {
-                                        let dices = matchedDice.map(dice => dice.user_id);
-                                        warn(undefined, undefined, dices, raw_groupId, raw_epId);
-                                    }
-                                }
-
-                                // 每个群请求后暂停
-                                console.log(`暂停 ${pauseGroup} 秒后继续处理下一个群`);
-                                await new Promise(resolve => setTimeout(resolve, pauseGroup * 1000));
-                            }
-
-                            // 每批次处理完后暂停
-                            console.log(`暂停 ${pauseBatch} 秒后继续处理下一个批次`);
-                            await new Promise(resolve => setTimeout(resolve, pauseBatch * 1000));
-                        }
-                    }
-                } catch (error) {
-                    console.error("定期检查任务执行失败:", error);
+                if (isTaskRunning) {
+                    console.log("定时任务已在运行中，跳过这次执行。");
+                    return;
                 }
+                isTaskRunning = true;
+                const result = await runTaskLogic();
+                if (result) {
+                    console.log("已成功执行一次集骰清查任务。");
+                } else {
+                    console.log("任务执行失败，请查看日志。");
+                }
+                isTaskRunning = false;
             });
         }
     }
@@ -453,7 +477,31 @@ if (!seal.ext.find("集骰检查")) {
             console.error("初始化过程中发生错误:", err);
         });;
     }
-
+    
+    // 指令：对群列表和群成员列表执行一次清查
+    let cmdRunTask = seal.ext.newCmdItemInfo();
+    cmdRunTask.name = "集骰检查";  
+    cmdRunTask.help = "通过[.集骰检查]指令手动执行一次集骰清查任务";  
+    cmdRunTask.solve = async (ctx, msg, cmdArgs) => {
+        if (!useHttp) {
+            seal.replyToSender(ctx, msg, "HTTP 请求功能未开启，无法执行任务。");
+            return;
+        }
+        if (isTaskRunning) {
+            seal.replyToSender(ctx, msg, "任务正在进行中，请稍后再试。");
+            return;
+        }
+        isTaskRunning = true;
+        seal.replyToSender(ctx, msg, "即将启动一次集骰清查任务，请等待。");
+        const result = await runTaskLogic();
+        if (result) {
+            seal.replyToSender(ctx, msg, "已成功执行一次集骰清查任务。");
+        } else {
+            seal.replyToSender(ctx, msg, "任务执行失败，请查看日志。");
+        }
+        isTaskRunning = false;
+    };
+    ext.cmdMap["集骰检查"] = cmdRunTask;
 
     // 指令：管理群号和骰号白名单
     let cmdWhitelist = seal.ext.newCmdItemInfo();
@@ -645,9 +693,9 @@ if (!seal.ext.find("集骰检查")) {
                 // 获取服务器存活骰号列表并与疑似骰号进行比对
                 const aliveDiceList = await getAliveDiceList(backendHost);
                 const aliveDiceSet = new Set(aliveDiceList);
-const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
-const aliveDicesNum = aliveDices.length;
-const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
+                const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
+                const aliveDicesNum = aliveDices.length;
+                const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
 
                 //活骰达到数量，执行警告
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
