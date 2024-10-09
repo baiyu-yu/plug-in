@@ -464,7 +464,7 @@ if (!seal.ext.find("集骰检查")) {
         const type = cmdArgs.getArgN(2);
         const id = cmdArgs.getArgN(3);
 
-        if (!id && action !== "list") {
+        if (!id) {
             seal.replyToSender(ctx, msg, "请提供 ID（群号或骰号）。");
             return;
         }
@@ -644,14 +644,10 @@ if (!seal.ext.find("集骰检查")) {
 
                 // 获取服务器存活骰号列表并与疑似骰号进行比对
                 const aliveDiceList = await getAliveDiceList(backendHost);
-                let aliveDicesNum = 0
-                const dices = whiteListMonitor[raw_groupId].dices.map(dice => {
-                    if (aliveDiceList.includes(dice)) {
-                        aliveDicesNum++;
-                        return dice;
-                    }
-                    else return `${dice} (未登记)`;
-                });
+                const aliveDiceSet = new Set(aliveDiceList);
+const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
+const aliveDicesNum = aliveDices.length;
+const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
 
                 //活骰达到数量，执行警告
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
