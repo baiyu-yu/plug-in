@@ -617,7 +617,9 @@ if (!seal.ext.find("集骰检查")) {
     //监听到指令计入消息，超过阈值时通知
     ext.onNotCommandReceived = async (ctx, msg) => {
         if (ctx.isPrivate) return;
-        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        
+        const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
+        const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
@@ -625,12 +627,12 @@ if (!seal.ext.find("集骰检查")) {
 
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
             const userId = ctx.player.userId
-            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(userId);
-            if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
+            const raw_userId = userId.replace(/\D+/g, "");
+            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(raw_userId);
+            if (whiteListMonitor[raw_groupId].dices.length + 1 >= threshold && !whiteListMonitor[raw_groupId].noticed) {
                 whiteListMonitor[raw_groupId].noticed = true;
                 const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
-                const raw_userId = userId.replace(/\D+/g, "");
 
                 if (whiteListGroup.includes(raw_groupId)) {
                     console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
@@ -645,9 +647,9 @@ if (!seal.ext.find("集骰检查")) {
                 // 获取服务器存活骰号列表并与疑似骰号进行比对
                 const aliveDiceList = await getAliveDiceList(backendHost);
                 const aliveDiceSet = new Set(aliveDiceList);
-const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
-const aliveDicesNum = aliveDices.length;
-const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
+                const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
+                const aliveDicesNum = aliveDices.length;
+                const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
 
                 //活骰达到数量，执行警告
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
