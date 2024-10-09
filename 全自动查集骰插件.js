@@ -18,16 +18,16 @@ if (!seal.ext.find("集骰检查")) {
     seal.ext.register(ext);
     seal.ext.registerBoolConfig(ext, "是否开启HTTP请求功能", false, '该项修改并保存后请重载js');
     seal.ext.registerTemplateConfig(ext, "HTTP端口", ["http://127.0.0.1:8097"], '该项修改并保存后请重载js');
-    seal.ext.registerIntConfig(ext, "每次最大检查群数", 10);
-    seal.ext.registerIntConfig(ext, "每个群处理间隔（s）", 2);
-    seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);  
     seal.ext.registerBoolConfig(ext, "是否开启定时清查集骰群", false, '该项修改并保存后请重载js,并且需要先开启http请求开关 ');
     seal.ext.registerOptionConfig(ext, "定时任务方式", "daily", ["daily", "cron"], "该项修改并保存后请重载js");
     seal.ext.registerStringConfig(ext, "定时任务表达式", "06:00", "该项修改并保存后请重载js\n选择cron请自行查找使用方法");
-    seal.ext.registerStringConfig(ext, "达到退群阈值往群内发送文本", "检测到该群有多个记录存活骰娘，将在五秒后退群", "");
+    seal.ext.registerIntConfig(ext, "每次最大检查群数", 10);
+    seal.ext.registerIntConfig(ext, "每个群处理间隔（s）", 2);
+    seal.ext.registerIntConfig(ext, "每批处理间隔（s）", 60);
 
     seal.ext.registerIntConfig(ext, "集骰通知阈值", 3, "包括自己");
     seal.ext.registerIntConfig(ext, "自动退群阈值", 7);
+    seal.ext.registerStringConfig(ext, "达到退群阈值往群内发送文本", "检测到该群有多个记录存活骰娘，将在五秒后退群", "");
     seal.ext.registerBoolConfig(ext, "是否监听全部指令", false, "");
     seal.ext.registerTemplateConfig(ext, "监听指令名称", ["bot", "r"], "");
     seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
@@ -291,7 +291,7 @@ if (!seal.ext.find("集骰检查")) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ dice_id: raw_epId })
             });
-            console.log(`方法1上报自身账号存活状态成功`);
+            console.log(`方法1上报自身账号存活状态成功，账号: ${raw_epId}`);
             return true;
         } catch (error) {
             console.error(`方法1上报自身账号存活状态失败: ${error.message}`);
@@ -337,7 +337,7 @@ if (!seal.ext.find("集骰检查")) {
             return [];
         }
     }
-    
+
     /**
      * 执行群列表和群成员列表检查
      * @returns {Promise<boolean>} 执行成功返回 true，失败返回 false
@@ -372,7 +372,7 @@ if (!seal.ext.find("集骰检查")) {
                     console.log(`处理第 ${j + 1} 批群成员检查，批量大小: ${groupBatch.length}`);
 
                     for (const group of groupBatch) {
-                        const raw_groupId = String(group.group_id);  
+                        const raw_groupId = String(group.group_id);
 
                         if (whiteListGroup.includes(raw_groupId)) {
                             console.log(`群 ${raw_groupId} 在白名单中，跳过处理`);
@@ -385,7 +385,7 @@ if (!seal.ext.find("集骰检查")) {
 
                         // 过滤白名单中的骰号
                         let matchedDice = memberList.filter(member => {
-                            const memberId = String(member.user_id);  
+                            const memberId = String(member.user_id);
                             return aliveDiceList.includes(memberId) && !whiteListDice.includes(memberId);
                         });
 
@@ -418,84 +418,91 @@ if (!seal.ext.find("集骰检查")) {
         }
     }
 
-    let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
+    async function reportTask() {
+        let eps = seal.getEndPoints()
+        for (let ep of eps) {
+            const raw_epId = ep.userId.replace(/\D+/g, "");
+            await reportSelfAliveStatus(backendHost, raw_epId);
+        }
+    }
 
-    //获取HTTP对应的骰号
     const httpData = {};
     const useHttp = seal.ext.getBoolConfig(ext, "是否开启HTTP请求功能");
     const usetimedtask = seal.ext.getBoolConfig(ext, "是否开启定时清查集骰群");
+    let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
     async function initialize() {
-        const httpHosts = seal.ext.getTemplateConfig(ext, "HTTP端口");
-        for (let i = 0; i < httpHosts.length; i++) {
-            const httpHost = httpHosts[i];
-            console.log(`正在获取: ${httpHost}`);
-
-            const raw_epId = await getLoginInfo(httpHost);
-            if (!raw_epId) {
-                console.error(`获取登录信息失败，跳过: ${httpHost}`);
-                continue;
-            }
-            else {
-                let eps = seal.getEndPoints()
-                let found = false;
-                for (let i = 0; i < eps.length; i++) {
-                    if (eps[i].userId === `QQ:${raw_epId}`) {
-                        httpData[raw_epId] = httpHost;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) console.error(`未找到账号信息: ${raw_epId}`);
-            }
-        }
-        if (httpData && usetimedtask) {
-            const taskKey = seal.ext.getOptionConfig(ext, "定时任务方式");
-            const taskValue = seal.ext.getStringConfig(ext, "定时任务表达式");
-        
-            seal.ext.registerTask(ext, taskKey, taskValue, async (taskCtx) => {
-                if (isTaskRunning) {
-                    console.log("定时任务已在运行中，跳过这次执行。");
-                    return;
-                }
-                isTaskRunning = true;
-                const result = await runTaskLogic();
-                if (result) {
-                    console.log("已成功执行一次集骰清查任务。");
-                } else {
-                    console.log("任务执行失败，请查看日志。");
-                }
-                isTaskRunning = false;
-            });
-        }
-    }
-
-    // 初始化时获取登录信息
-    if (useHttp) {
-        initialize().catch(err => {
-            console.error("初始化过程中发生错误:", err);
-        });;
-    }
-    
-    async function reportdicealive() {
+        // 上报自身账号存活状态
+        await reportTask();
         function generateRandomTime() {
             const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
             const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
             return `${hour}:${minute}`;
         }
-        const randomTime = generateRandomTime();    
-        seal.ext.registerTask(ext, daily, randomTime, async (taskCtx) => {
-            await reportSelfAliveStatus(backendHost, raw_epId);
+        const randomTime = generateRandomTime();
+        seal.ext.registerTask(ext, "daily", randomTime, async (taskCtx) => {
+            await reportTask();
         });
+
+
+        if (useHttp) {
+            //获取HTTP对应的骰号
+            const httpHosts = seal.ext.getTemplateConfig(ext, "HTTP端口");
+            for (let i = 0; i < httpHosts.length; i++) {
+                const httpHost = httpHosts[i];
+                console.log(`正在获取: ${httpHost}`);
+
+                const raw_epId = await getLoginInfo(httpHost);
+                if (!raw_epId) {
+                    console.error(`获取登录信息失败，跳过: ${httpHost}`);
+                    continue;
+                }
+                else {
+                    let eps = seal.getEndPoints()
+                    let found = false;
+                    for (let i = 0; i < eps.length; i++) {
+                        if (eps[i].userId === `QQ:${raw_epId}`) {
+                            httpData[raw_epId] = httpHost;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) console.error(`未找到账号信息: ${raw_epId}`);
+                }
+            }
+            console.log(`获取完成，HTTP对应骰号: ${JSON.stringify(httpData)}`);
+
+
+            if (httpData && usetimedtask) {
+                const taskKey = seal.ext.getOptionConfig(ext, "定时任务方式");
+                const taskValue = seal.ext.getStringConfig(ext, "定时任务表达式");
+
+                seal.ext.registerTask(ext, taskKey, taskValue, async (taskCtx) => {
+                    if (isTaskRunning) {
+                        console.log("定时任务已在运行中，跳过这次执行。");
+                        return;
+                    }
+                    isTaskRunning = true;
+                    const result = await runTaskLogic();
+                    if (result) {
+                        console.log("已成功执行一次集骰清查任务。");
+                    } else {
+                        console.log("任务执行失败，请查看日志。");
+                    }
+                    isTaskRunning = false;
+                });
+            }
+        }
     }
-    
-    reportdicealive().catch(error => {
-        console.error('执行 reportdicealive 函数时发生错误:', error);
+
+    // 初始化时获取登录信息
+    initialize().catch(err => {
+        console.error("初始化过程中发生错误:", err);
     });
-    
+
     // 指令：对群列表和群成员列表执行一次清查
     let cmdRunTask = seal.ext.newCmdItemInfo();
-    cmdRunTask.name = "集骰检查";  
-    cmdRunTask.help = "通过[.集骰检查]指令手动执行一次集骰清查任务";  
+    cmdRunTask.name = "集骰检查";
+    cmdRunTask.help = "通过[.集骰检查]指令手动执行一次集骰清查任务";
     cmdRunTask.solve = async (ctx, msg, cmdArgs) => {
         if (!useHttp) {
             seal.replyToSender(ctx, msg, "HTTP 请求功能未开启，无法执行任务。");
@@ -679,7 +686,7 @@ if (!seal.ext.find("集骰检查")) {
     //监听到指令计入消息，超过阈值时通知
     ext.onNotCommandReceived = async (ctx, msg) => {
         if (ctx.isPrivate) return;
-        
+
         const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
         const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
