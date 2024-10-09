@@ -665,7 +665,9 @@ if (!seal.ext.find("集骰检查")) {
     //监听到指令计入消息，超过阈值时通知
     ext.onNotCommandReceived = async (ctx, msg) => {
         if (ctx.isPrivate) return;
-        const noticeLimit = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        
+        const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
+        const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
@@ -673,12 +675,12 @@ if (!seal.ext.find("集骰检查")) {
 
         if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && parseInt(msg.time) - whiteListMonitor[raw_groupId].time < time) {
             const userId = ctx.player.userId
-            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(userId);
-            if (whiteListMonitor[raw_groupId].dices.length + 1 >= noticeLimit && !whiteListMonitor[raw_groupId].noticed) {
+            const raw_userId = userId.replace(/\D+/g, "");
+            if (!whiteListMonitor[raw_groupId].dices.includes(userId)) whiteListMonitor[raw_groupId].dices.push(raw_userId);
+            if (whiteListMonitor[raw_groupId].dices.length + 1 >= threshold && !whiteListMonitor[raw_groupId].noticed) {
                 whiteListMonitor[raw_groupId].noticed = true;
                 const epId = ctx.endPoint.userId;
                 const raw_epId = epId.replace(/\D+/g, "");
-                const raw_userId = userId.replace(/\D+/g, "");
 
                 if (whiteListGroup.includes(raw_groupId)) {
                     console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
@@ -700,12 +702,10 @@ if (!seal.ext.find("集骰检查")) {
                 //活骰达到数量，执行警告
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
                     if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
-                        let dices = matchedDice.map(dice => dice.user_id);
                         const httpHost = httpData[raw_epId]
                         await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time)
                         await reportSelfAliveStatusanother(backendHost, raw_epId, true);
                     } else if (aliveDicesNum >= threshold) {
-                        let dices = matchedDice.map(dice => dice.user_id);
                         warn(ctx, msg, dices, raw_groupId, raw_epId);
                     } else {
                         await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
