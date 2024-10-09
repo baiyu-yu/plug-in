@@ -652,12 +652,10 @@ const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(d
                 //活骰达到数量，执行警告
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < msg.time) {
                     if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
-                        let dices = matchedDice.map(dice => dice.user_id);
                         const httpHost = httpData[raw_epId]
                         await warnAndLeave(ctx, msg, dices, raw_groupId, raw_epId, httpHost, msg.time)
                         await reportSelfAliveStatusanother(backendHost, raw_epId, true);
                     } else if (aliveDicesNum >= threshold) {
-                        let dices = matchedDice.map(dice => dice.user_id);
                         warn(ctx, msg, dices, raw_groupId, raw_epId);
                     } else {
                         await warningSuspector(ctx, msg, dices, raw_groupId, raw_epId);
