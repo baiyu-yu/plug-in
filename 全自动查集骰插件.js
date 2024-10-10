@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         全自动集骰检测和监听
-// @description  全自动集骰检测和监听插件，可通过添加http上报每段时间定时/指令扫群列表和群成员列表检测是否在集骰群，可通过.jt help查看使用指令相关。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。将在自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。更多自定义配置请查看配置项（即插件设置部分）。
+// @description  全自动集骰检测和监听插件，可通过添加http上报每段时间定时/指令扫群列表和群成员列表检测是否在集骰群，可通过.jt help查看使用指令相关。\n若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。会自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。更多自定义配置请查看配置项（即插件设置部分）。
 // @version      1.0.0
 // @license      MIT
 // @author       白鱼&错误
 // @timestamp    1728214065
 // @homepageURL  https://github.com/baiyu-yu/plug-in
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E6%9F%A5%E9%9B%86%E9%AA%B0%E6%8F%92%E4%BB%B6.js
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E6%9F%A5%E9%9B%86%E9%AA%B0%E6%8F%92%E4%BB%B6.js
+// @updateUrl    https://ghp.ci/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E9%9B%86%E9%AA%B0%E6%A3%80%E6%B5%8B%E5%92%8C%E7%9B%91%E5%90%AC.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main//%E5%85%A8%E8%87%AA%E5%8A%A8%E9%9B%86%E9%AA%B0%E6%A3%80%E6%B5%8B%E5%92%8C%E7%9B%91%E5%90%AC.js
 // @sealVersion  1.4.6
 // ==/UserScript==
 
@@ -420,7 +420,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         const aliveDiceList = await getAliveDiceList(backendHost);
         const aliveDiceSet = new Set(aliveDiceList);
         for (let raw_groupId in whiteListMonitor) {
-            if (now - whiteListMonitor[raw_groupId].time > whiteListTime) {
+            if (now - whiteListMonitor[raw_groupId].time > whiteListTime && whiteListMonitor[raw_groupId].noticed) {
                 console.log(`群 ${raw_groupId} 监听白名单已过期，删除`)
                 delete whiteListMonitor[raw_groupId];
                 continue;
