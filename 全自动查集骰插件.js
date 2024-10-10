@@ -686,8 +686,9 @@ if (!seal.ext.find("集骰检查")) {
                                 return;
                             }
                             let removed = false;
-                            if (whiteListGroup.includes(id)) {
-                                whiteListGroup = whiteListGroup.filter(g => g !== id);
+                            let index = whiteListGroup.indexOf(id);
+                            if (index !== -1) {
+                                whiteListGroup.splice(index, 1);
                                 ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
                                 removed = true;
                                 seal.replyToSender(ctx, msg, `群 ${id} 已从本地白名单移除。`);
@@ -712,8 +713,9 @@ if (!seal.ext.find("集骰检查")) {
                                 seal.replyToSender(ctx, msg, "请提供 ID（骰号）。");
                                 return;
                             }
-                            if (whiteListDice.includes(id)) {
-                                whiteListDice = whiteListDice.filter(d => d !== id);
+                            let index = whiteListDice.indexOf(id);
+                            if (index !== -1) {
+                                whiteListDice.splice(index, 1);
                                 ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
                                 seal.replyToSender(ctx, msg, `骰号 ${id} 已从白名单移除。`);
                             } else {
