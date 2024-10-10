@@ -728,7 +728,7 @@ if (!seal.ext.find("集骰检查")) {
                         } else if (type === "dice") {
                             seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join('\n')}`);
                         } else {
-                            seal.replyToSender(ctx, msg, "白名单群号列表: ${whiteListGroup.join('\n')}\n白名单骰号列表: ${whiteListDice.join('\n')}");
+                            seal.replyToSender(ctx, msg, `白名单群号列表: ${whiteListGroup.join('\n')}\n白名单骰号列表: ${whiteListDice.join('\n')}`);
                         }
                         break;
     
