@@ -407,7 +407,9 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     async function reportTask() {
         let eps = seal.getEndPoints()
         for (let ep of eps) {
-            const raw_epId = ep.userId.replace(/\D+/g, "");
+            const epId = ep.userId
+            const raw_epId = epId.match(/QQ:(\d+)/)?.[1]
+            if (!raw_epId) continue;
             await reportSelfAliveStatus(backendHost, raw_epId);
         }
     }
@@ -471,10 +473,9 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         // 上报自身账号存活状态
         await reportTask();
         function getTime() {
-            const date = new Date();
-            const hours = date.getHours().toString().padStart(2, '0');
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            return `${hours}:${minutes}`;
+            const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
+            const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
+            return `${hour}:${minute}`;
         }
         const HHMMtime = getTime();
         console.log(`上报任务将在每天的${HHMMtime}执行`)
