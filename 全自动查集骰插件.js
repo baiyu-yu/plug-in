@@ -33,7 +33,8 @@ if (!seal.ext.find("集骰检查")) {
     seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
     seal.ext.registerTemplateConfig(ext, "计入消息模版", ["SealDice|Shiki|AstralDice|OlivaDice|SitaNya", "[Dd]\\d"], "使用正则表达式");
     seal.ext.registerIntConfig(ext, "指令后n秒内计入", 5, "");
-    seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单");
+    seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单。不要低于计入时间，否则会清除掉");
+    seal.ext.registerIntConfig(ext, "每n秒处理一次暂时白名单队列", 10, "该项修改并保存后请重载js");
 
     const backendHost = "http://110.41.69.149:8889"; // 后端服务器地址，写死
     const whiteListGroup = JSON.parse(ext.storageGet("whiteListGroup") || '[]').map(String);
@@ -450,6 +451,7 @@ if (!seal.ext.find("集骰检查")) {
         const aliveDiceSet = new Set(aliveDiceList);
         for (let raw_groupId in whiteListMonitor) {
             if (now - whiteListMonitor[raw_groupId].time > whiteListTime) {
+                console.log(`群 ${raw_groupId} 监听白名单已过期，删除`)
                 delete whiteListMonitor[raw_groupId];
                 continue;
             }
@@ -495,26 +497,29 @@ if (!seal.ext.find("集骰检查")) {
     async function initialize() {
         // 上报自身账号存活状态
         await reportTask();
-        function generateRandomTime() {
-            const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
-            const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
-            return `${hour}:${minute}`;
+        function getTime() {
+            const date = new Date();
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            return `${hours}:${minutes}`;
         }
-        const randomTime = generateRandomTime();
-        seal.ext.registerTask(ext, "daily", randomTime, async (taskCtx) => {
+        const HHMMtime = getTime();
+        console.log(`上报任务将在每天的${HHMMtime}执行`)
+        seal.ext.registerTask(ext, "daily", HHMMtime, async (taskCtx) => {
             await reportTask();
         });
 
         //启动监听定时任务
+        const interval = seal.ext.getIntConfig(ext, "每n秒处理一次暂时白名单队列");
         setInterval(() => {
-            if (!isMonitorTaskRunning) {
-                //console.log("开始执行监听上报定时任务")
+            if (!isMonitorTaskRunning && Object.keys(whiteListMonitor).length > 0 && Object.values(whiteListMonitor).some(item => item.noticed === false)) {
+                console.log("开始执行监听上报定时任务")
                 isMonitorTaskRunning = true;
                 monitorDealTask(Math.floor(Date.now() / 1000)).then(() => {
                     isMonitorTaskRunning = false;
                 });
             }
-        }, 5 * 1000);
+        }, interval * 1000);
 
         if (useHttp) {
             //获取HTTP对应的骰号
