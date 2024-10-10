@@ -7,7 +7,7 @@
 // @timestamp    1728214065
 // @homepageURL  https://github.com/baiyu-yu/plug-in
 // @updateUrl    https://ghp.ci/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E9%9B%86%E9%AA%B0%E6%A3%80%E6%B5%8B%E5%92%8C%E7%9B%91%E5%90%AC.js
-// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main//%E5%85%A8%E8%87%AA%E5%8A%A8%E9%9B%86%E9%AA%B0%E6%A3%80%E6%B5%8B%E5%92%8C%E7%9B%91%E5%90%AC.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E5%85%A8%E8%87%AA%E5%8A%A8%E9%9B%86%E9%AA%B0%E6%A3%80%E6%B5%8B%E5%92%8C%E7%9B%91%E5%90%AC.js
 // @sealVersion  1.4.6
 // ==/UserScript==
 
