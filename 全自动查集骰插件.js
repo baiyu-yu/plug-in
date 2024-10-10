@@ -429,31 +429,34 @@ if (!seal.ext.find("集骰检查")) {
                 continue;
             }
             if (whiteListGroup.includes(raw_groupId)) {
+                whiteListMonitor[raw_groupId].noticed = true;
                 console.log(`群 ${raw_groupId} 在白名单中，跳过检测`);
                 continue;
             }
-            if (!whiteListMonitor[raw_groupId].noticed && whiteListMonitor[raw_groupId].dices.length + 1 >= threshold) {
+            if (!whiteListMonitor[raw_groupId].noticed) {
                 whiteListMonitor[raw_groupId].noticed = true;
-                const epId = whiteListMonitor[raw_groupId].epId;
-                const raw_epId = epId.replace(/\D+/g, "");
-
-                // 疑似骰号进行比对
-                const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
-                const aliveDicesNum = aliveDices.length;
-                const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
-
-                //活骰达到数量，执行警告
-                if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
-                    if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
-                        const httpHost = httpData[raw_epId]
-                        await warnAndLeave(dices, raw_groupId, raw_epId, httpHost, now);
-                    } else if (aliveDicesNum >= threshold) {
-                        warn(dices, raw_groupId, raw_epId);
+                if (whiteListMonitor[raw_groupId].dices.length + 1 >= threshold) {
+                    const epId = whiteListMonitor[raw_groupId].epId;
+                    const raw_epId = epId.replace(/\D+/g, "");
+    
+                    // 疑似骰号进行比对
+                    const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
+                    const aliveDicesNum = aliveDices.length;
+                    const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
+    
+                    //活骰达到数量，执行警告
+                    if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
+                        if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
+                            const httpHost = httpData[raw_epId]
+                            await warnAndLeave(dices, raw_groupId, raw_epId, httpHost, now);
+                        } else if (aliveDicesNum >= threshold) {
+                            warn(dices, raw_groupId, raw_epId);
+                        } else {
+                            await warningSuspector(dices, raw_groupId, raw_epId)
+                        }
                     } else {
                         await warningSuspector(dices, raw_groupId, raw_epId)
                     }
-                } else {
-                    await warningSuspector(dices, raw_groupId, raw_epId)
                 }
             }
         }
