@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         全自动查集骰插件
-// @description  全自动查集骰插件，可通过添加http上报每日定时扫群列表和群成员列表检测是否在集骰群，可通过.集骰白名单 add/rm/list group/dice <ID> 添加/移除/查看 白名单 群/骰（ID不需要前缀），可通过.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态到后端（0 或 1），可通过.移除骰号 <骰号> // 移除该骰号。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。将在定时任务启动时自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。
+// @description  全自动查集骰插件，可通过添加http上报每段时间定时/指令扫群列表和群成员列表检测是否在集骰群，可通过.jt help查看使用指令相关。若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。将在自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。更多自定义配置请查看配置项（即插件设置部分）。
 // @version      1.0.0
 // @license      MIT
 // @author       白鱼&错误
@@ -552,7 +552,7 @@ if (!seal.ext.find("集骰检查")) {
     // 集骰指令相关
     let cmdJT = seal.ext.newCmdItemInfo();
     cmdJT.name = "jt";
-    cmdJT.help = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/list group/dice <ID> // 管理群号和骰号白名单";
+    cmdJT.help = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/show group/dice <ID> // 管理群号和骰号白名单";
     cmdJT.solve = async (ctx, msg, cmdArgs) => {
         if (ctx.privilegeLevel < 100) {
             seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
@@ -565,7 +565,7 @@ if (!seal.ext.find("集骰检查")) {
         const arg3 = cmdArgs.getArgN(4);
     
         if (!subCommand || subCommand === 'help') {
-            const commandhelp = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/list group/dice <ID> // 管理群号和骰号白名单\n注：缩写与完整拼写部分功能相同；ID部分直接输入数字；不需要输入<>；"
+            const commandhelp = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/show group/dice <ID> // 管理群号和骰号白名单\n注：缩写与完整拼写部分功能相同；ID部分直接输入数字；不需要输入<>；"
             seal.replyToSender(ctx, msg, commandhelp);
             return;
         }
@@ -724,7 +724,7 @@ if (!seal.ext.find("集骰检查")) {
                         }
                         break;
 
-                    case "list":
+                    case "show":
                         if (type === "group") {
                             seal.replyToSender(ctx, msg, `白名单群号列表: \n${whiteListGroup.join('\n')}`);
                         } else if (type === "dice") {
@@ -735,7 +735,7 @@ if (!seal.ext.find("集骰检查")) {
                         break;
     
                     default:
-                        seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/list group/dice");
+                        seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/show group/dice");
                 }
                 break;
     
