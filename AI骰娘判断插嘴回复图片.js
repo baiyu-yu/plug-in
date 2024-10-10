@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.6.2
+// @version      2.6.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.2');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.3');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -380,9 +380,8 @@ if (!seal.ext.find('aiplugin')) {
     function handleReply(reply) {
         const cut = seal.ext.getBoolConfig(ext, "是否截断换行后文本")
         if (cut) reply = reply.split('\n')[0]
-
-        const match = reply.match(/<[\|｜]from.*?[\|｜]>.*/g);
-        if (match) reply = match[0]
+        const segments = reply.split(/<[\|｜]from.*?[\|｜]>/)
+        reply = segments[0] ? segments[0] : (segments[1]? segments[1] : reply)
 
         return reply.replace(/<[\|｜].*[\|｜]>/g, '')
     }
