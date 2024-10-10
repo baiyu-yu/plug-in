@@ -114,39 +114,24 @@ if (!seal.ext.find("集骰检查")) {
 
     /**
      * 发送集骰警告
-     * @param {object} ctx 
-     * @param {object} msg 
      * @param {Array<string>} dices - 骰子QQ号列表
      * @param {string} raw_groupId 
      * @param {string} raw_epId 
      */
-    function warn(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '') {
-        if (!ctx) {
-            // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
-            const epId = `QQ:${raw_epId}`;
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const mctx = getCtxById(epId, groupId, "", "QQ:114514");
+    function warn(dices, raw_groupId = '', raw_epId = '') {
+        const epId = `QQ:${raw_epId}`;
+        const groupId = `QQ-Group:${raw_groupId}`;
+        const mctx = getCtxById(epId, groupId, "", "QQ:114514");
 
-            const inviteUserId = mctx.group.inviteUserId
-            const groupName = mctx.group.groupName
-            const message = `检测集骰警告：检测到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const inviteUserId = mctx.group.inviteUserId
+        const groupName = mctx.group.groupName
+        const message = `检测集骰警告：检测到群：<${groupName}>（${raw_groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
 
-            noticeById(epId, groupId, "", "QQ:114514", message);
-        } else {
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const inviteUserId = ctx.group.inviteUserId
-            const groupName = ctx.group.groupName
-            const message = `检测集骰警告：检测到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n匹配到的骰号:\n ${dices.join('\n')}`;
-            ctx.notice(message);
-        }
-
-        console.log(`警告已发送: ${message}`);
+        noticeById(epId, groupId, "", "QQ:114514", message);
     }
 
     /**
      * 发送集骰警告并退群
-     * @param {object} ctx 
-     * @param {object} msg 
      * @param {Array<string>} dices  - 骰子QQ号列表
      * @param {string} raw_groupId 
      * @param {string} raw_epId 
@@ -154,26 +139,18 @@ if (!seal.ext.find("集骰检查")) {
      * @param {number} now 
      * @returns {Promise<boolean>} 是否成功退群
      */
-    async function warnAndLeave(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '', httpHost, now) {
+    async function warnAndLeave(dices, raw_groupId = '', raw_epId = '', httpHost, now) {
         const inGroupWarning = seal.ext.getStringConfig(ext, "达到退群阈值往群内发送文本");
-        if (!ctx) {
-            const epId = `QQ:${raw_epId}`;
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const mctx = getCtxById(epId, groupId, "", "QQ:114514");
+        const epId = `QQ:${raw_epId}`;
+        const groupId = `QQ-Group:${raw_groupId}`;
+        const mctx = getCtxById(epId, groupId, "", "QQ:114514");
 
-            const inviteUserId = mctx.group.inviteUserId
-            const groupName = mctx.group.groupName
-            const message = `严重集骰警告：检测到群：<${groupName}>（${groupId} ）集骰数量达到退群阈值，将在5秒后自动退群。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
-            noticeById(epId, groupId, "", "QQ:114514", message);
-            replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
-        } else {
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const inviteUserId = ctx.group.inviteUserId
-            const groupName = ctx.group.groupName
-            const message = `严重集骰警告：检测到群：<${groupName}>（${groupId} ）集骰数量达到退群阈值，将在5秒后自动退群。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
-            ctx.notice(message);
-            seal.replyToSender(ctx, msg, inGroupWarning);
-        }
+        const inviteUserId = mctx.group.inviteUserId
+        const groupName = mctx.group.groupName
+        const message = `严重集骰警告：检测到群：<${groupName}>（${raw_groupId} ）集骰数量达到退群阈值，将在5秒后自动退群。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        
+        noticeById(epId, groupId, "", "QQ:114514", message);
+        replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
 
         console.log(`暂停5秒后尝试退群`);
         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -188,31 +165,20 @@ if (!seal.ext.find("集骰检查")) {
 
     /**
      * 发送疑似集骰警告
-     * @param {object} ctx
-     * @param {object} msg
      * @param {Array<string>} dices - 骰子QQ号列表
      * @param {string} raw_groupId
      * @param {string} raw_epId
      */
-    async function warningSuspector(ctx = undefined, msg = undefined, dices, raw_groupId = '', raw_epId = '') {
-        if (!ctx) {
-            // 使用 getctxById 获取 ctx 并通过 ctx.notice 发送警告信息
-            const epId = `QQ:${raw_epId}`;
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const mctx = getCtxById(epId, groupId, "", "QQ:114514");
+    async function warningSuspector(dices, raw_groupId = '', raw_epId = '') {
+        const epId = `QQ:${raw_epId}`;
+        const groupId = `QQ-Group:${raw_groupId}`;
+        const mctx = getCtxById(epId, groupId, "", "QQ:114514");
 
-            const inviteUserId = mctx.group.inviteUserId
-            const groupName = mctx.group.groupName
-            const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const inviteUserId = mctx.group.inviteUserId
+        const groupName = mctx.group.groupName
+        const message = `疑似集骰警告：监听到群：<${groupName}>（${raw_groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
 
-            noticeById(epId, groupId, "", "QQ:114514", message);
-        } else {
-            const groupId = `QQ-Group:${raw_groupId}`;
-            const inviteUserId = ctx.group.inviteUserId
-            const groupName = ctx.group.groupName
-            const message = `疑似集骰警告：监听到群：<${groupName}>（${groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
-            ctx.notice(message);
-        }
+        noticeById(epId, groupId, "", "QQ:114514", message);
         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
     }
 
@@ -407,9 +373,9 @@ if (!seal.ext.find("集骰检查")) {
                         if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
                             const dices = matchedDice.map(dice => dice.user_id);
                             if (dices.length >= leaveThreshold) {
-                                if (!await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, now)) continue;
+                                if (!await warnAndLeave(dices, raw_groupId, raw_epId, httpHost, now)) continue;
                             } else if (dices.length >= threshold) {
-                                warn(undefined, undefined, dices, raw_groupId, raw_epId);
+                                warn(dices, raw_groupId, raw_epId);
                             }
                         }
 
@@ -476,14 +442,14 @@ if (!seal.ext.find("集骰检查")) {
                 if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
                     if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
                         const httpHost = httpData[raw_epId]
-                        await warnAndLeave(undefined, undefined, dices, raw_groupId, raw_epId, httpHost, now);
+                        await warnAndLeave(dices, raw_groupId, raw_epId, httpHost, now);
                     } else if (aliveDicesNum >= threshold) {
-                        warn(ctx, msg, dices, raw_groupId, raw_epId);
+                        warn(dices, raw_groupId, raw_epId);
                     } else {
-                        await warningSuspector(undefined, undefined, dices, raw_groupId, raw_epId)
+                        await warningSuspector(dices, raw_groupId, raw_epId)
                     }
                 } else {
-                    await warningSuspector(undefined, undefined, dices, raw_groupId, raw_epId)
+                    await warningSuspector(dices, raw_groupId, raw_epId)
                 }
             }
         }
