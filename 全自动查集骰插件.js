@@ -125,7 +125,7 @@ if (!seal.ext.find("集骰检查")) {
 
         const inviteUserId = mctx.group.inviteUserId
         const groupName = mctx.group.groupName
-        const message = `检测集骰警告：检测到群：<${groupName}>（${raw_groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `检测集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。邀请人: (${inviteUserId})。\n 匹配到的骰号:\n ${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
     }
@@ -147,7 +147,7 @@ if (!seal.ext.find("集骰检查")) {
 
         const inviteUserId = mctx.group.inviteUserId
         const groupName = mctx.group.groupName
-        const message = `严重集骰警告：检测到群：<${groupName}>（${raw_groupId} ）集骰数量达到退群阈值，将在5秒后自动退群。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `严重集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到退群阈值，将在5秒后自动退群。邀请人: (${inviteUserId})。\n 匹配到的骰号:\n ${dices.join('\n')}`;
         
         noticeById(epId, groupId, "", "QQ:114514", message);
         replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
@@ -176,7 +176,7 @@ if (!seal.ext.find("集骰检查")) {
 
         const inviteUserId = mctx.group.inviteUserId
         const groupName = mctx.group.groupName
-        const message = `疑似集骰警告：监听到群：<${groupName}>（${raw_groupId} ）集骰数量达到阈值。邀请人：（${inviteUserId}）。\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `疑似集骰警告：监听到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。邀请人: (${inviteUserId})。\n 匹配到的骰号:\n ${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
