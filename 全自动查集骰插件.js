@@ -442,11 +442,13 @@ if (!seal.ext.find("集骰检查")) {
     }
 
     async function monitorDealTask(now) {
+        const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
+        const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
+        const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
+        const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
+        const aliveDiceList = await getAliveDiceList(backendHost);
+        const aliveDiceSet = new Set(aliveDiceList);
         for (let raw_groupId in whiteListMonitor) {
-            const leaveThreshold = seal.ext.getIntConfig(ext, "自动退群阈值");
-            const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
-            const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
-            const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
             if (now - whiteListMonitor[raw_groupId].time > whiteListTime) {
                 delete whiteListMonitor[raw_groupId];
                 continue;
@@ -463,9 +465,7 @@ if (!seal.ext.find("集骰检查")) {
                 const epId = whiteListMonitor[raw_groupId].epId;
                 const raw_epId = epId.replace(/\D+/g, "");
 
-                // 获取服务器存活骰号列表并与疑似骰号进行比对
-                const aliveDiceList = await getAliveDiceList(backendHost);
-                const aliveDiceSet = new Set(aliveDiceList);
+                // 疑似骰号进行比对
                 const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
                 const aliveDicesNum = aliveDices.length;
                 const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
