@@ -127,7 +127,7 @@ if (!seal.ext.find("集骰检查")) {
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
         const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
-        const message = `检测集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `检测集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
     }
@@ -150,7 +150,7 @@ if (!seal.ext.find("集骰检查")) {
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
         const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
-        const message = `严重集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到退群阈值，将在5秒后自动退群。${inviteText}\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `严重集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到退群阈值，将在5秒后自动退群。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
         
         noticeById(epId, groupId, "", "QQ:114514", message);
         replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
@@ -180,7 +180,7 @@ if (!seal.ext.find("集骰检查")) {
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
         const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
-        const message = `疑似集骰警告：监听到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n 匹配到的骰号:\n ${dices.join('\n')}`;
+        const message = `疑似集骰警告：监听到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
         ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
@@ -726,9 +726,9 @@ if (!seal.ext.find("集骰检查")) {
                         if (type === "group") {
                             seal.replyToSender(ctx, msg, `白名单群号列表: ${whiteListGroup.join('\n')}`);
                         } else if (type === "dice") {
-                            seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join(', ')}`);
+                            seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join('\n')}`);
                         } else {
-                            seal.replyToSender(ctx, msg, "请指定 group 或 dice 类型。");
+                            seal.replyToSender(ctx, msg, "白名单群号列表: ${whiteListGroup.join('\n')}\n白名单骰号列表: ${whiteListDice.join('\n')}");
                         }
                         break;
     
