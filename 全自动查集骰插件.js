@@ -642,14 +642,17 @@ if (!seal.ext.find("集骰检查")) {
                 const type = arg2;
                 const id = arg3;
 
-                if (!id) {
-                    seal.replyToSender(ctx, msg, "请提供 ID（群号或骰号）。");
-                    return;
-                }
-
                 switch (action) {
                     case "add":
+                        if (!type) {
+                            seal.replyToSender(ctx, msg, "用法：.jt wl/whitelist add group/dice <ID>");
+                            return;
+                        }
                         if (type === "group") {
+                            if (!id) {
+                                seal.replyToSender(ctx, msg, "请提供 ID（群号）。");
+                                return;
+                            }
                             if (!whiteListGroup.includes(id)) {
                                 whiteListGroup.push(id);
                                 ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
@@ -658,6 +661,10 @@ if (!seal.ext.find("集骰检查")) {
                                 seal.replyToSender(ctx, msg, `群 ${id} 已在白名单中。`);
                             }
                         } else if (type === "dice") {
+                            if (!id) {
+                                seal.replyToSender(ctx, msg, "请提供 ID（骰号）。");
+                                return;
+                            }
                             if (!whiteListDice.includes(id)) {
                                 whiteListDice.push(id);
                                 ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
@@ -669,7 +676,15 @@ if (!seal.ext.find("集骰检查")) {
                         break;
 
                     case "rm":
+                        if (!type) {
+                            seal.replyToSender(ctx, msg, "用法：.jt wl/whitelist rm group/dice <ID>");
+                            return;
+                        }
                         if (type === "group") {
+                            if (!id) {
+                                seal.replyToSender(ctx, msg, "请提供 ID（群号）。");
+                                return;
+                            }
                             let removed = false;
                             if (whiteListGroup.includes(id)) {
                                 whiteListGroup = whiteListGroup.filter(g => g !== id);
@@ -693,6 +708,10 @@ if (!seal.ext.find("集骰检查")) {
                                 seal.replyToSender(ctx, msg, `群 ${id} 不在任何白名单中。`);
                             }
                         } else if (type === "dice") {
+                            if (!id) {
+                                seal.replyToSender(ctx, msg, "请提供 ID（骰号）。");
+                                return;
+                            }
                             if (whiteListDice.includes(id)) {
                                 whiteListDice = whiteListDice.filter(d => d !== id);
                                 ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
