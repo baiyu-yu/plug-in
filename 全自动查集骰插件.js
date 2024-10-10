@@ -549,173 +549,180 @@ if (!seal.ext.find("集骰检查")) {
         console.error("初始化过程中发生错误:", err);
     });
 
-    // 指令：对群列表和群成员列表执行一次清查
-    let cmdRunTask = seal.ext.newCmdItemInfo();
-    cmdRunTask.name = "集骰检查";
-    cmdRunTask.help = "通过[.集骰检查]指令手动执行一次集骰清查任务";
-    cmdRunTask.solve = async (ctx, msg, cmdArgs) => {
-        if (!useHttp) {
-            seal.replyToSender(ctx, msg, "HTTP 请求功能未开启，无法执行任务。");
-            return;
+    // 集骰指令相关
+    let cmdJT = seal.ext.newCmdItemInfo();
+    cmdJT.name = "jt";
+    cmdJT.help = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/list group/dice <ID> // 管理群号和骰号白名单";
+    cmdJT.solve = async (ctx, msg, cmdArgs) => {
+        if (ctx.privilegeLevel < 100) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return seal.ext.cmddicefind(true);
         }
-        if (isTaskRunning) {
-            seal.replyToSender(ctx, msg, "任务正在进行中，请稍后再试。");
-            return;
-        }
-        isTaskRunning = true;
-        seal.replyToSender(ctx, msg, "即将启动一次集骰清查任务，请等待。");
-        const result = await runTaskLogic(msg.time);
-        if (result) {
-            seal.replyToSender(ctx, msg, "已成功执行一次集骰清查任务。");
-        } else {
-            seal.replyToSender(ctx, msg, "任务执行失败，请查看日志。");
-        }
-        isTaskRunning = false;
-    };
-    ext.cmdMap["集骰检查"] = cmdRunTask;
 
-    // 指令：管理群号和骰号白名单
-    let cmdWhitelist = seal.ext.newCmdItemInfo();
-    cmdWhitelist.name = "集骰白名单";
-    cmdWhitelist.help = "管理群号和骰号白名单\n用法：.集骰白名单 add/rm/list group/dice <ID>";
-    cmdWhitelist.solve = async (ctx, msg, cmdArgs) => {
-        const action = cmdArgs.getArgN(1);
-        const type = cmdArgs.getArgN(2);
-        const id = cmdArgs.getArgN(3);
-
-        if (!id) {
-            seal.replyToSender(ctx, msg, "请提供 ID（群号或骰号）。");
+        const subCommand = cmdArgs.getArgN(1);
+        const arg1 = cmdArgs.getArgN(2);
+        const arg2 = cmdArgs.getArgN(3);
+        const arg3 = cmdArgs.getArgN(4);
+    
+        if (!subCommand || subCommand === 'help') {
+            const commandhelp = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/list group/dice <ID> // 管理群号和骰号白名单\n注：缩写与完整拼写部分功能相同；ID部分直接输入数字；不需要输入<>；"
+            seal.replyToSender(ctx, msg, commandhelp);
             return;
         }
 
-        switch (action) {
-            case "add":
-                if (type === "group") {
-                    if (!whiteListGroup.includes(id)) {
-                        whiteListGroup.push(id);
-                        ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
-                        seal.replyToSender(ctx, msg, `群 ${id} 已加入白名单。`);
-                    } else {
-                        seal.replyToSender(ctx, msg, `群 ${id} 已在白名单中。`);
-                    }
-                } else if (type === "dice") {
-                    if (!whiteListDice.includes(id)) {
-                        whiteListDice.push(id);
-                        ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
-                        seal.replyToSender(ctx, msg, `骰号 ${id} 已加入白名单。`);
-                    } else {
-                        seal.replyToSender(ctx, msg, `骰号 ${id} 已在白名单中。`);
-                    }
+        switch (subCommand) {
+            case "rpt":
+            case "report":
+                if (arg1 === 'help') {
+                    const helpMessage = `用法：.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）`;
+                    seal.replyToSender(ctx, msg, helpMessage);
+                    return seal.ext.newCmdExecuteResult(true);
+                }
+                if (!arg1 || (arg2 !== '0' && arg2 !== '1')) {
+                    seal.replyToSender(ctx, msg, "请提供骰号和存活状态（0: 不存活, 1: 存活）。");
+                    return;
+                }
+                let status = arg2 === '1';
+                if (await reportSelfAliveStatusanother(backendHost, arg1, status)) {
+                    seal.replyToSender(ctx, msg, "上报成功");
+                } else {
+                    seal.replyToSender(ctx, msg, "上报失败，请查看日志。");
                 }
                 break;
 
             case "rm":
-                if (type === "group") {
-                    let removed = false;
-                    if (whiteListGroup.includes(id)) {
-                        whiteListGroup = whiteListGroup.filter(g => g !== id);
-                        ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
-                        removed = true;
-                        seal.replyToSender(ctx, msg, `群 ${id} 已从本地白名单移除。`);
-                    }
-                    if (whiteListLeave[id]) {
-                        delete whiteListLeave[id];
-                        ext.storageSet("whiteListLeave", JSON.stringify(whiteListLeave));
-                        removed = true;
-                        seal.replyToSender(ctx, msg, `群 ${id} 已从退群白名单移除。`);
-                    }
-                    if (whiteListMonitor[id]) {
-                        delete whiteListMonitor[id];
-                        ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
-                        removed = true;
-                        seal.replyToSender(ctx, msg, `群 ${id} 已从监听白名单移除。`);
-                    }
-                    if (!removed) {
-                        seal.replyToSender(ctx, msg, `群 ${id} 不在任何白名单中。`);
-                    }
-                } else if (type === "dice") {
-                    if (whiteListDice.includes(id)) {
-                        whiteListDice = whiteListDice.filter(d => d !== id);
-                        ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
-                        seal.replyToSender(ctx, msg, `骰号 ${id} 已从白名单移除。`);
-                    } else {
-                        seal.replyToSender(ctx, msg, `骰号 ${id} 不在白名单中。`);
-                    }
+            case "remove":
+                if (arg1 === 'help') {
+                    const helpMessage = `用法：.jt rm/remove <骰号> // 移除该骰号`;
+                    seal.replyToSender(ctx, msg, helpMessage);
+                    return seal.ext.newCmdExecuteResult(true);
+                }
+                if (!arg1) {
+                    seal.replyToSender(ctx, msg, "请提供骰号。");
+                    return;
+                }
+                try {
+                    const removeResponse = await fetch(`${backendHost}/api/remove_dice`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ dice_id: arg1 })
+                    });
+                    const data = await removeResponse.json();
+                    seal.replyToSender(ctx, msg, data.message || "移除成功");
+                } catch (error) {
+                    console.error("移除失败:", error);
+                    seal.replyToSender(ctx, msg, "移除失败，请稍后再试。");
                 }
                 break;
 
-            case "list":
-                if (type === "group") {
-                    seal.replyToSender(ctx, msg, `白名单群号列表: ${whiteListGroup.join('\n')}`);
-                } else if (type === "dice") {
-                    seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join(', ')}`);
+            case "ck":
+            case "check":
+                if (!useHttp) {
+                    seal.replyToSender(ctx, msg, "HTTP 请求功能未开启，无法执行任务。");
+                    return;
+                }
+                if (isTaskRunning) {
+                    seal.replyToSender(ctx, msg, "任务正在进行中，请稍后再试。");
+                    return;
+                }
+                isTaskRunning = true;
+                seal.replyToSender(ctx, msg, "即将启动一次集骰清查任务，请等待。");
+                const result = await runTaskLogic(msg.time);
+                if (result) {
+                    seal.replyToSender(ctx, msg, "已成功执行一次集骰清查任务。");
                 } else {
-                    seal.replyToSender(ctx, msg, "请指定 group 或 dice 类型。");
+                    seal.replyToSender(ctx, msg, "任务执行失败，请查看日志。");
                 }
+                isTaskRunning = false;
                 break;
 
+            case "wl":
+            case "whitelist":
+                const action = arg1;
+                const type = arg2;
+                const id = arg3;
+
+                if (!id) {
+                    seal.replyToSender(ctx, msg, "请提供 ID（群号或骰号）。");
+                    return;
+                }
+
+                switch (action) {
+                    case "add":
+                        if (type === "group") {
+                            if (!whiteListGroup.includes(id)) {
+                                whiteListGroup.push(id);
+                                ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
+                                seal.replyToSender(ctx, msg, `群 ${id} 已加入白名单。`);
+                            } else {
+                                seal.replyToSender(ctx, msg, `群 ${id} 已在白名单中。`);
+                            }
+                        } else if (type === "dice") {
+                            if (!whiteListDice.includes(id)) {
+                                whiteListDice.push(id);
+                                ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
+                                seal.replyToSender(ctx, msg, `骰号 ${id} 已加入白名单。`);
+                            } else {
+                                seal.replyToSender(ctx, msg, `骰号 ${id} 已在白名单中。`);
+                            }
+                        }
+                        break;
+
+                    case "rm":
+                        if (type === "group") {
+                            let removed = false;
+                            if (whiteListGroup.includes(id)) {
+                                whiteListGroup = whiteListGroup.filter(g => g !== id);
+                                ext.storageSet("whiteListGroup", JSON.stringify(whiteListGroup));
+                                removed = true;
+                                seal.replyToSender(ctx, msg, `群 ${id} 已从本地白名单移除。`);
+                            }
+                            if (whiteListLeave[id]) {
+                                delete whiteListLeave[id];
+                                ext.storageSet("whiteListLeave", JSON.stringify(whiteListLeave));
+                                removed = true;
+                                seal.replyToSender(ctx, msg, `群 ${id} 已从退群白名单移除。`);
+                            }
+                            if (whiteListMonitor[id]) {
+                                delete whiteListMonitor[id];
+                                ext.storageSet("whiteListMonitor", JSON.stringify(whiteListMonitor));
+                                removed = true;
+                                seal.replyToSender(ctx, msg, `群 ${id} 已从监听白名单移除。`);
+                            }
+                            if (!removed) {
+                                seal.replyToSender(ctx, msg, `群 ${id} 不在任何白名单中。`);
+                            }
+                        } else if (type === "dice") {
+                            if (whiteListDice.includes(id)) {
+                                whiteListDice = whiteListDice.filter(d => d !== id);
+                                ext.storageSet("whiteListDice", JSON.stringify(whiteListDice));
+                                seal.replyToSender(ctx, msg, `骰号 ${id} 已从白名单移除。`);
+                            } else {
+                                seal.replyToSender(ctx, msg, `骰号 ${id} 不在白名单中。`);
+                            }
+                        }
+                        break;
+
+                    case "list":
+                        if (type === "group") {
+                            seal.replyToSender(ctx, msg, `白名单群号列表: ${whiteListGroup.join('\n')}`);
+                        } else if (type === "dice") {
+                            seal.replyToSender(ctx, msg, `白名单骰号列表: ${whiteListDice.join(', ')}`);
+                        } else {
+                            seal.replyToSender(ctx, msg, "请指定 group 或 dice 类型。");
+                        }
+                        break;
+    
+                    default:
+                        seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/list group/dice");
+                }
+                break;
+    
             default:
-                seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/list group/dice");
+                seal.replyToSender(ctx, msg, "未知子命令。请使用 rpt/report, rm/remove, ck/check, wl/whitelist");
         }
     };
-    ext.cmdMap["集骰白名单"] = cmdWhitelist;
-
-    // 上报骰号和存活状态（方法2）
-    let cmdReportDice = seal.ext.newCmdItemInfo();
-    cmdReportDice.name = "上报骰号";
-    cmdReportDice.help = "用法：.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态（0 或 1）";
-    cmdReportDice.solve = async (ctx, msg, cmdArgs) => {
-        const raw_diceId = cmdArgs.getArgN(1);
-        const aliveStatus = cmdArgs.getArgN(2);
-        if (raw_diceId === 'help') {
-            const helpMessage = `用法：.上报骰号 <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）`;
-            seal.replyToSender(ctx, msg, helpMessage);
-            return seal.ext.newCmdExecuteResult(true);
-        }
-        if (!raw_diceId || (aliveStatus !== '0' && aliveStatus !== '1')) {
-            seal.replyToSender(ctx, msg, "请提供骰号和存活状态（0: 不存活, 1: 存活）。");
-            return;
-        }
-        let status = aliveStatus === '1';
-        if (await reportSelfAliveStatusanother(backendHost, raw_diceId, status)) {
-            seal.replyToSender(ctx, msg, "上报成功");
-            return;
-        } else {
-            seal.replyToSender(ctx, msg, "上报失败，请查看日志。");
-            return;
-        }
-    };
-    ext.cmdMap["上报骰号"] = cmdReportDice;
-
-    // 移除骰号
-    let cmdRemoveDice = seal.ext.newCmdItemInfo();
-    cmdRemoveDice.name = "移除骰号";
-    cmdRemoveDice.help = "用法：.移除骰号 <骰号> // 移除该骰号";
-    cmdRemoveDice.solve = async (ctx, msg, cmdArgs) => {
-        const diceId = cmdArgs.getArgN(1);
-        if (diceId === 'help') {
-            const helpMessage = `用法：.移除骰号 <骰号> // 移除该骰号`;
-            seal.replyToSender(ctx, msg, helpMessage);
-            return seal.ext.newCmdExecuteResult(true);
-        }
-        if (!diceId) {
-            seal.replyToSender(ctx, msg, "请提供骰号。");
-            return;
-        }
-        try {
-            const removeResponse = await fetch(`${backendHost}/api/remove_dice`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ dice_id: diceId })
-            });
-            const data = await removeResponse.json();
-            seal.replyToSender(ctx, msg, data.message || "移除成功");
-        } catch (error) {
-            console.error("移除失败:", error);
-            seal.replyToSender(ctx, msg, "移除失败，请稍后再试。");
-        }
-    };
-    ext.cmdMap["移除骰号"] = cmdRemoveDice;
+    ext.cmdMap["jt"] = cmdJT;
 
     //监听指令
     ext.onCommandReceived = (ctx, msg, cmdArgs) => {
