@@ -342,7 +342,6 @@ if (!seal.ext.find('aiplugin')) {
         async sendImage(ctx, msg) {
             let ranIndex = Math.floor(Math.random() * this.images.length);
             let imageToReply = this.images[ranIndex];
-            this.images.splice(ranIndex, 1);
 
             let isValid = false
             let match = imageToReply.match(/\[CQ:image,file=(https:.*?)\]/);
@@ -371,7 +370,8 @@ if (!seal.ext.find('aiplugin')) {
 
             if (isValid) {
                 seal.replyToSender(ctx, msg, imageToReply);
-                this.images.push(imageToReply);
+            } else {
+                this.images.splice(ranIndex, 1);
             }
             return isValid;
         }
