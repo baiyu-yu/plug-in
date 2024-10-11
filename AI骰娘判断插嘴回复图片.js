@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin
 // @author       错误、白鱼
-// @version      2.6.3
+// @version      2.6.4
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。注意！该版本有配置项与之前版本冲突，请在使用前删除旧版本配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin')) {
-    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.3');
+    const ext = seal.ext.new('aiplugin', 'baiyu&错误', '2.6.4');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -342,14 +342,15 @@ if (!seal.ext.find('aiplugin')) {
         async sendImage(ctx, msg) {
             let ranIndex = Math.floor(Math.random() * this.images.length);
             let imageToReply = this.images[ranIndex];
-            this.images.splice(ranIndex, 1);
 
             let isValid = false
-            let match = imageToReply.match(/\[CQ:image,file=(https:.*?)\]/);
-            if (!match || !match[1]) {
+            let match = imageToReply
+                .match(/\[CQ:image,file=(.*?)\]/)?.[1]
+                .match(/http.*/);
+            if (!match) {
                 console.log("Invalid CQ code format.");
             } else {
-                let url = match[1];
+                let url = match[0];
                 try {
                     let response = await fetch(url, { method: 'GET' });
 
@@ -371,7 +372,8 @@ if (!seal.ext.find('aiplugin')) {
 
             if (isValid) {
                 seal.replyToSender(ctx, msg, imageToReply);
-                this.images.push(imageToReply);
+            } else {
+                this.images.splice(ranIndex, 1);
             }
             return isValid;
         }
@@ -381,7 +383,7 @@ if (!seal.ext.find('aiplugin')) {
         const cut = seal.ext.getBoolConfig(ext, "是否截断换行后文本")
         if (cut) reply = reply.split('\n')[0]
         const segments = reply.split(/<[\|｜]from.*?[\|｜]>/)
-        reply = segments[0] ? segments[0] : (segments[1]? segments[1] : reply)
+        reply = segments[0] ? segments[0] : (segments[1] ? segments[1] : reply)
 
         return reply.replace(/<[\|｜].*[\|｜]>/g, '')
     }

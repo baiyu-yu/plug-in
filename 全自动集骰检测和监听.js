@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         全自动集骰检测和监听
-// @description  全自动集骰检测和监听插件，可通过添加http上报每段时间定时/指令扫群列表和群成员列表检测是否在集骰群，可通过.jt help查看使用指令相关。\n若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。会自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。更多自定义配置请查看配置项（即插件设置部分）。
+// @description  全自动集骰检测和监听插件，可通过添加http上报每段时间定时/指令扫群列表和群成员列表检测是否在集骰群，可通过.jt help查看使用指令相关。\n若不开启http端口，也可以通过纯监听群内短时间响应指令数量判断是否有集骰嫌疑。会自行上报装了插件的骰娘的存活，这种方式上报的骰号一段时间内没二次上报自动修改为死掉。更多自定义配置请查看配置项（即插件设置部分）。注意：http上报内置无法开启，napcat/llonebot/lagrange/gocq如何开启可以自行搜索手册中配置文件部分，port为端口。
 // @version      1.0.0
 // @license      MIT
 // @author       白鱼&错误
@@ -407,7 +407,9 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     async function reportTask() {
         let eps = seal.getEndPoints()
         for (let ep of eps) {
-            const raw_epId = ep.userId.replace(/\D+/g, "");
+            const epId = ep.userId
+            const raw_epId = epId.match(/QQ:(\d+)/)?.[1]
+            if (!raw_epId) continue;
             await reportSelfAliveStatus(backendHost, raw_epId);
         }
     }
@@ -471,10 +473,9 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         // 上报自身账号存活状态
         await reportTask();
         function getTime() {
-            const date = new Date();
-            const hours = date.getHours().toString().padStart(2, '0');
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            return `${hours}:${minutes}`;
+            const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
+            const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
+            return `${hour}:${minute}`;
         }
         const HHMMtime = getTime();
         console.log(`上报任务将在每天的${HHMMtime}执行`)
