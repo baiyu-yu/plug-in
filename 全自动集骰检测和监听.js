@@ -123,10 +123,10 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         const groupId = `QQ-Group:${raw_groupId}`;
         const mctx = getCtxById(epId, groupId, "", "QQ:114514");
 
-        
+
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
-        const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
+        const inviteText = inviteUserId ? `邀请人: (${inviteUserId})。` : '';
         const message = `检测集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
@@ -149,9 +149,9 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
 
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
-        const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
+        const inviteText = inviteUserId ? `邀请人: (${inviteUserId})。` : '';
         const message = `严重集骰警告：检测到群：<${groupName}>(${raw_groupId})集骰数量达到退群阈值，将在5秒后自动退群。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
-        
+
         noticeById(epId, groupId, "", "QQ:114514", message);
         replyById(epId, groupId, "", "QQ:114514", inGroupWarning);
 
@@ -179,7 +179,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
 
         const groupName = mctx.group.groupName
         const inviteUserId = mctx.group.inviteUserId
-        const inviteText = inviteUserId? `邀请人: (${inviteUserId})。` : '';
+        const inviteText = inviteUserId ? `邀请人: (${inviteUserId})。` : '';
         const message = `疑似集骰警告：监听到群：<${groupName}>(${raw_groupId})集骰数量达到阈值。${inviteText}\n匹配到的骰号:\n${dices.join('\n')}`;
 
         noticeById(epId, groupId, "", "QQ:114514", message);
@@ -306,17 +306,17 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     /**
      * 获取存活骰号列表
      * @param {string} backendHost - 后端服务器地址
-     * @returns {Promise<Array>} 存活骰号列表
+     * @returns {Promise<Set>} 存活骰号集合
      */
-    async function getAliveDiceList(backendHost) {
+    async function getAliveDiceSet(backendHost) {
         try {
             const diceResponse = await fetch(`${backendHost}/api/get_alive_dice`);
             const aliveDice = await diceResponse.json();
             console.log(`获取存活骰号成功，数量: ${aliveDice.length}`);
-            return aliveDice.map(String);
+            return new Set(aliveDice.map(String));
         } catch (error) {
             console.error(`获取存活骰号失败: ${error.message}`);
-            return [];
+            return new Set();
         }
     }
 
@@ -346,8 +346,8 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
                 const groupList = await getGroupList(httpHost);
                 if (!groupList) continue;
 
-                const aliveDiceList = await getAliveDiceList(backendHost);
-                if (!aliveDiceList) continue;
+                const aliveDiceSet = await getAliveDiceSet(backendHost);
+                if (!aliveDiceSet || (!aliveDiceSet.has(raw_epId) && !await reportSelfAliveStatus(backendHost, raw_epId))) continue;
 
                 // 按批次处理群成员检查
                 for (let j = 0; j < groupList.length; j += maxGroups) {
@@ -369,7 +369,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
                         // 过滤白名单中的骰号
                         let matchedDice = memberList.filter(member => {
                             const memberId = String(member.user_id);
-                            return aliveDiceList.includes(memberId) && !whiteListDice.includes(memberId);
+                            return aliveDiceSet.has(memberId) && !whiteListDice.includes(memberId);
                         });
 
                         console.log(`群 ${raw_groupId} 匹配到的存活骰号数量（排除白名单骰号）: ${matchedDice.length}`);
@@ -405,13 +405,17 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
      * @returns {Promise<void>}
      */
     async function reportTask() {
-        let eps = seal.getEndPoints()
-        for (let ep of eps) {
-            const epId = ep.userId
+        const eps = seal.getEndPoints()
+        const epIds = eps.map(ep => ep.userId)
+        const epIdSet = new Set(epIds)
+
+        epIdSet.forEach(async epId => {
             const raw_epId = epId.match(/QQ:(\d+)/)?.[1]
-            if (!raw_epId) continue;
+            if (!raw_epId) return;
             await reportSelfAliveStatus(backendHost, raw_epId);
-        }
+        })
+
+        console.log(`上报任务执行完成`)
     }
 
     async function monitorDealTask(now) {
@@ -419,8 +423,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         const threshold = seal.ext.getIntConfig(ext, "集骰通知阈值");
         const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
-        const aliveDiceList = await getAliveDiceList(backendHost);
-        const aliveDiceSet = new Set(aliveDiceList);
+        const aliveDiceSet = await getAliveDiceSet(backendHost);
         for (let raw_groupId in whiteListMonitor) {
             if (now - whiteListMonitor[raw_groupId].time > whiteListTime && whiteListMonitor[raw_groupId].noticed) {
                 console.log(`群 ${raw_groupId} 监听白名单已过期，删除`)
@@ -440,12 +443,13 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
                 if (whiteListMonitor[raw_groupId].dices.length + 1 >= threshold) {
                     const epId = whiteListMonitor[raw_groupId].epId;
                     const raw_epId = epId.replace(/\D+/g, "");
-    
+                    if (!aliveDiceSet || (!aliveDiceSet.has(raw_epId) && !await reportSelfAliveStatus(backendHost, raw_epId))) return;
+
                     // 疑似骰号进行比对
                     const aliveDices = whiteListMonitor[raw_groupId].dices.filter(dice => aliveDiceSet.has(dice));
                     const aliveDicesNum = aliveDices.length;
                     const dices = whiteListMonitor[raw_groupId].dices.map(dice => aliveDiceSet.has(dice) ? dice : `${dice} (未登记)`);
-    
+
                     //活骰达到数量，执行警告
                     if (!whiteListLeave[raw_groupId] || whiteListLeave[raw_groupId] + 604800 < now) {
                         if (aliveDicesNum >= leaveThreshold && useHttp && httpData[raw_epId]) {
@@ -468,32 +472,53 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     const useHttp = seal.ext.getBoolConfig(ext, "是否开启HTTP请求功能");
     const usetimedtask = seal.ext.getBoolConfig(ext, "是否开启定时清查集骰群");
     let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
-    let isMonitorTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
     async function initialize() {
-        // 上报自身账号存活状态
-        await reportTask();
-        function getTime() {
-            const hour = Math.floor(Math.random() * 24).toString().padStart(2, '0');
-            const minute = Math.floor(Math.random() * 60).toString().padStart(2, '0');
+        // 检查是否有历史上报时间记录，或者是否需要进行一次上报
+        let reportTime = parseInt(ext.storageGet("reportTime"))
+        if (!reportTime) {
+            console.log("无历史上报时间记录，开始第一次上报")
+            await reportTask();
+            let randomTime = Math.floor(Math.random() * 24 * 60 * 60)
+            reportTime = Math.floor(Date.now() / 1000) - randomTime
+            ext.storageSet("reportTime", reportTime.toString())
+        } else if (Date.now() - reportTime * 1000 > 24 * 60 * 60 * 1000 - 60 * 1000) {
+            console.log("距离上次上报时间超过23小时59分钟，开始上报")
+            await reportTask();
+            reportTime = Math.floor(Date.now() / 1000)
+            ext.storageSet("reportTime", reportTime.toString())
+        }
+
+        //注册上报任务
+        function getTime(reportTime) {
+            const date = new Date(reportTime * 1000);
+            const hour = date.getHours().toString().padStart(2, '0');
+            const minute = date.getMinutes().toString().padStart(2, '0');
             return `${hour}:${minute}`;
         }
-        const HHMMtime = getTime();
+        const HHMMtime = getTime(reportTime);
         console.log(`上报任务将在每天的${HHMMtime}执行`)
         seal.ext.registerTask(ext, "daily", HHMMtime, async (taskCtx) => {
-            await reportTask();
+            const reportTime = parseInt(ext.storageGet("reportTime") || taskCtx.now)
+            //当前时间与上次上报时间小于23小时59分钟时，不进行上报
+            if (taskCtx.now - reportTime * 1000 < 24 * 60 * 60 * 1000 - 60 * 1000) {
+                console.log(`跳过本次上报`);
+                return;
+            } else {
+                await reportTask();
+                ext.storageSet("reportTime", taskCtx.now.toString())
+            }
         });
 
         //启动监听定时任务
         const interval = seal.ext.getIntConfig(ext, "每n秒处理一次暂时白名单队列");
-        setInterval(() => {
-            if (!isMonitorTaskRunning && Object.keys(whiteListMonitor).length > 0 && Object.values(whiteListMonitor).some(item => item.noticed === false)) {
+        async function monitorTaskRun() {
+            if (Object.keys(whiteListMonitor).length > 0 && Object.values(whiteListMonitor).some(item => item.noticed === false)) {
                 console.log("开始执行监听上报定时任务")
-                isMonitorTaskRunning = true;
-                monitorDealTask(Math.floor(Date.now() / 1000)).then(() => {
-                    isMonitorTaskRunning = false;
-                });
+                await monitorDealTask(Math.floor(Date.now() / 1000));
             }
-        }, interval * 1000);
+            setTimeout(monitorTaskRun, interval * 1000);
+        }
+        monitorTaskRun();
 
         if (useHttp) {
             //获取HTTP对应的骰号
@@ -564,7 +589,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
         const arg1 = cmdArgs.getArgN(2);
         const arg2 = cmdArgs.getArgN(3);
         const arg3 = cmdArgs.getArgN(4);
-    
+
         if (!subCommand || subCommand === 'help') {
             const commandhelp = "集骰管理指令\n用法：\n.jt help // 显示帮助信息\n.jt rpt/report <骰号> <存活状态> // 上报该骰号及其存活状态（0: 不存活, 1: 存活）\n.jt rm/remove <骰号> // 移除该骰号\n.jt ck/check // 执行一次集骰清查任务\n.jt wl/whitelist add/rm/show group/dice <ID> // 管理群号和骰号白名单\n注：缩写与完整拼写部分功能相同；ID部分直接输入数字；不需要输入<>；"
             seal.replyToSender(ctx, msg, commandhelp);
@@ -734,12 +759,12 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
                             seal.replyToSender(ctx, msg, `白名单群号列表: \n${whiteListGroup.join('\n')}\n白名单骰号列表: \n${whiteListDice.join('\n')}`);
                         }
                         break;
-    
+
                     default:
                         seal.replyToSender(ctx, msg, "未知命令。请使用 add/rm/show group/dice");
                 }
                 break;
-    
+
             default:
                 seal.replyToSender(ctx, msg, "未知子命令。请使用 rpt/report, rm/remove, ck/check, wl/whitelist");
         }
@@ -749,6 +774,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     //监听指令
     ext.onCommandReceived = (ctx, msg, cmdArgs) => {
         if (ctx.isPrivate) return;
+
         const isAll = seal.ext.getBoolConfig(ext, "是否监听全部指令");
         const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
         const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
