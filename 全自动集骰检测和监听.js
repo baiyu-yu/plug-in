@@ -472,7 +472,6 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     const useHttp = seal.ext.getBoolConfig(ext, "是否开启HTTP请求功能");
     const usetimedtask = seal.ext.getBoolConfig(ext, "是否开启定时清查集骰群");
     let isTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
-    let isMonitorTaskRunning = false;  // 全局标志，跟踪任务是否正在运行
     async function initialize() {
         // 检查是否有历史上报时间记录，或者是否需要进行一次上报
         let reportTime = parseInt(ext.storageGet("reportTime"))
@@ -512,15 +511,14 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
 
         //启动监听定时任务
         const interval = seal.ext.getIntConfig(ext, "每n秒处理一次暂时白名单队列");
-        setInterval(() => {
-            if (!isMonitorTaskRunning && Object.keys(whiteListMonitor).length > 0 && Object.values(whiteListMonitor).some(item => item.noticed === false)) {
+        async function monitorTaskRun() {
+            if (Object.keys(whiteListMonitor).length > 0 && Object.values(whiteListMonitor).some(item => item.noticed === false)) {
                 console.log("开始执行监听上报定时任务")
-                isMonitorTaskRunning = true;
-                monitorDealTask(Math.floor(Date.now() / 1000)).then(() => {
-                    isMonitorTaskRunning = false;
-                });
+                await monitorDealTask(Math.floor(Date.now() / 1000));
             }
-        }, interval * 1000);
+            setTimeout(monitorTaskRun, interval * 1000);
+        }
+        monitorTaskRun();
 
         if (useHttp) {
             //获取HTTP对应的骰号
@@ -776,6 +774,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     //监听指令
     ext.onCommandReceived = (ctx, msg, cmdArgs) => {
         if (ctx.isPrivate) return;
+
         const isAll = seal.ext.getBoolConfig(ext, "是否监听全部指令");
         const commands = seal.ext.getTemplateConfig(ext, "监听指令名称");
         const whiteListTime = seal.ext.getFloatConfig(ext, "暂时白名单时限/分钟") * 60;
