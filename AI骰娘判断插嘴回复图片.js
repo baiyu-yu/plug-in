@@ -52,9 +52,7 @@ if (!seal.ext.find('aiplugin')) {
     seal.ext.registerBoolConfig(ext, "是否打印日志细节", true, "");
 
     seal.ext.registerTemplateConfig(ext, "header", [
-        `"Authorization":"Bearer 替换为你的APIkeys"`,
-        `"Content-Type":"application/json"`,
-        `"Accept":"application/json"`
+        `"Authorization":"Bearer 替换为你的APIkeys"`
     ], "");
     seal.ext.registerTemplateConfig(ext, "body", [
         `"model":"deepseek-chat"`,
@@ -81,6 +79,9 @@ if (!seal.ext.find('aiplugin')) {
         const bodyTemplate = seal.ext.getTemplateConfig(ext, "body")
 
         const headerObject = JSON.parse(`{${headerTemplate.join(',')}}`);
+        headerObject["Content-Type"] = "application/json";
+        headerObject["Accept"] = "application/json"
+
         const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
         bodyObject['messages'] = context;
         bodyObject['stop'] = null;
@@ -88,7 +89,6 @@ if (!seal.ext.find('aiplugin')) {
 
 
         try {
-            console.log(JSON.stringify(bodyObject, null, 2))
             if (printlog) {
                 let log = ``
                 for (let i = 1; i < context.length; i++) log += `"${context[i].role}": "${context[i].content}"\n`
@@ -180,12 +180,12 @@ if (!seal.ext.find('aiplugin')) {
                 await this.getReply(ctx, msg, replymsg, retry + 1)
                 return;
             }
-            //过滤文本，哇呀好可怕，AI坏，总是弄出莫名其妙的前缀来
+            //过滤文本
             reply = handleReply(reply);
             reply = reply.slice(0, maxChar)
             if (replymsg) reply = `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${rawUserId}]` + reply
             seal.replyToSender(ctx, msg, reply);
-            if (!allmsg || !allow.hasOwnProperty(rawGroupId)) await this.iteration(reply, ctx, msg, 'assistant', dice_name)
+            if (!allmsg || !allow.hasOwnProperty(rawGroupId) || (!allow[rawGroupId][1] && !allow[rawGroupId][2])) await this.iteration(reply, ctx, msg, 'assistant', dice_name)
 
             if (allow.hasOwnProperty(rawGroupId) && allow[rawGroupId][3]) {
                 let p = seal.ext.getIntConfig(ext, "回复图片的概率（%）")
