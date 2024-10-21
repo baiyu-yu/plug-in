@@ -44,17 +44,19 @@ app.post('/api/report_alive_method1', async (req, res) => {
     try {
         let dice = await Dice.findOne({ dice_id });
         if (dice) {
+            // 方法1上报，优先级高，直接覆盖所有方法2的记录
             dice.alive = true;
             dice.lastReport = new Date();
             dice.reportMethod = "method1"; // 标记为方法1上报
             await dice.save();
             res.json({ message: `骰号 ${dice_id} 上报成功 (方法1)` });
         } else {
+            // 如果数据库中没有该记录，添加新的记录
             dice = new Dice({ dice_id, alive: true, lastReport: new Date(), reportMethod: "method1" });
             await dice.save();
             res.json({ message: `骰号 ${dice_id} 已添加并标记为存活 (方法1)` });
         }
-        console.log(`骰号 ${dice_id} 上报成功 (方法1)`); // 可以考虑移到统一的地方记录
+        console.log(`骰号 ${dice_id} 上报成功 (方法1)`); 
     } catch (err) {
         console.error("方法1上报骰号失败", err);
         res.status(500).json({ message: '服务器错误' });
@@ -62,22 +64,38 @@ app.post('/api/report_alive_method1', async (req, res) => {
 });
 
 // 方法2：上报骰号和存活状态（手动命令）
-app.post('/api/report_dice_method2', async (req, res) => {
+app.post('/api/report_alive_method2', async (req, res) => {
     const { dice_id, alive } = req.body;
     try {
         let dice = await Dice.findOne({ dice_id });
         if (dice) {
-            dice.alive = alive;
-            dice.lastReport = new Date();
-            dice.reportMethod = "method2"; // 标记为方法2上报
-            await dice.save();
-            res.json({ message: `骰号 ${dice_id} 存活状态更新为 ${alive ? '存活' : '不存活'} (方法2)` });
+            console.log(`方法2上报：找到dice_id ${dice_id}，当前状态：alive=${dice.alive}, reportMethod=${dice.reportMethod}`);
+            
+            if (dice.reportMethod === "method1" && dice.alive && !alive) {
+                console.log(`方法2上报：将 dice_id ${dice_id} 从存活标记为不存活`);
+                dice.alive = false; // 覆盖方法1为不存活
+                dice.lastReport = new Date();
+                dice.reportMethod = "method2"; // 标记为方法2上报
+                await dice.save();
+                res.json({ message: `骰号 ${dice_id} 被方法2标记为不存活` });
+            } else if (dice.reportMethod === "method1" && dice.alive && alive) {
+                // 如果方法1标记为存活，方法2也标记为存活，则不做任何修改
+                console.log(`方法2上报：方法1已经存活，方法2存活上报无效，跳过修改`);
+                res.json({ message: `骰号 ${dice_id} 状态未更改 (方法2)，方法1优先` });
+            } else {
+                console.log(`方法2上报：更新 dice_id ${dice_id} 的存活状态为 ${alive}`);
+                dice.alive = alive;
+                dice.lastReport = new Date();
+                dice.reportMethod = "method2";
+                await dice.save();
+                res.json({ message: `骰号 ${dice_id} 存活状态更新为 ${alive ? '存活' : '不存活'} (方法2)` });
+            }
         } else {
+            console.log(`方法2上报：新添加 dice_id ${dice_id}`);
             dice = new Dice({ dice_id, alive, lastReport: new Date(), reportMethod: "method2" });
             await dice.save();
             res.json({ message: `骰号 ${dice_id} 已添加并存活状态为 ${alive ? '存活' : '不存活'} (方法2)` });
         }
-        console.log(`骰号 ${dice_id} 上报成功 (方法2)`); // 同上
     } catch (err) {
         console.error("方法2上报骰号失败", err);
         res.status(500).json({ message: '服务器错误' });
@@ -90,7 +108,7 @@ app.post('/api/remove_dice', async (req, res) => {
     try {
         await Dice.deleteOne({ dice_id });
         res.json({ message: `骰号 ${dice_id} 已移除` });
-        console.log(`骰号 ${dice_id} 已移除`); // 同上
+        console.log(`骰号 ${dice_id} 已移除`); 
     } catch (err) {
         console.error("移除骰号失败", err);
         res.status(500).json({ message: '服务器错误' });
