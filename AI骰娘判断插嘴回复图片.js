@@ -624,7 +624,7 @@ if (!seal.ext.find('aiplugin')) {
             const canPrivate = seal.ext.getBoolConfig(ext, "能否私聊使用")
             const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
 
-            if (clearWords.some(item => message.includes(item))) {
+            if (clearWords.some(item => message.includes(seal.format(ctx, item)))) {
                 if (ctx.privilegeLevel >= 50) {
                     if (allow.hasOwnProperty(rawGroupId) && ctx.privilegeLevel >= allow[rawGroupId][0]) {
                         clearTimeout(data[id].timer)
@@ -645,7 +645,7 @@ if (!seal.ext.find('aiplugin')) {
                 }
             }
 
-            if (keyWords.some(item => message.includes(item))) {
+            if (keyWords.some(item => message.includes(seal.format(ctx, item)))) {
                 if (ctx.isPrivate && !canPrivate) return;
                 if (await data[id].iteration(message, ctx, msg, 'user', user_name)) return;
                 if (allow.hasOwnProperty(rawGroupId)) {
