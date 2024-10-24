@@ -169,13 +169,12 @@ if (!seal.ext.find('aiplugin3')) {
             const apiKey = seal.ext.getStringConfig(ext, "API Key")
             const bodyTemplate = seal.ext.getTemplateConfig(ext, "body")
 
-            const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
-            bodyObject['messages'] = messages;
-            bodyObject['stop'] = null;
-            bodyObject['stream'] = false;
-
-
             try {
+                const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
+                bodyObject['messages'] = messages;
+                bodyObject['stop'] = null;
+                bodyObject['stream'] = false;
+                
                 // 打印请求发送前的上下文
                 //console.log('请求发送前的上下文:', JSON.stringify(context, null, 2));
                 let text = JSON.stringify(messages, (key, value) => {

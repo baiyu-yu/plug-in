@@ -102,6 +102,8 @@ if (!ext) {
                     return '';
                 }
 
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 return await drawStolenImage(id);
             }
 
@@ -124,6 +126,8 @@ if (!ext) {
                         return url;
                     }
 
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
                     return await drawAllImage(id);
                 }
             }
@@ -145,6 +149,7 @@ if (!ext) {
                 }
             }
 
+            saveData(id)
             return image
         }
 
@@ -164,6 +169,9 @@ if (!ext) {
                     }
                 } else {
                     console.log(`URL is expired or invalid. Status: ${response.status}`);
+                    if (response.status == 500) {
+                        isValid = true;
+                    }
                 }
             } catch (error) {
                 console.error('Error checking URL:', error);
@@ -191,12 +199,12 @@ if (!ext) {
             const MAX_REPLY_CHARS = seal.ext.getIntConfig(ext, "最大回复字符数");
             const bodyTemplate = seal.ext.getTemplateConfig(ext, "body")
 
-            const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
-            bodyObject['messages'] = messages;
-            bodyObject['stop'] = null;
-            bodyObject['stream'] = false;
-
             try {
+                const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
+                bodyObject['messages'] = messages;
+                bodyObject['stop'] = null;
+                bodyObject['stream'] = false;
+
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: {
@@ -272,7 +280,7 @@ if (!ext) {
                         return;
                     }
                     default: {
-                        seal.replyToSender(ctx, msg, `图片偷取:${data[id].steal}`);
+                        seal.replyToSender(ctx, msg, `图片偷取:${data[id].steal},当前数量:${data[id].images.length}`);
                         return;
                     }
                 }
