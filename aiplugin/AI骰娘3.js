@@ -201,14 +201,14 @@ if (!seal.ext.find('aiplugin3')) {
                 }
 
                 const data_response = await response.json();
-                print(`服务器响应:${JSON.stringify(data_response)}`);
 
                 if (data_response.error) {
                     throw new Error(`请求失败：${JSON.stringify(data_response.error)}`);
                 }
 
                 if (data_response.choices && data_response.choices.length > 0) {
-                    let reply = data_response.choices[0].message.content;
+                    const reply = data_response.choices[0].message.content;
+                    print(`响应内容:${reply}`);
                     return reply;
                 } else {
                     throw new Error("服务器响应中没有choices或choices为空");
@@ -295,7 +295,6 @@ if (!seal.ext.find('aiplugin3')) {
                 }
 
                 const data_response = await response.json();
-                print(`服务器响应:${JSON.stringify(data_response)}`);
 
                 if (data_response.error) {
                     throw new Error(`请求失败：${JSON.stringify(data_response.error)}`);
@@ -392,8 +391,9 @@ if (!seal.ext.find('aiplugin3')) {
             const imageAIExt = seal.ext.find('aiImageThief')
             if (imageAIExt) {
                 const image = await globalThis.image.drawImage(id, "all")
-                if (!image) return;
-                seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`)
+                if (image) {
+                    seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`)
+                }
             }
 
             //保存上下文

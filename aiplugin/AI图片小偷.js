@@ -160,10 +160,10 @@ if (!ext) {
                         console.log('URL is valid and not expired.');
                         isValid = true;
                     } else {
-                        throw new Error(`URL is valid but does not return an image. Content-Type: ${contentType}`);
+                        console.log(`URL is valid but does not return an image. Content-Type: ${contentType}`);
                     }
                 } else {
-                    throw new Error(`URL is expired or invalid. Status: ${response.status}`);
+                    console.log(`URL is expired or invalid. Status: ${response.status}`);
                 }
             } catch (error) {
                 console.error('Error checking URL:', error);
@@ -211,7 +211,6 @@ if (!ext) {
                 }
 
                 const data = await response.json();
-                console.log('服务器响应:', JSON.stringify(data));
 
                 if (data.error) {
                     throw new Error(`请求失败：${JSON.stringify(data.error)}`);
@@ -219,12 +218,13 @@ if (!ext) {
 
                 if (data.choices && data.choices.length > 0) {
                     const reply = data.choices[0].message.content;
+                    console.log("图片内容：", reply);
                     return reply.slice(0, MAX_REPLY_CHARS);
                 } else {
                     throw new Error("服务器响应中没有choices或choices为空");
                 }
             } catch (error) {
-                console.error("请求出错：", error);
+                console.error("在imageToText中请求出错：", error);
                 return '图片';
             }
         }
@@ -235,6 +235,7 @@ if (!ext) {
     cmdimg.help = `盗图指南:
 【img draw (stl/lcl)】随机抽取偷的图片/本地图片
 【img stl (on/off)】偷图 开启/关闭
+【img f】遗忘
 【img itt 图片/ran】图片转文字`;
     cmdimg.solve = async (ctx, msg, cmdArgs) => {
         const val = cmdArgs.getArgN(1);
@@ -275,6 +276,15 @@ if (!ext) {
                         return;
                     }
                 }
+            }
+            case 'f':
+            case 'fgt':
+            case 'forget': {
+                getData(id)
+                data[id].images = [];
+                seal.replyToSender(ctx, msg, '图片已遗忘');
+                saveData(id)
+                return;
             }
             case 'itt': {
                 const imageThief = new Image()
