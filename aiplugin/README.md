@@ -11,7 +11,7 @@ AI Plugin3 是一个为 Deepseek AI 平台（https://platform.deepseek.com/）�
 - 根据关键词触发回复
 - 自定义角色设定
 - 支持私聊和群聊
-- 计数器(c)、计时器(t)和插嘴模式(t)
+- 计数器(counter)、计时器(timer)和插嘴模式(interrupt)
 
 ### 安装配置
 
