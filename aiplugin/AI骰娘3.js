@@ -918,7 +918,7 @@ if (!seal.ext.find('aiplugin3')) {
                 if (patterns.some(pattern => pattern.test(message))) return;
 
                 const ai = new AI()
-                await ai.iteration(ctx, msg, message, 'user')
+                await ai.iteration(ctx, msg, message, 'assistant')
                 return;
             }
         }
