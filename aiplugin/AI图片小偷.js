@@ -17,9 +17,9 @@ if (!ext) {
     // 注册扩展
     seal.ext.register(ext);
 
-    seal.ext.registerTemplateConfig(ext, "本地图片路径", ['data/images/sealdice.png'], "")
-    seal.ext.registerIntConfig(ext, "偷取图片存储上限", 30, "");
-    seal.ext.registerIntConfig(ext, "发送图片的概率/%", 100, "");
+    seal.ext.registerTemplateConfig(ext, "本地图片路径", ['data/images/sealdice.png'], "如不需要可以不填写")
+    seal.ext.registerIntConfig(ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
+    seal.ext.registerIntConfig(ext, "发送图片的概率/%", 100, "抽取图片成功的概率");
 
     seal.ext.registerStringConfig(ext, "非指令触发需要满足的条件", '1', "使用豹语表达式，例如：$t群号_RAW=='2001'")
     seal.ext.registerTemplateConfig(ext, "非指令关键词", ["咪"], "包含关键词将进行回复")
