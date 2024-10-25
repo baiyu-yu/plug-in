@@ -51,7 +51,9 @@ if (!ext) {
     }
 
     function saveData(id) {
-        ext.storageSet(`data_${id}`, JSON.stringify(data[id]));
+        if (data[id]) {
+            ext.storageSet(`data_${id}`, JSON.stringify(data[id]));
+        }
     };
 
     function getUrls(text) {
