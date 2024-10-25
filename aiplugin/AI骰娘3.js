@@ -30,7 +30,7 @@ if (!seal.ext.find('aiplugin3')) {
     seal.ext.registerBoolConfig(ext, "是否录入所有骰子发送的消息", false, "")
     seal.ext.registerBoolConfig(ext, "是否录入指令消息", false, "")
     seal.ext.registerBoolConfig(ext, "是否在消息内添加前缀", true, "")
-    seal.ext.registerIntConfig(ext, "存储上下文对话限制轮数", 8, "");
+    seal.ext.registerIntConfig(ext, "存储上下文对话限制轮数", 10, "");
     seal.ext.registerFloatConfig(ext, "上下文的缓存时间/min", 240, "可填小数，例如0.5")
 
     seal.ext.registerBoolConfig(ext, "能否私聊使用", false, "")
@@ -54,7 +54,7 @@ if (!seal.ext.find('aiplugin3')) {
     seal.ext.registerStringConfig(ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "")
     seal.ext.registerIntConfig(ext, "参与插嘴检测的最大字数", 600, "防止过长消息")
     seal.ext.registerIntConfig(ext, "插嘴缓存时间/s", 10, "用于减少检测频率")
-    seal.ext.registerFloatConfig(ext, "触发插嘴的活跃度阈值", 7, "范围1~10，阈值越低，发言越频繁")
+    seal.ext.registerFloatConfig(ext, "触发插嘴的活跃度阈值", 8, "范围1~10，阈值越低，发言越频繁")
 
     seal.ext.registerBoolConfig(ext, "是否打印日志细节", true, "修改并保存后请重载js")
 
@@ -131,8 +131,15 @@ if (!seal.ext.find('aiplugin3')) {
         const stopRepeat = seal.ext.getBoolConfig(ext, "禁止AI复读")
 
         if (stopRepeat) {
-            const index = messages.findIndex(item => item.role == 'assistant' && item.content.replace(/<[\|｜].*[\|｜]>/g, '') == text);
-            return index;
+            const rMessages = messages.slice().reverse()
+            const index = rMessages.findIndex(item => item.role == 'assistant');
+            if (index !== -1) {
+                const content = rMessages[index].content.replace(/<[\|｜].*[\|｜]>/g, '');
+
+                if (content === text) {
+                    return messages.length - 1 - index;
+                }
+            }
         }
 
         return -1;
@@ -174,7 +181,7 @@ if (!seal.ext.find('aiplugin3')) {
                 bodyObject['messages'] = messages;
                 bodyObject['stop'] = null;
                 bodyObject['stream'] = false;
-                
+
                 // 打印请求发送前的上下文
                 //console.log('请求发送前的上下文:', JSON.stringify(context, null, 2));
                 let text = JSON.stringify(messages, (key, value) => {
@@ -310,7 +317,7 @@ if (!seal.ext.find('aiplugin3')) {
                         throw new Error("AI 返回的积极性数值无效");
                     }
 
-                    data[id].act = (data[id].act * 0.2) + (act * 0.8)
+                    data[id].act = data[id].act == 0 ? act : (data[id].act * 0.2) + (act * 0.8)
                 } else {
                     throw new Error("服务器响应中没有choices或choices为空");
                 }
@@ -358,18 +365,22 @@ if (!seal.ext.find('aiplugin3')) {
 
                 //禁止AI复读
                 const index = repeatDetection(reply, messages);
-                if (index !== -1) {
+                if (index !== -1 && reply) {
+                    if (retry == 3) {
+                        contextData[id].messages = messages.filter(item => item.role != 'assistant');
+                        return '';
+                    }
                     print(`发现复读，重试次数：${++retry}/3`)
 
                     //删除重复文本
                     contextData[id].messages.splice(index, 1);
-                    if (retry > 3) {
-                        contextData[id].messages = messages.filter(item => item.role != 'assistant');
-                    }
+                    //保存上下文
+                    ai.saveContext(id)
 
                     //进行重试
                     return await getReply(retry);
                 }
+
                 return reply;
             }
 
