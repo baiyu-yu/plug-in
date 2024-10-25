@@ -169,9 +169,6 @@ if (!ext) {
                     }
                 } else {
                     console.log(`URL is expired or invalid. Status: ${response.status}`);
-                    if (response.status == 500) {
-                        isValid = true;
-                    }
                 }
             } catch (error) {
                 console.error('Error checking URL:', error);
