@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI图片小偷
 // @author       错误
-// @version      1.0.0
+// @version      1.0.1
 // @description  为aiplugin插件提供识别图片信息的能力。
 // @timestamp    1728126311
 // 2024-10-05 19:05:11
@@ -13,7 +13,7 @@
 // 首先检查是否已经存在
 let ext = seal.ext.find('aiImageThief');
 if (!ext) {
-    ext = seal.ext.new('aiImageThief', '错误', '1.0.0');
+    ext = seal.ext.new('aiImageThief', '错误', '1.0.1');
     // 注册扩展
     seal.ext.register(ext);
 
@@ -24,6 +24,7 @@ if (!ext) {
     seal.ext.registerStringConfig(ext, "非指令触发需要满足的条件", '1', "使用豹语表达式，例如：$t群号_RAW=='2001'")
     seal.ext.registerTemplateConfig(ext, "非指令关键词", ["咪"], "包含关键词将进行回复")
 
+    seal.ext.registerBoolConfig(ext, "是否启用图片大模型", false);
     seal.ext.registerStringConfig(ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
     seal.ext.registerStringConfig(ext, "APIkeys", "yours");
     seal.ext.registerTemplateConfig(ext, "body", [
@@ -180,6 +181,11 @@ if (!ext) {
         }
 
         async imageToText(imageUrl, text = '') {
+            const using = seal.ext.getBoolConfig(ext, "是否启用图片大模型");
+            if (!using) {
+                return '图片';
+            }
+
             const messages = [{
                 role: "user",
                 content: [
