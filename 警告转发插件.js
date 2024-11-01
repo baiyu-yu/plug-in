@@ -16,10 +16,10 @@ if (!seal.ext.find("消息转发插件")) {
 
     // 注册配置项
     seal.ext.register(ext);
-    seal.ext.registerTemplateConfig(ext, "接收群号", ["123456", "654321"], "配置允许接收消息的群号");
-    seal.ext.registerTemplateConfig(ext, "接收私聊QQ", ["111111", "222222"], "配置允许接收消息的私聊QQ");
-    seal.ext.registerTemplateConfig(ext, "转发群号", ["333333", "444444"], "配置消息转发的目标群号");
-    seal.ext.registerTemplateConfig(ext, "转发私聊QQ", ["555555", "666666"], "配置消息转发的目标私聊QQ");
+    seal.ext.registerTemplateConfig(ext, "接收群号", ["QQ-Group:123456", "QQ-Group:654321"], "配置允许接收消息的群号");
+    seal.ext.registerTemplateConfig(ext, "接收私聊QQ", ["QQ:111111", "QQ:222222"], "配置允许接收消息的私聊QQ");
+    seal.ext.registerTemplateConfig(ext, "转发群号", ["QQ-Group:333333", "QQ-Group:444444"], "配置消息转发的目标群号");
+    seal.ext.registerTemplateConfig(ext, "转发私聊QQ", ["QQ:555555", "QQ:666666"], "配置消息转发的目标私聊QQ");
 
     // 动态创建 ctx 和 msg，并发送消息
     function sendMessage(ep, groupId, userId, text) {
