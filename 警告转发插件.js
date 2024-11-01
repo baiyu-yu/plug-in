@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find("消息转发插件")) {
-    const ext = seal.ext.new("消息转发插件", "开发者", "1.0.0");
+    const ext = seal.ext.new("消息转发插件", "白鱼", "1.0.0");
 
     // 注册配置项
     seal.ext.register(ext);
