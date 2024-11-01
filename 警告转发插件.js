@@ -26,7 +26,7 @@ if (!seal.ext.find("消息转发插件")) {
         const msg = seal.newMessage();
         msg.messageType = groupId ? "group" : "private";
         msg.groupId = groupId;
-        msg.userId = userId;
+        msg.sender.userId = userId;
 
         const newCtx = seal.createTempCtx(ep, msg);
         console.log(`构建的 ctx: ${JSON.stringify(newCtx)}, 构建的 msg: ${JSON.stringify(msg)}`);
