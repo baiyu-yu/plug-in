@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Deepseek AI Plugin
 // @author       白鱼
-// @version      1.2.2
-// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。请自己修改content里的设定和最下面的触发词，也就是“黑鱼”这个改成你的骰的。
+// @version      1.3.2
+// @description  Deepseek 模型插件，用于与 Deepseek AI 进行对话，并根据特定关键词触发回复。请自己在插件设置界面修改相关设定。对于其它大部分符合openai规范的大模型也可适用。
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -12,7 +12,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('deepseekai')) {
-    const ext = seal.ext.new('deepseekai', 'baiyu', '1.2.2');
+    const ext = seal.ext.new('deepseekai', 'baiyu', '1.3.2');
     seal.ext.register(ext);
     // 注册配置项
     seal.ext.registerStringConfig(ext, "大模型url", "https://api.deepseek.com/v1/chat/completions", "请在大模型开放平台手册获取"); 
