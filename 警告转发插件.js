@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         警告转发插件
-// @description  警告消息转发插件，转发[被禁言]、[被踢出]、[黑名单等级提升]等消息到指定群或私聊。在插件配置项修改相关设置。
+// @description  警告消息转发插件，转发[被禁言]、[被踢出]、[黑名单等级提升]等消息到指定群或私聊。在插件配置项修改相关设置。接收和转发目标千万不要相同，虽然有做过风险处理，但是我还是怕啊！测试机因为死循环曾创造了一秒发送上百条消息的战绩。
 // @version      1.0.0
 // @license      MIT
 // @author       白鱼
@@ -16,22 +16,25 @@ if (!seal.ext.find("消息转发插件")) {
 
     // 注册配置项
     seal.ext.register(ext);
-    seal.ext.registerTemplateConfig(ext, "接收群号", ["QQ-Group:123456", "QQ-Group:654321"], "配置允许接收消息的群号");
-    seal.ext.registerTemplateConfig(ext, "接收私聊QQ", ["QQ:111111", "QQ:222222"], "配置允许接收消息的私聊QQ");
-    seal.ext.registerTemplateConfig(ext, "转发群号", ["QQ-Group:333333", "QQ-Group:444444"], "配置消息转发的目标群号");
-    seal.ext.registerTemplateConfig(ext, "转发私聊QQ", ["QQ:555555", "QQ:666666"], "配置消息转发的目标私聊QQ");
+    seal.ext.registerTemplateConfig(ext, "接收群号", ["QQ-Group:123456", "QQ-Group:654321"], "配置允许接收消息的群号，千万千万千万不要和转发群号相同。");
+    seal.ext.registerTemplateConfig(ext, "接收私聊QQ", ["QQ:111111", "QQ:222222"], "配置允许接收消息的私聊QQ，千万千万千万不要和转发私聊QQ相同。");
+    seal.ext.registerTemplateConfig(ext, "转发群号", ["QQ-Group:333333", "QQ-Group:444444"], "配置消息转发的目标群号，千万千万千万不要和接收群号相同。");
+    seal.ext.registerTemplateConfig(ext, "转发私聊QQ", ["QQ:555555", "QQ:666666"], "配置消息转发的目标私聊QQ，千万千万千万不要和接收私聊QQ相同。");
 
     async function sendMessage(ep, groupId, userId, text) {
         const msg = seal.newMessage();
         msg.messageType = groupId ? "group" : "private";
         msg.groupId = groupId;
         msg.sender.userId = userId;
+        msg.content = text;
+
+
         const newCtx = seal.createTempCtx(ep, msg);
-        
         await seal.replyToSender(newCtx, msg, text);
     }
 
     async function processMessage(ctx, msg) {
+
         // 以指定格式前缀匹配
         const mutePattern = /^被禁言: 在群组<(.+?)>\((\d+)\)中被禁言，时长(\d+)秒，操作者:<(.+?)>\((\d+)\)/;
         const kickPattern = /^被踢出群: 在QQ群组<(.+?)>\((\d+)\)中被踢出，操作者:<(.+?)>\((\d+)\)/;
@@ -45,7 +48,7 @@ if (!seal.ext.find("消息转发插件")) {
 
         for (const pattern of patterns) {
             if ((match = msg.message.match(pattern))) {
-                forwardMessage = `${msg.message}`;
+                forwardMessage = `监听到警告信息：${msg.message}`;
                 forwardMessagefrom = `来源：${ctx.player.name} (ID: ${ctx.player.userId})`;
                 break;
             }
@@ -74,27 +77,30 @@ if (!seal.ext.find("消息转发插件")) {
         }
         const ep = endPoints[0];
 
+        // 向目标群发送消息，带上已转发标志
         for (const groupId of forwardGroups) {
-            await sendMessage(ep, groupId, "", forwardMessage);
-            await sendMessage(ep, groupId, "", forwardMessagefrom);
+            await sendMessage(ep, groupId, "", forwardMessage, true);
+            await sendMessage(ep, groupId, "", forwardMessagefrom, true);
         }
 
+        // 向目标私聊发送消息，带上已转发标志
         for (const userId of forwardPrivateQQs) {
-            await sendMessage(ep, "", userId, forwardMessage);
-            await sendMessage(ep, "", userId, forwardMessagefrom);
+            await sendMessage(ep, "", userId, forwardMessage, true);
+            await sendMessage(ep, "", userId, forwardMessagefrom, true);
         }
     }
 
-    // 监听消息事件
+    // 异步监听消息事件
     ext.onNotCommandReceived = async (ctx, msg) => {
         await processMessage(ctx, msg);
     };
 
-    // 新增的 onMessageSend 处理自身发出的消息
+    // 异步监听自身发出的消息
     ext.onMessageSend = async (ctx, msg) => {
         await processMessage(ctx, msg);
     };
 }
+
 
 
 
