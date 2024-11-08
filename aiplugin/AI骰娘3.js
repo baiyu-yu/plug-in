@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.0.0
+// @version      3.0.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.0');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -35,7 +35,7 @@ if (!seal.ext.find('aiplugin3')) {
 
     seal.ext.registerBoolConfig(ext, "能否私聊使用", false, "")
     seal.ext.registerStringConfig(ext, "非指令触发需要满足的条件", '1', "使用豹语表达式，例如：$t群号_RAW=='2001'")
-    seal.ext.registerTemplateConfig(ext, "非指令关键词", ["呱"], "包含关键词将进行回复")
+    seal.ext.registerTemplateConfig(ext, "非指令消息触发正则表达式", ["^测试1$", "测试2之\\d+\\+\\d+=(多少|几)", "[CQ:at,qq=123456]"], "使用正则表达式进行匹配")
 
     seal.ext.registerTemplateConfig(ext, "非指令清除上下文", ["遗忘吧"], "")
     seal.ext.registerTemplateConfig(ext, "清除成功回复", ["啥？"], "")
@@ -801,7 +801,7 @@ if (!seal.ext.find('aiplugin3')) {
         // 检查CQ码
         const CQType = getCQType(message);
         if (CQType.length == 0 || CQType.every(item => CQTypeAllow.includes(item))) {
-            const keyWords = seal.ext.getTemplateConfig(ext, "非指令关键词")
+            const keyWords = seal.ext.getTemplateConfig(ext, "非指令消息触发正则表达式")
             const condition = seal.ext.getStringConfig(ext, "非指令触发需要满足的条件")
 
             const ai = new AI()
@@ -811,7 +811,13 @@ if (!seal.ext.find('aiplugin3')) {
             data[id].timer = null;
 
             // 非指令触发
-            if (keyWords.some(item => message.includes(item))) {
+            if (keyWords.some(item => {
+                try {
+                    return new RegExp(item).test(message)
+                } catch (error) {
+                    console.error('Error in RegExp:', error);
+                }
+            })) {
                 if (parseInt(seal.format(ctx, `{${condition}}`)) == 0) return;
                 await ai.iteration(ctx, msg, message, 'user')
                 await ai.chat(ctx, msg);
