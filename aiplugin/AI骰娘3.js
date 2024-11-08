@@ -35,7 +35,7 @@ if (!seal.ext.find('aiplugin3')) {
 
     seal.ext.registerBoolConfig(ext, "能否私聊使用", false, "")
     seal.ext.registerStringConfig(ext, "非指令触发需要满足的条件", '1', "使用豹语表达式，例如：$t群号_RAW=='2001'")
-    seal.ext.registerTemplateConfig(ext, "非指令消息触发正则表达式", ["^测试1$", "测试2之\\d+\\+\\d+=(多少|几)", "[CQ:at,qq=123456]"], "使用正则表达式进行匹配")
+    seal.ext.registerTemplateConfig(ext, "非指令消息触发正则表达式", ["^测试1$", "测试2之\\d+\\+\\d+=(多少|几)", "\[CQ:at,qq=123456\]"], "使用正则表达式进行匹配")
 
     seal.ext.registerTemplateConfig(ext, "非指令清除上下文", ["遗忘吧"], "")
     seal.ext.registerTemplateConfig(ext, "清除成功回复", ["啥？"], "")
@@ -816,10 +816,13 @@ if (!seal.ext.find('aiplugin3')) {
                     return new RegExp(item).test(message)
                 } catch (error) {
                     console.error('Error in RegExp:', error);
+                    return false;
                 }
             })) {
                 if (parseInt(seal.format(ctx, `{${condition}}`)) == 0) return;
-                await ai.iteration(ctx, msg, message, 'user')
+                await ai.iteration(ctx, msg, message, 'user');
+
+                print('非指令触发回复');
                 await ai.chat(ctx, msg);
             }
 
