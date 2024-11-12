@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.0.1
+// @version      3.0.2
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.1');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.2');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -48,8 +48,12 @@ if (!seal.ext.find('aiplugin3')) {
     seal.ext.registerIntConfig(ext, "计数器触发消息数", 5, '在收到消息一定数量消息后触发')
     seal.ext.registerIntConfig(ext, "计时器触发间隔/s", 40, '在收到消息一定时间后触发')
 
-    seal.ext.registerStringConfig(ext, "插嘴url地址", "无", "")
+    seal.ext.registerStringConfig(ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key")
     seal.ext.registerStringConfig(ext, "插嘴API Key", "你的API Key", "")
+    seal.ext.registerTemplateConfig(ext, "插嘴body", [
+        `"model":"deepseek-chat"`,
+        `"max_tokens":2`
+    ], "")
     seal.ext.registerIntConfig(ext, "参与插嘴检测的上下文轮数", 8, "");
     seal.ext.registerStringConfig(ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "")
     seal.ext.registerIntConfig(ext, "参与插嘴检测的最大字数", 600, "防止过长消息")
@@ -145,6 +149,19 @@ if (!seal.ext.find('aiplugin3')) {
         return -1;
     }
 
+    function parseBody(template, messages) {
+        try {
+            const bodyObject = JSON.parse(`{${template.join(',')}}`);
+            bodyObject['messages'] = messages;
+            bodyObject['stop'] = null;
+            bodyObject['stream'] = false;
+
+            return bodyObject;
+        } catch (err) {
+            throw new Error(`解析body时出现错误:${err}`)
+        }
+    }
+
     class AI {
         constructor() { }
 
@@ -177,10 +194,7 @@ if (!seal.ext.find('aiplugin3')) {
             const bodyTemplate = seal.ext.getTemplateConfig(ext, "body")
 
             try {
-                const bodyObject = JSON.parse(`{${bodyTemplate.join(',')}}`);
-                bodyObject['messages'] = messages;
-                bodyObject['stop'] = null;
-                bodyObject['stream'] = false;
+                const bodyObject = parseBody(bodyTemplate, messages)
 
                 // 打印请求发送前的上下文
                 //console.log('请求发送前的上下文:', JSON.stringify(context, null, 2));
@@ -250,6 +264,8 @@ if (!seal.ext.find('aiplugin3')) {
                 url = seal.ext.getStringConfig(ext, "url地址")
                 apiKey = seal.ext.getStringConfig(ext, "API Key")
             }
+            const bodyTemplate = seal.ext.getTemplateConfig(ext, "插嘴body")
+
             const ctxLength = seal.ext.getIntConfig(ext, "参与插嘴检测的上下文轮数");
             const topics = seal.ext.getStringConfig(ext, "进行插嘴检测的话题")
             const maxChar = seal.ext.getIntConfig(ext, "参与插嘴检测的最大字数")
@@ -270,6 +286,8 @@ if (!seal.ext.find('aiplugin3')) {
             const messages = [systemMessage, message]
 
             try {
+                const bodyObject = parseBody(bodyTemplate, messages)
+
                 // 打印请求发送前的上下文
                 //console.log('请求发送前的上下文:', JSON.stringify(context, null, 2));
                 let text = JSON.stringify(messages, (key, value) => {
@@ -287,13 +305,7 @@ if (!seal.ext.find('aiplugin3')) {
                         "Content-Type": "application/json",
                         "Accept": "application/json"
                     },
-                    body: JSON.stringify({
-                        "model": "deepseek-chat",
-                        "messages": messages,
-                        "stream": false,
-                        "max_tokens": 2,
-                        "stop": null
-                    }),
+                    body: JSON.stringify(bodyObject),
                 });
 
                 if (!response.ok) {
