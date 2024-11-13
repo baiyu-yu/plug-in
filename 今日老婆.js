@@ -134,7 +134,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
 
         // 处理设置命令
         if (subCommand === '设置') {
-            if (ctx.privilegeLevel > 50) {
+            if (ctx.privilegeLevel > 49) {
                 const optionIndex = parseInt(cmdArgs.getArgN(2), 10);
                 const value = cmdArgs.getArgN(3);
                 if (isNaN(optionIndex) || (optionIndex < 1 || optionIndex > 3)) {
@@ -188,7 +188,7 @@ if (!seal.ext.find('wifeOfTheDay')) {
         }
 
         if (subCommand === '黑名单') {
-            if (ctx.privilegeLevel > 50) {
+            if (ctx.privilegeLevel > 49) {
                 const action = cmdArgs.getArgN(2);
                 const targetUserId = extractPureId(cmdArgs.getArgN(3));
         
