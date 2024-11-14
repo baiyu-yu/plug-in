@@ -823,14 +823,16 @@ if (!seal.ext.find('aiplugin3')) {
             data[id].timer = null;
 
             // 非指令触发
-            if (keyWords.some(item => {
-                try {
-                    return new RegExp(item).test(message)
-                } catch (error) {
-                    console.error('Error in RegExp:', error);
-                    return false;
-                }
-            })) {
+            if (
+                keyWords.some(item => {
+                    try {
+                        return new RegExp(item).test(message)
+                    } catch (error) {
+                        console.error('Error in RegExp:', error);
+                        return false;
+                    }
+                })
+            ) {
                 if (parseInt(seal.format(ctx, `{${condition}}`)) == 0) return;
                 await ai.iteration(ctx, msg, message, 'user');
 
