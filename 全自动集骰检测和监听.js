@@ -582,7 +582,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     cmdJT.solve = async (ctx, msg, cmdArgs) => {
         if (ctx.privilegeLevel < 100) {
             seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-            return seal.ext.cmddicefind(true);
+            return seal.ext.newCmdExecuteResult(true);
         }
 
         const subCommand = cmdArgs.getArgN(1);
