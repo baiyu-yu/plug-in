@@ -135,12 +135,16 @@ if (!seal.ext.find('aiplugin3')) {
         const stopRepeat = seal.ext.getBoolConfig(ext, "禁止AI复读");
 
         if (stopRepeat) {
-            const index = messages.length - 1 - messages.slice().reverse().findIndex(item => item.role == 'assistant');
-            if (index !== messages.length) {
-                const content = messages[index].content.replace(/<[\|｜].*[\|｜]>/g, '');
+            const arr = messages
+                .map((item, index) => {
+                    return item.role === 'assistant' ? { index, content: item.content } : null;
+                })
+                .filter(item => item !== null);
 
-                if (content === text) {
-                    return  index;
+            if (arr.length > 0) {
+                const {index, content} = arr[arr.length - 1];
+                if (content.replace(/<[\|｜].*[\|｜]>/g, '').trim() === text.trim()) {
+                    return index;
                 }
             }
         }
