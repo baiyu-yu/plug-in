@@ -62,13 +62,13 @@ if (!seal.ext.find('aiplugin3')) {
 
     seal.ext.registerBoolConfig(ext, "是否打印日志细节", true, "修改并保存后请重载js")
 
-    const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节")
-    const CQTypeAllow = ["at", "image", "reply", "face"]
-    const data = {}
-    const contextData = {}
+    const printlog = seal.ext.getBoolConfig(ext, "是否打印日志细节");
+    const CQTypeAllow = ["at", "image", "reply", "face"];
+    const data = {};
+    const contextData = {};
     const privilegeData = JSON.parse(ext.storageGet(`privilegeData`) || '{}');
-    const isChatting = {}
-    const isGettingAct = {}
+    const isChatting = {};
+    const isGettingAct = {};
 
     function getData(id) {
         if (!data[id]) {
@@ -132,16 +132,15 @@ if (!seal.ext.find('aiplugin3')) {
     }
 
     function repeatDetection(text, messages) {
-        const stopRepeat = seal.ext.getBoolConfig(ext, "禁止AI复读")
+        const stopRepeat = seal.ext.getBoolConfig(ext, "禁止AI复读");
 
         if (stopRepeat) {
-            const rMessages = messages.slice().reverse()
-            const index = rMessages.findIndex(item => item.role == 'assistant');
-            if (index !== -1) {
-                const content = rMessages[index].content.replace(/<[\|｜].*[\|｜]>/g, '');
+            const index = messages.length - 1 - messages.slice().reverse().findIndex(item => item.role == 'assistant');
+            if (index !== messages.length) {
+                const content = messages[index].content.replace(/<[\|｜].*[\|｜]>/g, '');
 
                 if (content === text) {
-                    return messages.length - 1 - index;
+                    return  index;
                 }
             }
         }
@@ -167,7 +166,7 @@ if (!seal.ext.find('aiplugin3')) {
 
         getContext(id) {
             if (!contextData[id]) {
-                let context = {}
+                let context = {};
                 try {
                     context = JSON.parse(ext.storageGet(`context_${id}`) || "{}");
                 } catch (error) {
@@ -189,9 +188,9 @@ if (!seal.ext.find('aiplugin3')) {
         };
 
         async sendRequest(messages) {
-            const url = seal.ext.getStringConfig(ext, "url地址")
-            const apiKey = seal.ext.getStringConfig(ext, "API Key")
-            const bodyTemplate = seal.ext.getTemplateConfig(ext, "body")
+            const url = seal.ext.getStringConfig(ext, "url地址");
+            const apiKey = seal.ext.getStringConfig(ext, "API Key");
+            const bodyTemplate = seal.ext.getTemplateConfig(ext, "body");
 
             try {
                 const bodyObject = parseBody(bodyTemplate, messages)
@@ -342,8 +341,8 @@ if (!seal.ext.find('aiplugin3')) {
         }
 
         async chat(ctx, msg) {
-            const userId = ctx.player.userId
-            const groupId = ctx.group.groupId
+            const userId = ctx.player.userId;
+            const groupId = ctx.group.groupId;
             const id = ctx.isPrivate ? userId : groupId;
 
             if (isChatting[id]) return;
@@ -368,11 +367,11 @@ if (!seal.ext.find('aiplugin3')) {
 
             async function getReply(retry = 0) {
                 const ai = new AI();
-                const context = ai.getContext(id)
+                const context = ai.getContext(id);
                 const messages = [systemMessage, ...context.messages];
 
                 //获取处理后的回复
-                const raw_reply = await ai.sendRequest(messages)
+                const raw_reply = await ai.sendRequest(messages);
                 const reply = handleReply(raw_reply);
 
                 //禁止AI复读
@@ -382,12 +381,10 @@ if (!seal.ext.find('aiplugin3')) {
                         contextData[id].messages = messages.filter(item => item.role != 'assistant');
                         return '';
                     }
-                    print(`发现复读，重试次数：${++retry}/3`)
+                    print(`发现复读，重试次数：${++retry}/3`);
 
                     //删除重复文本
                     contextData[id].messages.splice(index, 1);
-                    //保存上下文
-                    ai.saveContext(id)
 
                     //进行重试
                     return await getReply(retry);
@@ -580,7 +577,7 @@ if (!seal.ext.find('aiplugin3')) {
 
                     let text = `当前权限列表：`
                     for (let id in privilegeData) {
-                        const pr = privilegeData[id]
+                        const pr = privilegeData[id];
                         text += `\n${id}:权限${pr.privilegeLevel} c.${pr.counter} t.${pr.timer} i.${pr.interrupt} sb.${pr.standby}`
                     }
                     seal.replyToSender(ctx, msg, text);
@@ -588,7 +585,7 @@ if (!seal.ext.find('aiplugin3')) {
                 }
 
                 if (privilegeData.hasOwnProperty(id)) {
-                    const pr = privilegeData[id]
+                    const pr = privilegeData[id];
 
                     if (ctx.privilegeLevel >= pr.privilegeLevel) {
                         let text = `${id}:权限${pr.privilegeLevel} c.${pr.counter} t.${pr.timer} i.${pr.interrupt} sb.${pr.standby}`
@@ -643,7 +640,7 @@ if (!seal.ext.find('aiplugin3')) {
                         }
                     });
 
-                    privilegeData[id].standby = false
+                    privilegeData[id].standby = false;
 
                     seal.replyToSender(ctx, msg, text);
                     savePrivilegeData();
@@ -656,13 +653,13 @@ if (!seal.ext.find('aiplugin3')) {
             case 'sb':
             case 'standby': {
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
-                    privilegeData[id].counter = false
-                    privilegeData[id].timer = false
-                    privilegeData[id].interrupt = false
+                    privilegeData[id].counter = false;
+                    privilegeData[id].timer = false;
+                    privilegeData[id].interrupt = false;
                     privilegeData[id].standby = true;
 
-                    clearTimeout(data[id].timer)
-                    delete data[id]
+                    clearTimeout(data[id].timer);
+                    delete data[id];
 
                     seal.replyToSender(ctx, msg, 'AI已开启待机模式');
                     savePrivilegeData();
@@ -676,13 +673,13 @@ if (!seal.ext.find('aiplugin3')) {
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
                     const keys = cmdArgs.kwargs.map(item => item.name)
                     if (keys.length == 0) {
-                        privilegeData[id].counter = false
-                        privilegeData[id].timer = false
-                        privilegeData[id].interrupt = false
-                        privilegeData[id].standby = false
+                        privilegeData[id].counter = false;
+                        privilegeData[id].timer = false;
+                        privilegeData[id].interrupt = false;
+                        privilegeData[id].standby = false;
 
-                        clearTimeout(data[id].timer)
-                        delete data[id]
+                        clearTimeout(data[id].timer);
+                        delete data[id];
 
                         seal.replyToSender(ctx, msg, 'AI已关闭');
                         savePrivilegeData();
@@ -781,30 +778,30 @@ if (!seal.ext.find('aiplugin3')) {
         const canPrivate = seal.ext.getBoolConfig(ext, "能否私聊使用")
         if (ctx.isPrivate && !canPrivate) return;
 
-        const userId = ctx.player.userId
-        const groupId = ctx.group.groupId
+        const userId = ctx.player.userId;
+        const groupId = ctx.group.groupId;
         const id = ctx.isPrivate ? userId : groupId;
 
-        const message = msg.message
+        const message = msg.message;
 
         // 非指令清除上下文
-        const clearWords = seal.ext.getTemplateConfig(ext, "非指令清除上下文")
-        const clearReplys = seal.ext.getTemplateConfig(ext, "清除成功回复")
+        const clearWords = seal.ext.getTemplateConfig(ext, "非指令清除上下文");
+        const clearReplys = seal.ext.getTemplateConfig(ext, "清除成功回复");
         if (clearWords.some(item => message == item)) {
             if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
-                const ai = new AI()
-                ai.getContext(id)
+                const ai = new AI();
+                ai.getContext(id);
 
-                getData(id)
-                clearTimeout(data[id].timer)
+                getData(id);
+                clearTimeout(data[id].timer);
                 data[id].timer = null;
                 data[id].counter = 0;
                 data[id].act = 0;
                 data[id].intrptTs = 0;
 
-                contextData[id].messages = []
+                contextData[id].messages = [];
                 seal.replyToSender(ctx, msg, clearReplys[Math.floor(Math.random() * clearReplys.length)]);
-                ai.saveContext(id)
+                ai.saveContext(id);
             }
 
             return;
@@ -813,20 +810,20 @@ if (!seal.ext.find('aiplugin3')) {
         // 检查CQ码
         const CQType = getCQType(message);
         if (CQType.length == 0 || CQType.every(item => CQTypeAllow.includes(item))) {
-            const keyWords = seal.ext.getTemplateConfig(ext, "非指令消息触发正则表达式")
-            const condition = seal.ext.getStringConfig(ext, "非指令触发需要满足的条件")
+            const keyWords = seal.ext.getTemplateConfig(ext, "非指令消息触发正则表达式");
+            const condition = seal.ext.getStringConfig(ext, "非指令触发需要满足的条件");
 
-            const ai = new AI()
+            const ai = new AI();
 
-            getData(id)
-            clearTimeout(data[id].timer)
+            getData(id);
+            clearTimeout(data[id].timer);
             data[id].timer = null;
 
             // 非指令触发
             if (
                 keyWords.some(item => {
                     try {
-                        return new RegExp(item).test(message)
+                        return new RegExp(item).test(message);
                     } catch (error) {
                         console.error('Error in RegExp:', error);
                         return false;
@@ -844,16 +841,16 @@ if (!seal.ext.find('aiplugin3')) {
             else if (privilegeData.hasOwnProperty(id)) {
                 const pr = privilegeData[id];
                 if (pr.counter || pr.timer || pr.interrupt || pr.standby) {
-                    await ai.iteration(ctx, msg, message, 'user')
+                    await ai.iteration(ctx, msg, message, 'user');
                     if (CQType.includes('image') || pr.standby) return;
                 }
 
                 if (pr.counter) {
-                    const counterLimit = seal.ext.getIntConfig(ext, "计数器触发消息数")
-                    data[id].counter += 1
+                    const counterLimit = seal.ext.getIntConfig(ext, "计数器触发消息数");
+                    data[id].counter += 1;
 
                     if (data[id].counter >= counterLimit) {
-                        print('计数器触发回复')
+                        print('计数器触发回复');
                         data[id].counter = 0;
 
                         await ai.chat(ctx, msg);
@@ -865,25 +862,25 @@ if (!seal.ext.find('aiplugin3')) {
                     const act = await ai.getAct(id);
 
                     if (act >= actThreshold) {
-                        print(`插嘴触发回复:${act}`)
+                        print(`插嘴触发回复:${act}`);
                         data[id].act = 0;
 
-                        await ai.chat(ctx, msg)
+                        await ai.chat(ctx, msg);
                     }
                 }
 
                 if (pr.timer) {
-                    const timerLimit = seal.ext.getIntConfig(ext, "计时器触发间隔/s") * 1000
-                    const ran = Math.floor(Math.random() * 1000)
+                    const timerLimit = seal.ext.getIntConfig(ext, "计时器触发间隔/s") * 1000;
+                    const ran = Math.floor(Math.random() * 1000);
 
                     data[id].timer = setTimeout(async () => {
-                        print('计时器触发回复')
+                        print('计时器触发回复');
 
                         data[id].timer = null;
                         try {
-                            await ai.chat(ctx, msg)
+                            await ai.chat(ctx, msg);
                         } catch (e) {
-                            console.error('在计时器中chat发生错误:', e)
+                            console.error('在计时器中chat发生错误:', e);
                         }
                     }, timerLimit + ran);
                 }
@@ -893,14 +890,14 @@ if (!seal.ext.find('aiplugin3')) {
 
 
     //接受的指令
-    ext.onCommandReceived = async (ctx, msg, cmdArgs) => {
-        const userId = ctx.player.userId
-        const groupId = ctx.group.groupId
+    ext.onCommandReceived = async (ctx, msg, _) => {
+        const userId = ctx.player.userId;
+        const groupId = ctx.group.groupId;
         const id = ctx.isPrivate ? userId : groupId;
 
-        const message = msg.message
+        const message = msg.message;
 
-        const allcmd = seal.ext.getBoolConfig(ext, "是否录入指令消息")
+        const allcmd = seal.ext.getBoolConfig(ext, "是否录入指令消息");
         if (allcmd) {
             // 检查CQ码 模式
             const CQType = getCQType(message);
@@ -913,8 +910,8 @@ if (!seal.ext.find('aiplugin3')) {
 
             const pr = privilegeData[id];
             if (pr.counter || pr.timer || pr.interrupt || pr.standby) {
-                const ai = new AI()
-                await ai.iteration(ctx, msg, message, 'user')
+                const ai = new AI();
+                await ai.iteration(ctx, msg, message, 'user');
                 return;
             }
         }
@@ -922,13 +919,13 @@ if (!seal.ext.find('aiplugin3')) {
 
     //骰子发送的消息
     ext.onMessageSend = async (ctx, msg) => {
-        const userId = ctx.player.userId
-        const groupId = ctx.group.groupId
+        const userId = ctx.player.userId;
+        const groupId = ctx.group.groupId;
         const id = ctx.isPrivate ? userId : groupId;
 
-        const message = msg.message
+        const message = msg.message;
 
-        const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有骰子发送的消息")
+        const allmsg = seal.ext.getBoolConfig(ext, "是否录入所有骰子发送的消息");
 
         if (allmsg) {
             // 检查CQ码 模式
@@ -950,8 +947,8 @@ if (!seal.ext.find('aiplugin3')) {
                 ];
                 if (patterns.some(pattern => pattern.test(message))) return;
 
-                const ai = new AI()
-                await ai.iteration(ctx, msg, message, 'assistant')
+                const ai = new AI();
+                await ai.iteration(ctx, msg, message, 'assistant');
                 return;
             }
         }
