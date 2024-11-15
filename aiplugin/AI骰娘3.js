@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.0.2
+// @version      3.0.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.2');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.3');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -349,7 +349,10 @@ if (!seal.ext.find('aiplugin3')) {
             const groupId = ctx.group.groupId;
             const id = ctx.isPrivate ? userId : groupId;
 
-            if (isChatting[id]) return;
+            if (isChatting[id]) {
+                print(`正在处理消息，跳过`);
+                return;
+            }
             else isChatting[id] = true;
 
             //清空数据
@@ -379,9 +382,10 @@ if (!seal.ext.find('aiplugin3')) {
                 const reply = handleReply(raw_reply);
 
                 //禁止AI复读
-                const index = repeatDetection(reply, messages);
+                const index = repeatDetection(reply, context.messages);
                 if (index !== -1 && reply) {
                     if (retry == 3) {
+                        print(`发现复读，已达到最大重试次数，清除AI上下文`);
                         contextData[id].messages = messages.filter(item => item.role != 'assistant');
                         return '';
                     }
@@ -391,6 +395,7 @@ if (!seal.ext.find('aiplugin3')) {
                     contextData[id].messages.splice(index, 1);
 
                     //进行重试
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     return await getReply(retry);
                 }
 
@@ -405,8 +410,9 @@ if (!seal.ext.find('aiplugin3')) {
                 seal.replyToSender(ctx, msg, message);
 
                 //储存上下文
-                if (!allmsg) {
-                    await this.iteration(ctx, msg, reply, 'assistant')
+                const pr = privilegeData.hasOwnProperty(id)? privilegeData[id] : {counter: false, timer: false, interrupt: false, standby: false};
+                if (!allmsg || !(pr.counter || pr.timer || pr.interrupt || pr.standby)) {
+                    await this.iteration(ctx, msg, reply, 'assistant');
                 }
             }
 
