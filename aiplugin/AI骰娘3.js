@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.0.3
+// @version      3.1.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.0.3');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.1.0');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -45,9 +45,6 @@ if (!seal.ext.find('aiplugin3')) {
     seal.ext.registerBoolConfig(ext, "回复换行截断", false, "")
     seal.ext.registerBoolConfig(ext, "禁止AI复读", true, "")
 
-    seal.ext.registerIntConfig(ext, "计数器触发消息数", 5, '在收到消息一定数量消息后触发')
-    seal.ext.registerIntConfig(ext, "计时器触发间隔/s", 40, '在收到消息一定时间后触发')
-
     seal.ext.registerStringConfig(ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key")
     seal.ext.registerStringConfig(ext, "插嘴API Key", "你的API Key", "")
     seal.ext.registerTemplateConfig(ext, "插嘴body", [
@@ -58,7 +55,6 @@ if (!seal.ext.find('aiplugin3')) {
     seal.ext.registerStringConfig(ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "")
     seal.ext.registerIntConfig(ext, "参与插嘴检测的最大字数", 600, "防止过长消息")
     seal.ext.registerIntConfig(ext, "插嘴缓存时间/s", 10, "用于减少检测频率")
-    seal.ext.registerFloatConfig(ext, "触发插嘴的活跃度阈值", 8, "范围1~10，阈值越低，发言越频繁")
 
     seal.ext.registerBoolConfig(ext, "是否打印日志细节", true, "修改并保存后请重载js")
 
@@ -66,12 +62,12 @@ if (!seal.ext.find('aiplugin3')) {
     const CQTypeAllow = ["at", "image", "reply", "face"];
     const data = {};
     const contextData = {};
-    const privilegeData = JSON.parse(ext.storageGet(`privilegeData`) || '{}');
+    const privilegeData = {};
     const isChatting = {};
     const isGettingAct = {};
 
     function getData(id) {
-        if (!data[id]) {
+        if (!data.hasOwnProperty(id)) {
             data[id] = {
                 counter: 0,
                 timer: null,
@@ -83,8 +79,43 @@ if (!seal.ext.find('aiplugin3')) {
         return data[id];
     }
 
-    function savePrivilegeData() {
-        ext.storageSet(`privilegeData`, JSON.stringify(privilegeData));
+    function getPrivilege(id) {
+        if (!privilegeData.hasOwnProperty(id)) {
+            let pr = {};
+            try {
+                pr = JSON.parse(ext.storageGet(`privilege_${id}`));
+            } catch (error) {
+                console.error(`从数据库中获取privilege_${id}失败:`, error);
+            }
+
+            if (!pr || Object.keys(pr).length === 0) {
+                return {
+                    privilegeLevel: 100,
+                    counter: -1,
+                    timer: -1,
+                    prob: -1,
+                    interrupt: -1,
+                    standby: false
+                }
+            }
+
+            privilegeData[id] = {
+                privilegeLevel: pr.privilegeLevel || 100,
+                counter: pr.counter || -1,
+                timer: pr.timer || -1,
+                prob: pr.prob || -1,
+                interrupt: pr.interrupt || -1,
+                standby: pr.standby || false
+            }
+        }
+
+        return privilegeData[id];
+    }
+
+    function savePrivilege(id) {
+        if (privilegeData.hasOwnProperty(id)) {
+            ext.storageSet(`privilege_${id}`, JSON.stringify(privilegeData[id]));
+        }
     };
 
     function getCQType(text) {
@@ -142,7 +173,7 @@ if (!seal.ext.find('aiplugin3')) {
                 .filter(item => item !== null);
 
             if (arr.length > 0) {
-                const {index, content} = arr[arr.length - 1];
+                const { index, content } = arr[arr.length - 1];
                 if (content.replace(/<[\|｜].*[\|｜]>/g, '').trim() === text.trim()) {
                     return index;
                 }
@@ -169,7 +200,7 @@ if (!seal.ext.find('aiplugin3')) {
         constructor() { }
 
         getContext(id) {
-            if (!contextData[id]) {
+            if (!contextData.hasOwnProperty(id)) {
                 let context = {};
                 try {
                     context = JSON.parse(ext.storageGet(`context_${id}`) || "{}");
@@ -186,7 +217,7 @@ if (!seal.ext.find('aiplugin3')) {
         }
 
         saveContext(id) {
-            if (contextData[id]) {
+            if (contextData.hasOwnProperty(id)) {
                 ext.storageSet(`context_${id}`, JSON.stringify(contextData[id]));
             }
         };
@@ -410,8 +441,8 @@ if (!seal.ext.find('aiplugin3')) {
                 seal.replyToSender(ctx, msg, message);
 
                 //储存上下文
-                const pr = privilegeData.hasOwnProperty(id)? privilegeData[id] : {counter: false, timer: false, interrupt: false, standby: false};
-                if (!allmsg || !(pr.counter || pr.timer || pr.interrupt || pr.standby)) {
+                const pr = getPrivilege(id);
+                if (!allmsg || !(pr.counter > -1 || pr.timer > -1 || pr.prob > -1 || pr.interrupt > -1 || pr.standby)) {
                     await this.iteration(ctx, msg, reply, 'assistant');
                 }
             }
@@ -510,101 +541,87 @@ if (!seal.ext.find('aiplugin3')) {
     cmdaiprivilege.help = `帮助：
 【.ai add (群号，默认当前群聊) (权限，默认50)】添加权限(只有骰主可用)
 【.ai del (群号，默认当前群聊)】删除权限(只有骰主可用)
-【.ai pr (all)】查看当前群聊权限/所有权限
-【.ai on --c --t --i】开启计数器模式/计时器模式/插嘴模式
+【.ai pr】查看当前群聊权限
+【.ai on --c=10 --t=60 --p=10 --i=8】开启计数器模式/计时器模式/概率模式/插嘴模式
 【.ai sb】开启待机模式
 【.ai off】关闭AI，此时仍能用关键词触发
-【.ai off --c --t --i】关闭计数器模式/计时器模式/插嘴模式
+【.ai off --c --t --p --i】关闭计数器模式/计时器模式/概率模式/插嘴模式
 【.ai f】遗忘上下文
 【.ai f [ass/user]】遗忘ai自己的回复/用户发送的回复`;
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         const val = cmdArgs.getArgN(1);
-        const userId = ctx.player.userId
-        const groupId = ctx.group.groupId
+        const userId = ctx.player.userId;
+        const groupId = ctx.group.groupId;
         const id = ctx.isPrivate ? userId : groupId;
 
-        getData(id)
+        const ret = seal.ext.newCmdExecuteResult(true);
+
+        getData(id);
 
         switch (val) {
             case 'add': {
                 if (ctx.privilegeLevel < 100) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
 
-                let id2 = id;
                 let val2 = cmdArgs.getArgN(2);
-                if (val2) {
-                    id2 = `QQ-Group:${val2}`
-                }
+                const id2 = val2 ? `QQ-Group:${val2}` : id;
 
                 let privilegeLevel = parseInt(cmdArgs.getArgN(3));
                 if (!privilegeLevel || isNaN(privilegeLevel)) {
                     privilegeLevel = 50;
                 }
+
                 privilegeData[id2] = {
                     privilegeLevel: privilegeLevel,
-                    counter: false,
-                    timer: false,
-                    interrupt: false,
+                    counter: -1,
+                    timer: -1,
+                    prob: -1,
+                    interrupt: -1,
                     standby: false
                 }
 
                 seal.replyToSender(ctx, msg, '权限修改完成');
-                savePrivilegeData();
-                return;
+                savePrivilege(id);
+                return ret;
             }
             case 'del': {
                 if (ctx.privilegeLevel < 100) {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
 
-                let id2 = id;
                 let val2 = cmdArgs.getArgN(2);
-                if (val2) {
-                    id2 = `QQ-Group:${val2}`
-                }
+                const id2 = val2 ? `QQ-Group:${val2}` : id;
+
+                getPrivilege(id2);
 
                 if (!privilegeData.hasOwnProperty(id2)) {
                     seal.replyToSender(ctx, msg, '未找到该群信息');
-                    return;
+                    return ret;
                 } else {
                     delete privilegeData[id2]
                     seal.replyToSender(ctx, msg, '删除完成');
-                    savePrivilegeData();
-                    return;
+                    savePrivilege(id);
+                    return ret;
                 }
             }
             case 'pr':
             case 'privilege': {
-                let val2 = cmdArgs.getArgN(2);
-                if (val2 == 'all') {
-                    if (ctx.privilegeLevel < 100) {
-                        seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                        return;
-                    }
-
-                    let text = `当前权限列表：`
-                    for (let id in privilegeData) {
-                        const pr = privilegeData[id];
-                        text += `\n${id}:权限${pr.privilegeLevel} c.${pr.counter} t.${pr.timer} i.${pr.interrupt} sb.${pr.standby}`
-                    }
-                    seal.replyToSender(ctx, msg, text);
-                    return seal.ext.newCmdExecuteResult(true);
-                }
+                getPrivilege(id);
 
                 if (privilegeData.hasOwnProperty(id)) {
                     const pr = privilegeData[id];
 
                     if (ctx.privilegeLevel >= pr.privilegeLevel) {
-                        let text = `${id}:权限${pr.privilegeLevel} c.${pr.counter} t.${pr.timer} i.${pr.interrupt} sb.${pr.standby}`
-                        seal.replyToSender(ctx, msg, text);
-                        return seal.ext.newCmdExecuteResult(true);
+                        const s = `${id.replace(/\D+/, '')}:\n权限${pr.privilegeLevel}\nc.${pr.counter} t.${pr.timer}\np.${pr.prob} i.${pr.interrupt}\nsb.${pr.standby}`
+                        seal.replyToSender(ctx, msg, s);
+                        return ret;
                     }
                 } else {
                     seal.replyToSender(ctx, msg, `当前群聊无权限`);
-                    return;
+                    return ret;
                 }
             }
             case 'on': {
@@ -612,39 +629,52 @@ if (!seal.ext.find('aiplugin3')) {
                 if (ctx.privilegeLevel == 100) {
                     privilegeData[id] = {
                         privilegeLevel: 100,
-                        counter: false,
-                        timer: false,
-                        interrupt: false,
+                        counter: -1,
+                        timer: -1,
+                        prob: -1,
+                        interrupt: -1,
                         standby: false
                     }
                 }
 
+                getPrivilege(id);
+
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
-                    const keys = cmdArgs.kwargs.map(item => item.name)
-                    if (keys.length == 0) {
-                        seal.replyToSender(ctx, msg, '参数错误，请使用【.ai on --c --t --i】开启计数器模式/计时器模式/插嘴模式');
-                        return;
+                    const kwargs = cmdArgs.kwargs;
+                    if (kwargs.length == 0) {
+                        seal.replyToSender(ctx, msg, '参数错误，请使用【.ai on --c --t --p --i】开启计数器模式/计时器模式/概率模式/插嘴模式');
+                        return ret;
                     }
 
                     let text = `AI已开启：`
-                    keys.forEach(key => {
-                        switch (key) {
+                    kwargs.forEach(kwarg => {
+                        const name = kwarg.name;
+                        const exist = kwarg.valueExists;
+                        const value = parseInt(kwarg.value);
+
+                        switch (name) {
                             case 'c':
                             case 'counter': {
-                                privilegeData[id].counter = true;
-                                text += `\n计数器模式`
+                                privilegeData[id].counter = exist && !isNaN(value) ? value : 10;
+                                text += `\n计数器模式`;
                                 break;
                             }
                             case 't':
                             case 'timer': {
-                                privilegeData[id].timer = true;
-                                text += `\n计时器模式`
+                                privilegeData[id].timer = exist && !isNaN(value) ? value : 60;
+                                text += `\n计时器模式`;
+                                break;
+                            }
+                            case 'p':
+                            case 'prob': {
+                                privilegeData[id].prob = exist && !isNaN(value) ? value : 10;
+                                text += `\n概率模式`;
                                 break;
                             }
                             case 'i':
                             case 'interrupt': {
-                                privilegeData[id].interrupt = true;
-                                text += `\n插嘴模式`
+                                privilegeData[id].interrupt = exist && !isNaN(value) ? value : 8;
+                                text += `\n插嘴模式`;
                                 break;
                             }
                         }
@@ -653,70 +683,97 @@ if (!seal.ext.find('aiplugin3')) {
                     privilegeData[id].standby = false;
 
                     seal.replyToSender(ctx, msg, text);
-                    savePrivilegeData();
-                    return;
+                    savePrivilege(id);
+                    return ret;
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
             }
             case 'sb':
             case 'standby': {
+                //尊贵的特权
+                if (ctx.privilegeLevel == 100) {
+                    privilegeData[id] = {
+                        privilegeLevel: 100,
+                        counter: -1,
+                        timer: -1,
+                        prob: -1,
+                        interrupt: -1,
+                        standby: false
+                    }
+                }
+
+                getPrivilege(id);
+
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
-                    privilegeData[id].counter = false;
-                    privilegeData[id].timer = false;
-                    privilegeData[id].interrupt = false;
+                    privilegeData[id].counter = -1;
+                    privilegeData[id].timer = -1;
+                    privilegeData[id].prob = -1;
+                    privilegeData[id].interrupt = -1;
                     privilegeData[id].standby = true;
 
                     clearTimeout(data[id].timer);
                     delete data[id];
 
                     seal.replyToSender(ctx, msg, 'AI已开启待机模式');
-                    savePrivilegeData();
-                    return;
+                    savePrivilege(id);
+                    return ret;
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
             }
             case 'off': {
+                getPrivilege(id);
+
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
-                    const keys = cmdArgs.kwargs.map(item => item.name)
-                    if (keys.length == 0) {
-                        privilegeData[id].counter = false;
-                        privilegeData[id].timer = false;
-                        privilegeData[id].interrupt = false;
+                    const kwargs = cmdArgs.kwargs;
+
+                    if (kwargs.length == 0) {
+                        privilegeData[id].counter = -1;
+                        privilegeData[id].timer = -1;
+                        privilegeData[id].prob = -1;
+                        privilegeData[id].interrupt = -1;
                         privilegeData[id].standby = false;
 
                         clearTimeout(data[id].timer);
                         delete data[id];
 
                         seal.replyToSender(ctx, msg, 'AI已关闭');
-                        savePrivilegeData();
-                        return;
+                        savePrivilege(id);
+                        return ret;
                     }
 
                     let text = `AI已关闭：`
-                    keys.forEach(key => {
-                        switch (key) {
+                    kwargs.forEach(kwarg => {
+                        const name = kwarg.name;
+
+                        switch (name) {
                             case 'c':
                             case 'counter': {
-                                privilegeData[id].counter = false;
+                                privilegeData[id].counter = -1;
                                 data[id].counter = 0;
                                 text += `\n计数器模式`
                                 break;
                             }
                             case 't':
                             case 'timer': {
-                                privilegeData[id].timer = false;
+                                privilegeData[id].timer = -1;
                                 clearTimeout(data[id].timer)
                                 data[id].timer = null;
                                 text += `\n计时器模式`
                                 break;
                             }
+                            case 'p':
+                            case 'prob': {
+                                privilegeData[id].prob = -1;
+                                text += `\n概率模式`
+                                break;
+                            }
                             case 'i':
                             case 'interrupt': {
-                                privilegeData[id].interrupt = false;
+                                privilegeData[id].interrupt = -1;
                                 data[id].act = 0;
                                 data[id].intrptTs = 0;
                                 text += `\n插嘴模式`
@@ -726,16 +783,18 @@ if (!seal.ext.find('aiplugin3')) {
                     });
 
                     seal.replyToSender(ctx, msg, text);
-                    savePrivilegeData();
-                    return;
+                    savePrivilege(id);
+                    return ret;
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
             }
             case 'f':
             case 'fgt':
             case 'forget': {
+                getPrivilege(id);
+
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
                     clearTimeout(data[id].timer)
                     data[id].timer = null;
@@ -754,29 +813,28 @@ if (!seal.ext.find('aiplugin3')) {
                             contextData[id].messages = messages.filter(item => item.role !== 'assistant');
                             seal.replyToSender(ctx, msg, 'ai上下文已清除');
                             ai.saveContext(id)
-                            return;
+                            return ret;
                         }
                         case 'user': {
                             contextData[id].messages = messages.filter(item => item.role !== 'user');
                             seal.replyToSender(ctx, msg, '用户上下文已清除');
                             ai.saveContext(id)
-                            return;
+                            return ret;
                         }
                         default: {
                             contextData[id].messages = []
                             seal.replyToSender(ctx, msg, '上下文已清除');
                             ai.saveContext(id)
-                            return;
+                            return ret;
                         }
                     }
                 } else {
                     seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                    return;
+                    return ret;
                 }
             }
             case 'help':
             default: {
-                const ret = seal.ext.newCmdExecuteResult(true);
                 ret.showHelp = true;
                 return ret;
             }
@@ -798,6 +856,8 @@ if (!seal.ext.find('aiplugin3')) {
         const clearWords = seal.ext.getTemplateConfig(ext, "非指令清除上下文");
         const clearReplys = seal.ext.getTemplateConfig(ext, "清除成功回复");
         if (clearWords.some(item => message == item)) {
+            getPrivilege(id);
+
             if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
                 const ai = new AI();
                 ai.getContext(id);
@@ -848,51 +908,69 @@ if (!seal.ext.find('aiplugin3')) {
             }
 
             // 开启任一模式时
-            else if (privilegeData.hasOwnProperty(id)) {
-                const pr = privilegeData[id];
-                if (pr.counter || pr.timer || pr.interrupt || pr.standby) {
-                    await ai.iteration(ctx, msg, message, 'user');
-                    if (CQType.includes('image') || pr.standby) return;
-                }
+            else {
+                getPrivilege(id);
 
-                if (pr.counter) {
-                    const counterLimit = seal.ext.getIntConfig(ext, "计数器触发消息数");
-                    data[id].counter += 1;
+                if (privilegeData.hasOwnProperty(id)) {
+                    const pr = privilegeData[id];
 
-                    if (data[id].counter >= counterLimit) {
-                        print('计数器触发回复');
-                        data[id].counter = 0;
-
-                        await ai.chat(ctx, msg);
-                    }
-                }
-
-                if (pr.interrupt) {
-                    const actThreshold = seal.ext.getFloatConfig(ext, "触发插嘴的活跃度阈值")
-                    const act = await ai.getAct(id);
-
-                    if (act >= actThreshold) {
-                        print(`插嘴触发回复:${act}`);
-                        data[id].act = 0;
-
-                        await ai.chat(ctx, msg);
-                    }
-                }
-
-                if (pr.timer) {
-                    const timerLimit = seal.ext.getIntConfig(ext, "计时器触发间隔/s") * 1000;
-                    const ran = Math.floor(Math.random() * 1000);
-
-                    data[id].timer = setTimeout(async () => {
-                        print('计时器触发回复');
-
-                        data[id].timer = null;
-                        try {
-                            await ai.chat(ctx, msg);
-                        } catch (e) {
-                            console.error('在计时器中chat发生错误:', e);
+                    if (pr.counter > -1 || pr.timer > -1 || pr.prob > -1 || pr.interrupt > -1 || pr.standby) {
+                        await ai.iteration(ctx, msg, message, 'user');
+                        if (CQType.includes('image') || pr.standby) {
+                            return;
                         }
-                    }, timerLimit + ran);
+                    }
+
+                    if (pr.counter > -1) {
+                        data[id].counter += 1;
+
+                        if (data[id].counter >= pr.counter) {
+                            print('计数器触发回复');
+                            data[id].counter = 0;
+
+                            await ai.chat(ctx, msg);
+                            return;
+                        }
+                    }
+
+                    if (pr.prob > -1) {
+                        const ran = Math.random() * 100;
+
+                        if (ran <= pr.prob) {
+                            print('概率触发回复');
+
+                            await ai.chat(ctx, msg);
+                            return;
+                        }
+                    }
+
+                    if (pr.interrupt > -1) {
+                        const act = await ai.getAct(id);
+
+                        if (act >= pr.interrupt) {
+                            print(`插嘴触发回复:${act}`);
+                            data[id].act = 0;
+
+                            await ai.chat(ctx, msg);
+                            return;
+                        }
+                    }
+
+                    if (pr.timer > -1) {
+                        const ran = Math.floor(Math.random() * 1000);
+
+                        data[id].timer = setTimeout(async () => {
+                            print('计时器触发回复');
+
+                            data[id].timer = null;
+                            try {
+                                await ai.chat(ctx, msg);
+                            } catch (e) {
+                                console.error('在计时器中chat发生错误:', e);
+                            }
+                        }, pr.timer * 1000 + ran);
+                        return;
+                    }
                 }
             }
         }
@@ -911,6 +989,8 @@ if (!seal.ext.find('aiplugin3')) {
         if (allcmd) {
             // 检查CQ码 模式
             const CQType = getCQType(message);
+            getPrivilege(id);
+
             if (
                 !CQType.every(item => CQTypeAllow.includes(item)) ||
                 !privilegeData.hasOwnProperty(id)
@@ -919,7 +999,7 @@ if (!seal.ext.find('aiplugin3')) {
             }
 
             const pr = privilegeData[id];
-            if (pr.counter || pr.timer || pr.interrupt || pr.standby) {
+            if (pr.counter > -1 || pr.timer > -1 || pr.prob > -1 || pr.interrupt > -1 || pr.standby) {
                 const ai = new AI();
                 await ai.iteration(ctx, msg, message, 'user');
                 return;
@@ -940,6 +1020,8 @@ if (!seal.ext.find('aiplugin3')) {
         if (allmsg) {
             // 检查CQ码 模式
             const CQType = getCQType(message);
+            getPrivilege(id);
+
             if (
                 !CQType.every(item => CQTypeAllow.includes(item)) ||
                 !privilegeData.hasOwnProperty(id)
@@ -948,7 +1030,7 @@ if (!seal.ext.find('aiplugin3')) {
             }
 
             const pr = privilegeData[id];
-            if (pr.counter || pr.timer || pr.interrupt || pr.standby) {
+            if (pr.counter > -1 || pr.timer > -1 || pr.prob > -1 || pr.interrupt > -1 || pr.standby) {
                 //检查是否为[图:xx]或[语音:xx]或[视频:xx]
                 const patterns = [
                     /\[图:.*?\]/,
