@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.1.0
+// @version      3.1.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.1.0');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.1.1');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -115,6 +115,8 @@ if (!seal.ext.find('aiplugin3')) {
     function savePrivilege(id) {
         if (privilegeData.hasOwnProperty(id)) {
             ext.storageSet(`privilege_${id}`, JSON.stringify(privilegeData[id]));
+        } else {
+            ext.storageSet(`privilege_${id}`, '{}');
         }
     };
 
@@ -538,16 +540,15 @@ if (!seal.ext.find('aiplugin3')) {
 
     const cmdaiprivilege = seal.ext.newCmdItemInfo();
     cmdaiprivilege.name = 'ai'; // 指令名字，可用中文
-    cmdaiprivilege.help = `帮助：
-【.ai add (群号，默认当前群聊) (权限，默认50)】添加权限(只有骰主可用)
-【.ai del (群号，默认当前群聊)】删除权限(只有骰主可用)
+    cmdaiprivilege.help = `帮助:
+【.ai add】添加权限(仅骰主可用)
+【.ai del】删除权限(仅骰主可用)
+【.ai ck】检查权限(仅骰主可用)
 【.ai pr】查看当前群聊权限
-【.ai on --c=10 --t=60 --p=10 --i=8】开启计数器模式/计时器模式/概率模式/插嘴模式
-【.ai sb】开启待机模式
+【.ai on】开启AI
+【.ai sb】开启待机模式，此时AI将记忆聊天内容
 【.ai off】关闭AI，此时仍能用关键词触发
-【.ai off --c --t --p --i】关闭计数器模式/计时器模式/概率模式/插嘴模式
-【.ai f】遗忘上下文
-【.ai f [ass/user]】遗忘ai自己的回复/用户发送的回复`;
+【.ai fgt】遗忘上下文`;
     cmdaiprivilege.solve = (ctx, msg, cmdArgs) => {
         const val = cmdArgs.getArgN(1);
         const userId = ctx.player.userId;
@@ -565,12 +566,39 @@ if (!seal.ext.find('aiplugin3')) {
                     return ret;
                 }
 
-                let val2 = cmdArgs.getArgN(2);
-                const id2 = val2 ? `QQ-Group:${val2}` : id;
+                const val2 = cmdArgs.getArgN(2);
+                if (!val2 || val2 == 'help') {
+                    const s = `帮助:
+【.ai add <账号> <额外权限要求>】
 
-                let privilegeLevel = parseInt(cmdArgs.getArgN(3));
-                if (!privilegeLevel || isNaN(privilegeLevel)) {
-                    privilegeLevel = 50;
+<账号>:
+【QQ:1234567890】 私聊窗口
+【QQ-Group:1234】 群聊窗口
+【now】当前窗口
+
+<额外权限要求>:
+【0】普通用户
+【40】邀请者
+【50】群管理员
+【60】群主
+【100】骰主
+不填写时默认为0`;
+
+                    seal.replyToSender(ctx, msg, s);
+                    return ret;
+                }
+
+                const id2 = val2 === 'now' ? id : val2;
+
+                let val3 = cmdArgs.getArgN(3)
+                if (!val3) {
+                    val3 = '0';
+                }
+
+                const privilegeLevel = parseInt(val3);
+                if (isNaN(privilegeLevel)) {
+                    seal.replyToSender(ctx, msg, '权限值必须为数字');
+                    return ret;
                 }
 
                 privilegeData[id2] = {
@@ -592,8 +620,21 @@ if (!seal.ext.find('aiplugin3')) {
                     return ret;
                 }
 
-                let val2 = cmdArgs.getArgN(2);
-                const id2 = val2 ? `QQ-Group:${val2}` : id;
+                const val2 = cmdArgs.getArgN(2);
+                if (!val2 || val2 == 'help') {
+                    const s = `帮助:
+【.ai del <账号>】
+
+<账号>:
+【QQ:1234567890】 私聊窗口
+【QQ-Group:1234】 群聊窗口
+【now】当前窗口`;
+
+                    seal.replyToSender(ctx, msg, s);
+                    return ret;
+                }
+
+                const id2 = val2 === 'now' ? id : val2;
 
                 getPrivilege(id2);
 
@@ -603,24 +644,58 @@ if (!seal.ext.find('aiplugin3')) {
                 } else {
                     delete privilegeData[id2]
                     seal.replyToSender(ctx, msg, '删除完成');
-                    savePrivilege(id);
+                    savePrivilege(id2);
                     return ret;
                 }
             }
-            case 'pr':
-            case 'privilege': {
+            case 'ck': {
+                if (ctx.privilegeLevel < 100) {
+                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+                    return ret;
+                }
+
+                const val2 = cmdArgs.getArgN(2);
+                if (!val2 || val2 == 'help') {
+                    const s = `帮助:
+【.ai ck <账号>】
+
+<账号>:
+【QQ:1234567890】 私聊窗口
+【QQ-Group:1234】 群聊窗口
+【now】当前窗口`;
+
+                    seal.replyToSender(ctx, msg, s);
+                    return ret;
+                }
+
+                const id2 = val2 === 'now' ? id : val2;
+
+                getPrivilege(id2);
+
+                if (!privilegeData.hasOwnProperty(id2)) {
+                    seal.replyToSender(ctx, msg, '未找到该群信息');
+                    return ret;
+                } else {
+                    const pr = privilegeData[id];
+
+                    const s = `${id}\n权限${pr.privilegeLevel}\nc.${pr.counter} t.${pr.timer}\np.${pr.prob} i.${pr.interrupt}\nsb.${pr.standby}`
+                    seal.replyToSender(ctx, msg, s);
+                    return ret;
+                }
+            }
+            case 'pr': {
                 getPrivilege(id);
 
                 if (privilegeData.hasOwnProperty(id)) {
                     const pr = privilegeData[id];
 
                     if (ctx.privilegeLevel >= pr.privilegeLevel) {
-                        const s = `${id.replace(/\D+/, '')}:\n权限${pr.privilegeLevel}\nc.${pr.counter} t.${pr.timer}\np.${pr.prob} i.${pr.interrupt}\nsb.${pr.standby}`
+                        const s = `${id}\n权限${pr.privilegeLevel}\nc.${pr.counter} t.${pr.timer}\np.${pr.prob} i.${pr.interrupt}\nsb.${pr.standby}`
                         seal.replyToSender(ctx, msg, s);
                         return ret;
                     }
                 } else {
-                    seal.replyToSender(ctx, msg, `当前群聊无权限`);
+                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
                     return ret;
                 }
             }
@@ -641,8 +716,24 @@ if (!seal.ext.find('aiplugin3')) {
 
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
                     const kwargs = cmdArgs.kwargs;
+
                     if (kwargs.length == 0) {
-                        seal.replyToSender(ctx, msg, '参数错误，请使用【.ai on --c --t --p --i】开启计数器模式/计时器模式/概率模式/插嘴模式');
+                        const s = `帮助:
+【.ai on --<参数>=<数字>】
+
+<参数>:
+【c】计数器模式，接收消息数达到后触发。
+单位/条，默认10条
+【t】计时器模式，最后一条消息后达到时限触发
+单位/秒，默认60秒
+【p】概率模式，每条消息按概率触发
+单位/%，默认10%
+【i】插嘴模式，插嘴活跃度超过时触发
+取值0-10，默认8
+
+【.ai on --i --p=42】使用示例`
+
+                        seal.replyToSender(ctx, msg, s);
                         return ret;
                     }
 
@@ -650,7 +741,7 @@ if (!seal.ext.find('aiplugin3')) {
                     kwargs.forEach(kwarg => {
                         const name = kwarg.name;
                         const exist = kwarg.valueExists;
-                        const value = parseInt(kwarg.value);
+                        const value = parseFloat(kwarg.value);
 
                         switch (name) {
                             case 'c':
@@ -690,8 +781,7 @@ if (!seal.ext.find('aiplugin3')) {
                     return ret;
                 }
             }
-            case 'sb':
-            case 'standby': {
+            case 'sb': {
                 //尊贵的特权
                 if (ctx.privilegeLevel == 100) {
                     privilegeData[id] = {
@@ -791,8 +881,7 @@ if (!seal.ext.find('aiplugin3')) {
                 }
             }
             case 'f':
-            case 'fgt':
-            case 'forget': {
+            case 'fgt': {
                 getPrivilege(id);
 
                 if (privilegeData.hasOwnProperty(id) && ctx.privilegeLevel >= privilegeData[id].privilegeLevel) {
