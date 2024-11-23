@@ -6,8 +6,8 @@
 // @timestamp    1732353408
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
-// @updateUrl    https://mirror.ghproxy.com/
-// @updateUrl    
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
 // ==/UserScript==
 
 if (!seal.ext.find('penguinBattle')) {
