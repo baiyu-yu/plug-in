@@ -83,7 +83,7 @@ if (!seal.ext.find('aiplugin3')) {
         if (!privilegeData.hasOwnProperty(id)) {
             let pr = {};
             try {
-                pr = JSON.parse(ext.storageGet(`privilege_${id}`));
+                pr = JSON.parse(ext.storageGet(`privilege_${id}`) || '{}');
             } catch (error) {
                 console.error(`从数据库中获取privilege_${id}失败:`, error);
             }
