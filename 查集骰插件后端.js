@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const axios = require('axios'); // 引入 axios 用于发送 HTTP 请求
 const app = express();
 const port = 8889;
 
@@ -27,11 +28,38 @@ const diceSchema = new mongoose.Schema({
 
 const Dice = mongoose.model('Dice', diceSchema);
 
+// 存储通过外部请求获取的 uid 列表
+let externalUids = [];
+
+// 定时任务：每隔 1 分钟从外部 API 获取在线的 QQ 骰号 uid
+setInterval(async () => {
+    try {
+        const response = await axios.get('https://dice.weizaima.com/dice/api/public-dice/list');
+        const data = response.data;
+
+        // 提取符合条件的 uid
+        externalUids = data.items.flatMap(item => 
+            item.endpoints
+                .filter(endpoint => endpoint.platform === 'QQ' && endpoint.isOnline)
+                .map(endpoint => parseInt(endpoint.uid.split(':')[1]))
+        );
+
+        console.log('更新外部在线骰号列表:', externalUids);
+    } catch (err) {
+        console.error('获取外部在线骰号列表失败', err);
+    }
+}, 60 * 1000); // 每 1 分钟执行一次
+
 // 获取存活骰号列表
 app.get('/api/get_alive_dice', async (req, res) => {
     try {
         const aliveDice = await Dice.find({ alive: true }).select('dice_id -_id');
-        res.json(aliveDice.map(dice => dice.dice_id));
+        const aliveDiceIds = aliveDice.map(dice => dice.dice_id);
+
+        // 将外部获取的 uid 拼接到结果中
+        const allAliveDiceIds = [...aliveDiceIds, ...externalUids];
+
+        res.json(allAliveDiceIds);
     } catch (err) {
         console.error("获取存活骰号列表失败", err);
         res.status(500).json({ message: '服务器错误' });
