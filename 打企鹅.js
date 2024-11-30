@@ -30,51 +30,51 @@ if (!seal.ext.find('penguinBattle')) {
         "1": (player, target) => {
             const damage = Math.max(player.attack - target.defense, 1);
             target.health -= damage;
-            return damage;
+            return { damage };
         },
         "2": (player, target) => {
             const damage = player.attack * 2;
             target.health -= damage;
-            return damage;
+            return { damage };
         },
         "3": (player, target) => {
             player.defense += player.defense * 0.5;
             player.buffs = player.buffs || [];
             player.buffs.push({ type: 'defense', value: player.defense * 0.5, duration: 3 });
-            return 0;
+            return { defense: 1.5 };
         },
         "4": (player, target) => {
             target.attack = Math.floor(target.attack / 2);
             target.debuffs = target.debuffs || [];
             target.debuffs.push({ type: 'attack', value: target.attack / 2, duration: 1 });
-            return 0;
+            return { attack: 0.5 };
         },
         "5": (player, target) => {
             const damage = Math.max(player.attack - target.defense, 1);
             target.health -= damage;
             player.health = Math.min(player.maxHealth, player.health + damage);
-            return damage;
+            return { damage };
         },
         "6": (player, target) => {
             const damage = player.attack * 2.5;
             target.health -= damage;
-            return damage;
+            return { damage };
         },
         "7": (player, target) => {
             target.frozen = true;
             target.debuffs = target.debuffs || [];
-            target.debuffs.push({ type: 'frozen', duration: 1 });
-            return 0;
+            target.debuffs.push({ type: 'frozen', duration: 2 });
+            return { frozen: true };
         },
         "8": (player, target) => {
             const damage = player.attack * 3;
             target.health -= damage;
-            return damage;
+            return { damage };
         },
         "9": (player) => {
             player.health = Math.min(player.maxHealth, player.maxHealth * 0.5);
             player.dead = false;
-            return 0;
+            return { reflash: true };
         },
         "10": (player) => {
             player.health = Math.min(player.maxHealth, player.health + 20);
@@ -90,6 +90,23 @@ if (!seal.ext.find('penguinBattle')) {
         "13": (player) => {
             player.health = Math.max(1, player.health - 20);
             player.speed += 5;
+        },
+        "14": (player) => {
+            const healing = 15;
+            player.health = Math.min(player.maxHealth, player.health + healing);
+            return { healing };
+        },
+        "15": (player) => {
+            player.buffs = player.buffs || [];
+            player.buffs.push({ type: "shield", value: 30, duration: 3 }); // 3回合护盾
+            return { shield: 30 };
+        },
+        "16": (player, target) => {
+            const damage = player.attack;
+            target.health -= damage;
+            target.debuffs = target.debuffs || [];
+            target.debuffs.push({ type: "poison", value: 5, duration: 2 }); // 中毒效果
+            return { damage, poison: true };
         }
     };
 
@@ -152,15 +169,18 @@ if (!seal.ext.find('penguinBattle')) {
 
     // 技能列表
     const skills = [
-        { name: "普通攻击", description: "对敌人造成基础攻击力伤害", manaCost: 0, isAOE: false, effectId: "1" },
-        { name: "强力一击", description: "对敌人造成2倍基础攻击力伤害，消耗 10 魔力", manaCost: 10, isAOE: false, effectId: "2" },
-        { name: "防御姿态", description: "减少50%的伤害，持续3回合，消耗 8 魔力", manaCost: 8, isAOE: false, effectId: "3" },
-        { name: "虚弱诅咒", description: "使敌人下回合攻击力减半，持续1回合，消耗 12 魔力", manaCost: 12, isAOE: false, effectId: "4" },
-        { name: "生命吸取", description: "对敌人造成伤害并恢复等量生命值，消耗 15 魔力", manaCost: 15, isAOE: false, effectId: "5" },
-        { name: "火焰风暴", description: "对敌人造成基础攻击力2.5倍伤害，消耗 20 魔力", manaCost: 20, isAOE: false, effectId: "6" },
-        { name: "冰冻陷阱", description: "使敌人下回合无法行动，持续1回合，消耗 18 魔力", manaCost: 18, isAOE: false, effectId: "7" },
-        { name: "雷霆一击", description: "造成3倍伤害，消耗 25 魔力", manaCost: 25, isAOE: false, effectId: "8" },
-        { name: "复活术", description: "复活并恢复50%生命值，消耗 50 魔力", manaCost: 50, isAOE: false, effectId: "9" }
+        { name: "普通攻击", description: "对敌人造成基础攻击力伤害", manaCost: 0, effectId: "1" },
+        { name: "强力一击", description: "对敌人造成2倍基础攻击力伤害，消耗 10 魔力", manaCost: 10, effectId: "2" },
+        { name: "防御姿态", description: "减少50%的伤害，持续3回合，消耗 8 魔力", manaCost: 8, effectId: "3" },
+        { name: "虚弱诅咒", description: "使敌人下回合攻击力减半，持续1回合，消耗 12 魔力", manaCost: 12, effectId: "4" },
+        { name: "生命吸取", description: "对敌人造成伤害并恢复等量生命值，消耗 15 魔力", manaCost: 15, effectId: "5" },
+        { name: "火焰风暴", description: "对敌人造成基础攻击力2.5倍伤害，消耗 20 魔力", manaCost: 20, effectId: "6" },
+        { name: "冰冻陷阱", description: "使敌人下回合无法行动，持续2回合，消耗 18 魔力", manaCost: 18, effectId: "7" },
+        { name: "雷霆一击", description: "造成3倍伤害，消耗 25 魔力", manaCost: 25, effectId: "8" },
+        { name: "复活术", description: "复活并恢复50%生命值，消耗 50 魔力", manaCost: 50, effectId: "9" },
+        { name: "愈合术", description: "恢复自身生命值15点，消耗 10 魔力", manaCost: 10, effectId: "14" },
+        { name: "护盾", description: "为自身添加一个抵挡30点伤害的护盾，持续3回合，消耗 25 魔力", manaCost: 25, effectId: "15" },
+        { name: "毒刃", description: "对敌人造成攻击力的伤害，并在接下来的2回合每回合造成5点额外伤害", manaCost: 20, effectId: "16" }
     ];
 
     // 计算下一等级所需经验
@@ -836,9 +856,20 @@ ${titleList}`);
                         }
 
                         player.mana -= skill.manaCost;
-                        damage = builtInEffectMap[skill.effectId](player, boss);
+                        const effect = builtInEffectMap[skill.effectId];
+                        const result = effect(player, boss);
 
-                        seal.replyToSender(ctx, msg, `你使用了技能 "${skill.name}" 对 BOSS 造成了 ${damage} 点伤害！消耗魔力: ${skill.manaCost}\nBOSS 剩余血量：${boss.health}`);
+                        let response = `你使用了技能 "${skill.name}"`;
+                        if (result.damage) response += `，对目标造成了 ${result.damage} 点伤害`;
+                        if (result.defense) response += `，将自己的防御提升了 ${result.defense} 倍`;
+                        if (result.attack) response += `，使对方的攻击降低为原来的 ${result.attack} 倍`;frozen
+                        if (result.frozen) response += `，并使目标进入冻结状态`;
+                        if (result.reflash) response += `，并使目标复活`;
+                        if (result.healing) response += `，恢复了 ${result.healing} 点生命值`;
+                        if (result.shield) response += `，为自己添加了一个可吸收 ${result.shield} 点伤害的护盾`;
+                        if (result.poison) response += `，并使目标进入中毒状态`;
+
+                        seal.replyToSender(ctx, msg, response + `！消耗魔力: ${skill.manaCost}\nBOSS 剩余血量：${boss.health}`);
                     } else {
                         // 普通攻击
                         damage = Math.max(player.attack - boss.defense, 1);
@@ -932,9 +963,20 @@ ${titleList}`);
                     }
 
                     player.mana -= skill.manaCost;
-                    damage = builtInEffectMap[skill.effectId](player, penguin);
+                    const effect = builtInEffectMap[skill.effectId];
+                    const result = effect(player, penguin);
 
-                    seal.replyToSender(ctx, msg, `你使用了技能 "${skill.name}" 对小企鹅造成了 ${damage} 点伤害！消耗魔力: ${skill.manaCost}\n小企鹅剩余血量：${penguin.health}`);
+                    let response = `你使用了技能 "${skill.name}"`;
+                    if (result.damage) response += `，对目标造成了 ${result.damage} 点伤害`;
+                    if (result.defense) response += `，将自己的防御提升了 ${result.defense} 倍`;
+                    if (result.attack) response += `，使对方的攻击降低为原来的 ${result.attack} 倍`;frozen
+                    if (result.frozen) response += `，并使目标进入冻结状态`;
+                    if (result.reflash) response += `，并使目标复活`;
+                    if (result.healing) response += `，恢复了 ${result.healing} 点生命值`;
+                    if (result.shield) response += `，为自己添加了一个可吸收 ${result.shield} 点伤害的护盾`;
+                    if (result.poison) response += `，并使目标进入中毒状态`;
+
+                    seal.replyToSender(ctx, msg, response + `！消耗魔力: ${skill.manaCost}\nBOSS 剩余血量：${penguin.health}`);
                 } else {
                     // 普通攻击
                     damage = Math.max(player.attack - penguin.defense, 1);
