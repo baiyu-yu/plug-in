@@ -10,6 +10,8 @@
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
 // ==/UserScript==
 
+// TODO: startPvP函数没写。buff和debuff相关没解析。
+
 if (!seal.ext.find('penguinBattle')) {
     const ext = seal.ext.new('penguinBattle', 'penguinMaster', '1.0.0');
     seal.ext.register(ext);
