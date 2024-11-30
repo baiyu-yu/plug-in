@@ -110,15 +110,6 @@ if (!seal.ext.find('penguinBattle')) {
         }
     };
 
-    // 序列化函数，好像暂时没用
-    const serializeEffect = (effect) => {
-        return effect.toString();
-    };
-
-    // 反序列化函数，暂时没用
-    const deserializeEffect = (serializedEffect) => {
-        return new Function('player', 'target', serializedEffect);
-    };
 
     // 解析叠加效果
     const parseEffect = (effectString) => {
