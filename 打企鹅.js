@@ -11,15 +11,19 @@
 // ==/UserScript==
 
 if (!seal.ext.find('penguinBattle')) {
-    const ext = seal.ext.new('penguinBattle', 'penguinMaster', '1.1.0');
+    const ext = seal.ext.new('penguinBattle', 'penguinMaster', '1.0.0');
     seal.ext.register(ext);
     const dbKeyPlayerData = "penguinBattle_playerData";
     const dbKeyEncounters = "penguinBattle_encounters";
     const dbKeyShop = "penguinBattle_shop";
     const dbKeyGroupBoss = `penguinBattle_boss`;
     const dbKeyBossCooldown = "penguinBattle_bossCooldown";
-    const dbKeyPenguin = "penguinBattle_penguin"; // 新增小企鹅数据库键
-    const dbKeyPenguinEgg = "penguinBattle_penguinEgg"; // 新增企鹅蛋数据库键
+    const dbKeyPenguin = "penguinBattle_penguin"; // 小企鹅数据库键
+    const dbKeyPenguinEgg = "penguinBattle_penguinEgg"; // 企鹅蛋数据库键
+    const dbKeyPvP = "penguinBattle_pvp"; // PvP数据库键
+    const dbKeyHouses = "penguinBattle_houses"; // 房产数据库键
+    const dbKeyTitles = "penguinBattle_titles"; // 称号数据库键
+    const dbKeySignIn = "penguinBattle_signIn"; // 签到数据库键
 
     // 内置函数映射
     const builtInEffectMap = {
@@ -142,7 +146,8 @@ if (!seal.ext.find('penguinBattle')) {
         { name: "神秘宝石", description: "攻击力+20", cost: 300, effectId: "attack+20" },
         { name: "生命药水", description: "恢复50生命值", cost: 50, effectId: "10" },
         { name: "魔法戒指", description: "提升魔力+20", cost: 50, effectId: "mana+20&maxMana+20" },
-        { name: "复活药水", description: "复活并恢复50%生命值", cost: 500, effectId: "11" }
+        { name: "复活药水", description: "复活并恢复50%生命值", cost: 500, effectId: "11" },
+        { name: "房产", description: "购买房产，每日提供固定收益", cost: 1000, effectId: "house" }
     ];
 
     // 技能列表
@@ -449,32 +454,180 @@ if (!seal.ext.find('penguinBattle')) {
         }
     };
 
+    // 房产侵入逻辑函数
+const attemptInfiltrateHouse = (player, players) => {
+    // 随机选取目标房主
+    const allPlayers = Object.entries(players).filter(([id, p]) => id !== player.userId); // 排除自己
+    if (allPlayers.length === 0) {
+        return { success: false, message: "冒险中没有找到可侵入的房产。" };
+    }
+
+    const targetPlayerEntry = allPlayers[Math.floor(Math.random() * allPlayers.length)];
+    const targetUserId = targetPlayerEntry[0];
+    const targetPlayer = targetPlayerEntry[1];
+    const targetHouseData = manageHouseData(targetUserId).loadHouse();
+
+    // 如果目标玩家没有房产
+    if (!targetHouseData || targetHouseData.level <= 0) {
+        return { success: false, message: `你误入了 ${targetPlayer.name} 的一片空地，没有任何收获。` };
+    }
+
+    // 玩家速度与房产安保等级对抗
+    if (player.speed > targetHouseData.security) {
+        // 玩家成功侵入
+        const stolenGold = Math.min(targetHouseData.storage, 10); // 至多偷取10金币
+        const stolenItemIndex = targetHouseData.storageItems?.length > 0
+            ? Math.floor(Math.random() * targetHouseData.storageItems.length)
+            : null;
+        const stolenItem = stolenItemIndex !== null ? targetHouseData.storageItems.splice(stolenItemIndex, 1)[0] : null;
+
+        // 更新玩家与目标房产状态
+        player.gold += stolenGold;
+        if (stolenItem) player.backpack.push(stolenItem);
+        targetHouseData.storage -= stolenGold;
+        manageHouseData(targetUserId).saveHouse(targetHouseData);
+
+        return {
+            success: true,
+            message: `你成功潜入了 ${targetPlayer.name} 的房产，偷走了 ${stolenGold} 金币${stolenItem ? ` 和一个物品：${stolenItem.name}` : ''}！`
+        };
+    } else {
+        // 房产防御成功
+        const fineGold = Math.min(player.gold, 10); // 至多罚款10金币
+        const droppedItemIndex = player.backpack.length > 0
+            ? Math.floor(Math.random() * player.backpack.length)
+            : null;
+        const droppedItem = droppedItemIndex !== null ? player.backpack.splice(droppedItemIndex, 1)[0] : null;
+
+        // 更新玩家与目标房产状态
+        player.gold -= fineGold;
+        targetHouseData.storage += fineGold;
+        if (droppedItem) targetHouseData.storageItems = [...(targetHouseData.storageItems || []), droppedItem];
+        manageHouseData(targetUserId).saveHouse(targetHouseData);
+
+        return {
+            success: true,
+            message: `你被 ${targetPlayer.name} 的房产安保系统拦截，损失了 ${fineGold} 金币${droppedItem ? ` 和一个物品：${droppedItem.name}` : ''}！`
+        };
+    }
+};
+
+    // PvP 数据管理函数
+    const managePvPData = (userId) => {
+        const dbKey = `${dbKeyPvP}_${userId}`;
+
+        // 加载PvP数据
+        const loadPvP = () => {
+            const data = ext.storageGet(dbKey);
+            return data ? JSON.parse(data) : { wins: 0, losses: 0 };
+        };
+
+        // 保存PvP数据
+        const savePvP = (pvp) => {
+            ext.storageSet(dbKey, JSON.stringify(pvp));
+        };
+
+        return {
+            loadPvP,
+            savePvP,
+        };
+    };
+
+    // 房产数据管理函数
+    const manageHouseData = (userId) => {
+        const dbKey = `${dbKeyHouses}_${userId}`;
+
+        // 加载房产数据
+        const loadHouse = () => {
+            const data = ext.storageGet(dbKey);
+            return data ? JSON.parse(data) : { level: 1, income: 10, security: 1, storage: 0, lastCollectTime: 0 };
+        };
+
+        // 保存房产数据
+        const saveHouse = (house) => {
+            ext.storageSet(dbKey, JSON.stringify(house));
+        };
+
+        return {
+            loadHouse,
+            saveHouse,
+        };
+    };
+
+    // 称号数据管理函数
+    const manageTitleData = (userId) => {
+        const dbKey = `${dbKeyTitles}_${userId}`;
+
+        // 加载称号数据
+        const loadTitles = () => {
+            const data = ext.storageGet(dbKey);
+            return data ? JSON.parse(data) : [];
+        };
+
+        // 保存称号数据
+        const saveTitles = (titles) => {
+            ext.storageSet(dbKey, JSON.stringify(titles));
+        };
+
+        return {
+            loadTitles,
+            saveTitles,
+        };
+    };
+
+    // 签到数据管理函数
+    const manageSignInData = (userId) => {
+        const dbKey = `${dbKeySignIn}_${userId}`;
+
+        // 加载签到数据
+        const loadSignIn = () => {
+            const data = ext.storageGet(dbKey);
+            return data ? JSON.parse(data) : { lastSignIn: 0, streak: 0 };
+        };
+
+        // 保存签到数据
+        const saveSignIn = (signIn) => {
+            ext.storageSet(dbKey, JSON.stringify(signIn));
+        };
+
+        return {
+            loadSignIn,
+            saveSignIn,
+        };
+    };
 
     // 定义命令
     const cmdPenguinBattle = seal.ext.newCmdItemInfo();
     cmdPenguinBattle.name = 'penguin';
     cmdPenguinBattle.help = `
 指令：
+.penguin help - 查看帮助
 .penguin 新建角色 - 创建角色
-.penguin 开始 - 开始筹备BOSS战
-.penguin 加入 - 加入BOSS战
-.penguin 开始BOSS战 - 开始BOSS战斗
-.penguin 攻击 - 攻击BOSS或企鹅
+.penguin 签到 - 每日签到
 .penguin 状态 - 查看状态
-.penguin 技能 编号/技能名 - 使用技能
-.penguin 休息 - 开始休息
+.penguin 冒险 - 出去冒险，锻炼能力
+.penguin 备战 - 开始筹备BOSS战
+.penguin 加入 - 加入BOSS战
+.penguin 开始 - 开始BOSS战斗
+.penguin 攻击 编号/技能名 - 攻击BOSS或企鹅，添加技能编号或技能名使用技能
+.penguin 脱离 - 从战斗中脱离
+.penguin 休息 - 开始休息，回复hp/mp
 .penguin 结束休息 - 结束休息
 .penguin 商店 - 查看商店
 .penguin 购买 序号/物品名 - 购买物品
 .penguin 排行榜 - 查看排行榜
-.penguin help - 查看帮助
-.penguin 冒险 - 出去冒险
 .penguin 背包 - 查看背包
 .penguin 使用 物品名 - 使用背包中的物品
 .penguin 转赠 物品名 @玩家 - 将物品转赠给其他玩家
 .penguin 宠物 - 查看宠物企鹅信息
 .penguin 孵化 - 查看企鹅蛋孵化情况
 .penguin 互动 互动类型 - 与宠物企鹅互动
+.penguin 对战 @玩家 - 发起PvP对战
+.penguin 接受对战 - 接受PvP对战
+.penguin 拒绝对战 - 拒绝PvP对战
+.penguin 房产 - 查看房产信息
+.penguin 升级房产 - 升级房产
+.penguin 收取收益 - 收取房产收益
 管理员指令：
 .penguin 管理 奇遇 - 查看奇遇列表
 .penguin 管理 添加奇遇 描述|代码 - 添加奇遇
@@ -510,7 +663,7 @@ if (!seal.ext.find('penguinBattle')) {
                     level: 1, exp: 0, gold: 0, attack: 5, defense: 3, 
                     health: 50, maxHealth: 50, mana: 20, maxMana: 20, 
                     speed: 0, skills: [skills[0]], groupId,
-                    backpack: [], // 初始化背包
+                    backpack: [defaultShop[11], defaultShop[11], defaultShop[11]], // 初始化背包并添加三个复活药水
                     dead: false // 初始化死亡状态
                 };
                 saveDatabase(dbKeyPlayerData, players);
@@ -536,6 +689,11 @@ if (!seal.ext.find('penguinBattle')) {
             case '状态': {
                 const nextLevelExp = calculateNextLevelExp(player.level);
                 const expToNextLevel = nextLevelExp - player.exp;
+                const skillDescriptions = player.skills.map((skill, index) => `${index + 1}. ${skill.name} - ${skill.description}`).join('\n');
+                const pvpData = managePvPData(userId).loadPvP();
+                const houseData = manageHouseData(userId).loadHouse();
+                const titles = manageTitleData(userId).loadTitles();
+                const titleList = titles.length > 0 ? `称号: ${titles.join(', ')}` : '暂无称号';
                 seal.replyToSender(ctx, msg, `
 玩家名: ${playerName}
 等级: ${player.level}
@@ -546,11 +704,15 @@ if (!seal.ext.find('penguinBattle')) {
 生命值: ${player.health}/${player.maxHealth}
 魔力值: ${player.mana}/${player.maxMana}
 速度: ${player.speed}
-技能: ${player.skills.map((skill, index) => `${index + 1}. ${skill.name}`).join(', ')}`);
+技能: ${skillDescriptions}
+PvP战绩: 胜 ${pvpData.wins} 负 ${pvpData.losses}
+房产等级: ${houseData.level}
+房产收益: ${houseData.income} 金币/天
+${titleList}`);
                 break;
             }
 
-            case '开始': {
+            case '备战': {
                 const player = players[userId];
                 // 检查玩家是否死亡
                 if (player.dead) {
@@ -587,8 +749,8 @@ if (!seal.ext.find('penguinBattle')) {
                     seal.replyToSender(ctx, msg, '你正在休息中，无法进行其他活动！请使用 ".penguin 结束休息" 结束后再操作。');
                     return;
                 }
-                if (groupBossData.bossState !== 'preparing') {
-                    seal.replyToSender(ctx, msg, '当前没有正在筹备的 BOSS 战！');
+                if (groupBossData.bossState !== 'preparing' && groupBossData.bossState !== 'fighting') {
+                    seal.replyToSender(ctx, msg, '当前没有正在筹备或进行的 BOSS 战！');
                     return;
                 }
                 if (groupBossData.bossParticipants[userId]) {
@@ -601,7 +763,7 @@ if (!seal.ext.find('penguinBattle')) {
                 break;
             }
 
-            case '开始BOSS战': {
+            case '开始': {
                 // 检查玩家是否死亡
                 const player = players[userId];
                 if (player.dead) {
@@ -622,7 +784,7 @@ if (!seal.ext.find('penguinBattle')) {
             
                 // 判断当前是否处于 BOSS 战筹备状态
                 if (groupBossData.bossState !== 'preparing') {
-                    seal.replyToSender(ctx, msg, '请先通过 ".penguin 开始" 来筹备 BOSS 战！');
+                    seal.replyToSender(ctx, msg, '请先通过 ".penguin 备战" 来筹备 BOSS 战！');
                     return;
                 }
             
@@ -825,11 +987,12 @@ if (!seal.ext.find('penguinBattle')) {
             case '冒险': {
                 const player = players[userId];
                 const penguinManager = managePenguinData(userId);
-                const penguin = generatePenguin(player.level);
-                const encounterChance = 0.3; // 30%触发奇遇
-                const bossChance = 0.1; // 10%生成BOSS
-                const penguinSwarmChance = 0.03; // 3%触发企鹅潮
-                // 检查玩家是否死亡
+                const encounterChance = 0.3; // 30% 触发奇遇
+                const bossChance = 0.1;     // 10% 生成 BOSS
+                const infiltrateChance = 0.2; // 20% 触发房产侵入
+                const penguinChance = 0.4;   // 40% 生成小企鹅
+            
+                // 检查玩家是否死亡或处于其他状态
                 if (player.dead) {
                     seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
                     return;
@@ -841,29 +1004,24 @@ if (!seal.ext.find('penguinBattle')) {
                 }
             
                 if (groupBossData.bossState === 'fighting') {
-                    seal.replyToSender(ctx, msg, '当前正在BOSS战中，无法进行冒险！');
+                    seal.replyToSender(ctx, msg, '当前正在 BOSS 战中，无法进行冒险！');
                     return;
                 }
-
-                if (Math.random() < bossChance && groupBossData.bossState !== 'preparing' && groupBossData.bossState !== 'fighting') {
-                    groupBossData.bossState = 'preparing';
-                    groupBossData.bossParticipants = {};
-                    saveGroupBossData(groupId, groupBossData);
-                    seal.replyToSender(ctx, msg, '你在冒险中触发了一个强大的 BOSS！请使用 ".penguin 加入" 加入战斗。');
-                } else if (Math.random() < penguinSwarmChance) {
-                    encounterPenguinSwarm(player);
-                } else {
-                    penguinManager.savePenguin(penguin);
-                    seal.replyToSender(ctx, msg, `你在冒险中发现了一只小企鹅！\n血量: ${penguin.health}\n攻击: ${penguin.attack}\n描述: ${penguin.description}`);
-                }
             
-                if (Math.random() < encounterChance) {
+                // 按概率触发单一事件
+                const eventRoll = Math.random();
+                if (eventRoll < infiltrateChance) {
+                    // 房产侵入事件
+                    const infiltrateResult = attemptInfiltrateHouse(player, players);
+                    seal.replyToSender(ctx, msg, infiltrateResult.message);
+                } else if (eventRoll < infiltrateChance + encounterChance) {
+                    // 奇遇事件
                     const encounter = encounters[Math.floor(Math.random() * encounters.length)];
                     if (encounter.effectId.includes('+')) {
                         const applyEffect = parseEffect(encounter.effectId);
                         applyEffect(player);
-                    } else if(encounter.effectId === 'skill'){
-                        const availableSkills = player.skills.filter(skills => !player.skills.includes(skills));
+                    } else if (encounter.effectId === 'skill') {
+                        const availableSkills = skills.filter(skill => !player.skills.some(playerSkill => playerSkill.name === skill.name));
                         if (availableSkills.length > 0) {
                             const newSkill = availableSkills[Math.floor(Math.random() * availableSkills.length)];
                             player.skills.push(newSkill);
@@ -871,17 +1029,32 @@ if (!seal.ext.find('penguinBattle')) {
                         } else {
                             player.attack += Math.floor(Math.random() * 10) + 5;
                             player.health += Math.floor(Math.random() * 16) + 8;
-                            seal.replyToSender(ctx, msg, `但你已经拥有了技能书上的所有技能，看来只能……\n${player.name} 增加了攻击力和生命值！`);
+                            seal.replyToSender(ctx, msg, `可惜啊年轻人，你已经打遍天下无敌手，技能书无法再为你的技能成长了！那么……\n${player.name} 增加了攻击力和生命值！`);
                         }
-                    }else{
+                    } else {
                         builtInEffectMap[encounter.effectId](player);
                     }
                     seal.replyToSender(ctx, msg, `奇遇事件触发！\n${encounter.description}`);
+                } else if (eventRoll < infiltrateChance + encounterChance + bossChance) {
+                    // BOSS 生成事件
+                    if (groupBossData.bossState !== 'preparing' && groupBossData.bossState !== 'fighting') {
+                        groupBossData.bossState = 'preparing';
+                        groupBossData.bossParticipants = {};
+                        saveGroupBossData(groupId, groupBossData);
+                        seal.replyToSender(ctx, msg, '你在冒险中触发了一个强大的 BOSS！请使用 ".penguin 加入" 加入战斗。');
+                    } else {
+                        seal.replyToSender(ctx, msg, '当前已有正在筹备或进行中的 BOSS 战！本次冒险没有新发现。');
+                    }
+                } else {
+                    // 小企鹅生成事件
+                    const penguin = generatePenguin(player.level);
+                    penguinManager.savePenguin(penguin);
+                    seal.replyToSender(ctx, msg, `你在冒险中发现了一只小企鹅！\n血量: ${penguin.health}\n攻击: ${penguin.attack}\n描述: ${penguin.description}`);
                 }
             
                 saveDatabase(dbKeyPlayerData, players);
                 return;
-            }
+            }            
 
             case '商店': {
                 const player = players[userId];
@@ -902,16 +1075,15 @@ if (!seal.ext.find('penguinBattle')) {
         
             case '购买': {
                 const player = players[userId];
-                // 检查玩家是否死亡
                 if (player.dead) {
-                    seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
+                    seal.replyToSender(ctx, msg, '你已经死亡，无法购买物品！请使用复活药水或复活术复活。');
                     return;
                 }
-                // 购买物品逻辑
                 if (players[userId]?.resting) {
                     seal.replyToSender(ctx, msg, '你正在休息中，无法进行其他活动！请使用 ".penguin 结束休息" 结束后再操作。');
                     return;
-                }                
+                }
+            
                 const itemArg = cmdArgs.getArgN(2);
                 let itemIndex = parseInt(itemArg, 10) - 1;
                 if (isNaN(itemIndex)) {
@@ -921,25 +1093,36 @@ if (!seal.ext.find('penguinBattle')) {
                         return;
                     }
                 }
-        
-                if (isNaN(itemIndex) || itemIndex < 0 || itemIndex >= shop.length) {
-                    seal.replyToSender(ctx, msg, '请输入有效的物品序号！');
-                    return;
-                }
-        
+            
                 const item = shop[itemIndex];
                 if (player.gold < item.cost) {
                     seal.replyToSender(ctx, msg, `金币不足，无法购买 "${item.name}"！`);
                     return;
                 }
-        
+            
+                if (item.effectId === 'house') {
+                    const houseData = manageHouseData(userId).loadHouse();
+                    if (houseData.level > 1) {
+                        seal.replyToSender(ctx, msg, '你已经拥有房产，无法重复购买！');
+                        return;
+                    }
+            
+                    // 初始化房产数据
+                    houseData.level = 1;
+                    houseData.income = 20;
+                    houseData.security = 5; // 初始安保等级
+                    houseData.toll = 5;     // 初始过路费能力
+                    manageHouseData(userId).saveHouse(houseData);
+                    seal.replyToSender(ctx, msg, '恭喜，你成功购买了一座房产！');
+                } else {
+                    player.backpack.push(item);
+                    seal.replyToSender(ctx, msg, `你成功购买了 "${item.name}"！\n当前金币: ${player.gold}`);
+                }
+            
                 player.gold -= item.cost;
-                player.backpack.push(item); // 将物品添加到背包
                 saveDatabase(dbKeyPlayerData, players);
-        
-                seal.replyToSender(ctx, msg, `你成功购买了 "${item.name}"！\n当前金币: ${player.gold}`);
                 return;
-            }
+            }            
 
             case 'help': {
                 // 查看帮助
@@ -952,6 +1135,10 @@ if (!seal.ext.find('penguinBattle')) {
                 // 检查玩家是否死亡
                 if (player.dead) {
                     seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
+                    return;
+                }
+                if (groupBossData.bossState === 'fighting' || groupBossData.bossState === 'preparing') {
+                    seal.replyToSender(ctx, msg, '当前正在战斗中，无法休息！');
                     return;
                 }
                 if (player.resting) {
@@ -1071,6 +1258,7 @@ if (!seal.ext.find('penguinBattle')) {
                     return;
                 }
                 const targetPlayer = players[targetUserId];
+                console.log(targetPlayer);
                 if (!targetPlayer) {
                     seal.replyToSender(ctx, msg, '目标玩家不存在！');
                     return;
@@ -1162,6 +1350,198 @@ if (!seal.ext.find('penguinBattle')) {
                 saveDatabase(dbKeyPlayerData, players);
                 return;
             }
+
+            case '脱离': {
+                const player = players[userId];
+                if (groupBossData.bossState === 'fighting' && groupBossData.bossParticipants[userId]) {
+                    delete groupBossData.bossParticipants[userId];
+                    seal.replyToSender(ctx, msg, '你已从 BOSS 战中脱离！');
+                    if (Object.keys(groupBossData.bossParticipants).length === 0) {
+                        groupBossData.bossState = null;
+                        groupBossData.boss = null;
+                        seal.replyToSender(ctx, msg, '所有参与者都已脱离，BOSS 战结束！');
+                    }
+                    saveGroupBossData(groupId, groupBossData);
+                } else {
+                    const penguinManager = managePenguinData(userId);
+                    const penguin = penguinManager.loadPenguin();
+                    if (penguin) {
+                        penguinManager.deletePenguin();
+                        seal.replyToSender(ctx, msg, '你已从小企鹅战斗中脱离！');
+                    } else {
+                        seal.replyToSender(ctx, msg, '当前没有战斗目标！');
+                    }
+                }
+                return;
+            }
+
+            case '对战': {
+                const player = players[userId];
+                if (player.dead) {
+                    seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
+                    return;
+                }
+                let mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+                targetUserId = mctx.player.userId;
+                if (!targetUserId) {
+                    seal.replyToSender(ctx, msg, '请@你要对战的玩家！');
+                    return;
+                }
+                const targetPlayer = players[targetUserId];
+                if (!targetPlayer) {
+                    seal.replyToSender(ctx, msg, '目标玩家不存在！');
+                    return;
+                }
+                const pvpData = managePvPData(userId).loadPvP();
+                pvpData.challenged = targetUserId;
+                managePvPData(userId).savePvP(pvpData);
+                seal.replyToSender(ctx, msg, `你向 ${targetPlayer.name} 发起了对战请求！`);
+                return;
+            }
+
+            case '接受对战': {
+                const player = players[userId];
+                if (player.dead) {
+                    seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
+                    return;
+                }
+                const pvpData = managePvPData(userId).loadPvP();
+                if (!pvpData.challenged) {
+                    seal.replyToSender(ctx, msg, '当前没有对战请求！');
+                    return;
+                }
+                const targetPlayer = players[pvpData.challenged];
+                if (!targetPlayer) {
+                    seal.replyToSender(ctx, msg, '目标玩家不存在！');
+                    return;
+                }
+                pvpData.challenged = null;
+                managePvPData(userId).savePvP(pvpData);
+                seal.replyToSender(ctx, msg, `你接受了 ${targetPlayer.name} 的对战请求！`);
+                startPvP(userId, pvpData.challenged);
+                return;
+            }
+
+            case '拒绝对战': {
+                const player = players[userId];
+                if (player.dead) {
+                    seal.replyToSender(ctx, msg, '你已经死亡，无法执行此操作！请使用复活药水或复活术复活。');
+                    return;
+                }
+                const pvpData = managePvPData(userId).loadPvP();
+                if (!pvpData.challenged) {
+                    seal.replyToSender(ctx, msg, '当前没有对战请求！');
+                    return;
+                }
+                const targetPlayer = players[pvpData.challenged];
+                if (!targetPlayer) {
+                    seal.replyToSender(ctx, msg, '目标玩家不存在！');
+                    return;
+                }
+                pvpData.challenged = null;
+                managePvPData(userId).savePvP(pvpData);
+                seal.replyToSender(ctx, msg, `你拒绝了 ${targetPlayer.name} 的对战请求！`);
+                return;
+            }
+
+            case '房产': {
+                const houseData = manageHouseData(userId).loadHouse();
+                seal.replyToSender(ctx, msg, `你的房产信息：\n等级: ${houseData.level}\n收益: ${houseData.income} 金币/天\n防盗性能: ${houseData.security}\n存储: ${houseData.storage} 金币`);
+                return;
+            }
+
+            case '升级房产': {
+                const player = players[userId];
+                const houseData = manageHouseData(userId).loadHouse();
+                const upgradeCost = houseData.level * 1000;
+            
+                if (player.gold < upgradeCost) {
+                    seal.replyToSender(ctx, msg, `金币不足，无法升级房产！升级需要 ${upgradeCost} 金币。`);
+                    return;
+                }
+            
+                player.gold -= upgradeCost;
+                houseData.level += 1;
+                houseData.income += 10;   // 提高收益
+                houseData.security += 2; // 提高安保等级
+                houseData.toll += 2;     // 提高过路费能力
+                manageHouseData(userId).saveHouse(houseData);
+                saveDatabase(dbKeyPlayerData, players);
+            
+                seal.replyToSender(ctx, msg, `房产升级成功！当前等级: ${houseData.level}\n收益: ${houseData.income} 金币/天\n安保等级: ${houseData.security}\n收取过路费能力: ${houseData.toll}`);
+                return;
+            }            
+
+            case '收取收益': {
+                const player = players[userId];
+                const houseData = manageHouseData(userId).loadHouse();
+                const now = Date.now();
+                const lastCollectTime = houseData.lastCollectTime || now;
+            
+                const collectInterval = 24 * 60 * 60 * 1000; // 每24小时
+                const timeSinceLastCollect = now - lastCollectTime;
+            
+                if (timeSinceLastCollect < collectInterval && houseData.storage === 0 && (!houseData.storageItems || houseData.storageItems.length === 0)) {
+                    const timeLeft = collectInterval - timeSinceLastCollect;
+                    const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
+                    const minutesLeft = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+                    seal.replyToSender(ctx, msg, `距离下次收取收益还有 ${hoursLeft} 小时 ${minutesLeft} 分钟。`);
+                    return;
+                }
+            
+                // 收益计算
+                const fullCycles = Math.floor(timeSinceLastCollect / collectInterval);
+                const collectAmount = fullCycles * houseData.income + houseData.storage; // 包括冒险者存储的金币
+            
+                // 转移道具
+                const collectedItems = houseData.storageItems || [];
+                player.backpack = player.backpack.concat(collectedItems); // 添加到玩家背包
+                houseData.storageItems = []; // 清空房产中的存储道具
+            
+                // 转移金币
+                player.gold += collectAmount;
+                houseData.storage = 0; // 清空收益库
+                houseData.lastCollectTime = now;
+                manageHouseData(userId).saveHouse(houseData);
+                saveDatabase(dbKeyPlayerData, players);
+            
+                const itemInfo = collectedItems.length > 0 
+                    ? `你还收获了以下道具:\n${collectedItems.map(item => `- ${item.name}`).join('\n')}` 
+                    : '';
+            
+                seal.replyToSender(ctx, msg, `你收取了 ${collectAmount} 金币的房产收益！${itemInfo}`);
+                return;
+            }                     
+
+            case '签到': {
+                const player = players[userId];
+                const signInData = manageSignInData(userId).loadSignIn();
+                const now = Date.now();
+                const lastSignIn = signInData.lastSignIn || 0;
+                const signInInterval = 24 * 60 * 60 * 1000; // 24小时
+            
+                if (now - lastSignIn < signInInterval) {
+                    const timeLeft = signInInterval - (now - lastSignIn);
+                    const hoursLeft = Math.floor(timeLeft / (60 * 60 * 1000));
+                    const minutesLeft = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+                    seal.replyToSender(ctx, msg, `距离下次签到还有 ${hoursLeft} 小时 ${minutesLeft} 分钟。`);
+                    return;
+                }
+            
+                // 设置连续签到奖励的上限
+                const streakCap = 10;
+                const streakBonus = Math.min(signInData.streak + 1, streakCap); // 连续签到奖励限制到10天
+                const signInReward = 100 + streakBonus * 10;
+            
+                player.gold += signInReward;
+                signInData.lastSignIn = now;
+                signInData.streak = Math.min(signInData.streak + 1, streakCap); // 连续签到天数也限制到10天
+                manageSignInData(userId).saveSignIn(signInData);
+                saveDatabase(dbKeyPlayerData, players);
+            
+                seal.replyToSender(ctx, msg, `签到成功！你获得了 ${signInReward} 金币。当前连续签到天数: ${signInData.streak}`);
+                return;
+            }            
 
             case '管理': {
                 if (ctx.privilegeLevel < 50) {
@@ -1267,7 +1647,6 @@ if (!seal.ext.find('penguinBattle')) {
                         switch (cheatCommand) {
                             case '帮助': {
                                 seal.replyToSender(ctx, msg, `作弊指令帮助：
-.penguin 管理 作弊 伤害 数值 - 对指定玩家造成伤害
 .penguin 管理 作弊 金币 数值 - 给指定玩家增加金币
 .penguin 管理 作弊 经验 数值 - 给指定玩家增加经验
 .penguin 管理 作弊 等级 数值 - 设置指定玩家等级
@@ -1277,12 +1656,6 @@ if (!seal.ext.find('penguinBattle')) {
 .penguin 管理 作弊 魔力 数值 - 设置指定玩家魔力值
 .penguin 管理 作弊 速度 数值 - 设置指定玩家速度
 使用@指定对象，未指定就是自身。`);
-                                break;
-                            }
-
-                            case '伤害': {
-                                targetPlayer.health -= value;
-                                seal.replyToSender(ctx, msg, `作弊成功！对 ${targetPlayer.name} 造成了 ${value} 点伤害。\n剩余生命值: ${targetPlayer.health}`);
                                 break;
                             }
 
