@@ -10,8 +10,6 @@
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
 // ==/UserScript==
 
-// TODO: startPvP函数没写。buff和debuff相关没解析。
-
 if (!seal.ext.find('penguinBattle')) {
     const ext = seal.ext.new('penguinBattle', 'penguinMaster', '1.0.0');
     seal.ext.register(ext);
@@ -111,7 +109,6 @@ if (!seal.ext.find('penguinBattle')) {
             return { damage, poison: true };
         }
     };
-
 
     // 解析叠加效果
     const parseEffect = (effectString) => {
@@ -468,62 +465,62 @@ if (!seal.ext.find('penguinBattle')) {
     };
 
     // 房产侵入逻辑函数
-const attemptInfiltrateHouse = (player, players) => {
-    // 随机选取目标房主
-    const allPlayers = Object.entries(players).filter(([id, p]) => id !== player.userId); // 排除自己
-    if (allPlayers.length === 0) {
-        return { success: false, message: "冒险中没有找到可侵入的房产。" };
-    }
+    const attemptInfiltrateHouse = (player, players) => {
+        // 随机选取目标房主
+        const allPlayers = Object.entries(players).filter(([id, p]) => id !== player.userId); // 排除自己
+        if (allPlayers.length === 0) {
+            return { success: false, message: "冒险中没有找到可侵入的房产。" };
+        }
 
-    const targetPlayerEntry = allPlayers[Math.floor(Math.random() * allPlayers.length)];
-    const targetUserId = targetPlayerEntry[0];
-    const targetPlayer = targetPlayerEntry[1];
-    const targetHouseData = manageHouseData(targetUserId).loadHouse();
+        const targetPlayerEntry = allPlayers[Math.floor(Math.random() * allPlayers.length)];
+        const targetUserId = targetPlayerEntry[0];
+        const targetPlayer = targetPlayerEntry[1];
+        const targetHouseData = manageHouseData(targetUserId).loadHouse();
 
-    // 如果目标玩家没有房产
-    if (!targetHouseData || targetHouseData.level <= 0) {
-        return { success: false, message: `你误入了 ${targetPlayer.name} 的一片空地，没有任何收获。` };
-    }
+        // 如果目标玩家没有房产
+        if (!targetHouseData || targetHouseData.level <= 0) {
+            return { success: false, message: `你误入了 ${targetPlayer.name} 的一片空地，没有任何收获。` };
+        }
 
-    // 玩家速度与房产安保等级对抗
-    if (player.speed > targetHouseData.security) {
-        // 玩家成功侵入
-        const stolenGold = Math.min(targetHouseData.storage, 10); // 至多偷取10金币
-        const stolenItemIndex = targetHouseData.storageItems?.length > 0
-            ? Math.floor(Math.random() * targetHouseData.storageItems.length)
-            : null;
-        const stolenItem = stolenItemIndex !== null ? targetHouseData.storageItems.splice(stolenItemIndex, 1)[0] : null;
+        // 玩家速度与房产安保等级对抗
+        if (player.speed > targetHouseData.security) {
+            // 玩家成功侵入
+            const stolenGold = Math.min(targetHouseData.storage, 10); // 至多偷取10金币
+            const stolenItemIndex = targetHouseData.storageItems?.length > 0
+                ? Math.floor(Math.random() * targetHouseData.storageItems.length)
+                : null;
+            const stolenItem = stolenItemIndex !== null ? targetHouseData.storageItems.splice(stolenItemIndex, 1)[0] : null;
 
-        // 更新玩家与目标房产状态
-        player.gold += stolenGold;
-        if (stolenItem) player.backpack.push(stolenItem);
-        targetHouseData.storage -= stolenGold;
-        manageHouseData(targetUserId).saveHouse(targetHouseData);
+            // 更新玩家与目标房产状态
+            player.gold += stolenGold;
+            if (stolenItem) player.backpack.push(stolenItem);
+            targetHouseData.storage -= stolenGold;
+            manageHouseData(targetUserId).saveHouse(targetHouseData);
 
-        return {
-            success: true,
-            message: `你成功潜入了 ${targetPlayer.name} 的房产，偷走了 ${stolenGold} 金币${stolenItem ? ` 和一个物品：${stolenItem.name}` : ''}！`
-        };
-    } else {
-        // 房产防御成功
-        const fineGold = Math.min(player.gold, 10); // 至多罚款10金币
-        const droppedItemIndex = player.backpack.length > 0
-            ? Math.floor(Math.random() * player.backpack.length)
-            : null;
-        const droppedItem = droppedItemIndex !== null ? player.backpack.splice(droppedItemIndex, 1)[0] : null;
+            return {
+                success: true,
+                message: `你成功潜入了 ${targetPlayer.name} 的房产，偷走了 ${stolenGold} 金币${stolenItem ? ` 和一个物品：${stolenItem.name}` : ''}！`
+            };
+        } else {
+            // 房产防御成功
+            const fineGold = Math.min(player.gold, 10); // 至多罚款10金币
+            const droppedItemIndex = player.backpack.length > 0
+                ? Math.floor(Math.random() * player.backpack.length)
+                : null;
+            const droppedItem = droppedItemIndex !== null ? player.backpack.splice(droppedItemIndex, 1)[0] : null;
 
-        // 更新玩家与目标房产状态
-        player.gold -= fineGold;
-        targetHouseData.storage += fineGold;
-        if (droppedItem) targetHouseData.storageItems = [...(targetHouseData.storageItems || []), droppedItem];
-        manageHouseData(targetUserId).saveHouse(targetHouseData);
+            // 更新玩家与目标房产状态
+            player.gold -= fineGold;
+            targetHouseData.storage += fineGold;
+            if (droppedItem) targetHouseData.storageItems = [...(targetHouseData.storageItems || []), droppedItem];
+            manageHouseData(targetUserId).saveHouse(targetHouseData);
 
-        return {
-            success: true,
-            message: `你被 ${targetPlayer.name} 的房产安保系统拦截，损失了 ${fineGold} 金币${droppedItem ? ` 和一个物品：${droppedItem.name}` : ''}！`
-        };
-    }
-};
+            return {
+                success: true,
+                message: `你被 ${targetPlayer.name} 的房产安保系统拦截，损失了 ${fineGold} 金币${droppedItem ? ` 和一个物品：${droppedItem.name}` : ''}！`
+            };
+        }
+    };
 
     // PvP 数据管理函数
     const managePvPData = (userId) => {
@@ -1771,4 +1768,131 @@ ${titleList}`);
     };
 
     ext.cmdMap['penguin'] = cmdPenguinBattle;
+
+    // PvP 战斗逻辑
+    const startPvP = (playerId, targetPlayerId) => {
+        const player = players[playerId];
+        const targetPlayer = players[targetPlayerId];
+
+        if (!player || !targetPlayer) {
+            seal.replyToSender(ctx, msg, '玩家不存在！');
+            return;
+        }
+
+        // 初始化战斗状态
+        player.pvpState = {
+            target: targetPlayerId,
+            round: 0,
+            turn: playerId,
+            actions: []
+        };
+
+        targetPlayer.pvpState = {
+            target: playerId,
+            round: 0,
+            turn: playerId,
+            actions: []
+        };
+
+        seal.replyToSender(ctx, msg, `PvP 战斗开始！${player.name} 对战 ${targetPlayer.name}！`);
+
+        // 开始回合制战斗
+        const pvpRound = () => {
+            const currentPlayer = players[player.pvpState.turn];
+            const targetPlayer = players[currentPlayer.pvpState.target];
+
+            // 检查是否有玩家死亡
+            if (currentPlayer.health <= 0) {
+                seal.replyToSender(ctx, msg, `${currentPlayer.name} 被击败了！`);
+                endPvP(currentPlayer.pvpState.target);
+                return;
+            }
+
+            if (targetPlayer.health <= 0) {
+                seal.replyToSender(ctx, msg, `${targetPlayer.name} 被击败了！`);
+                endPvP(currentPlayer.pvpState.target);
+                return;
+            }
+
+            // 轮到当前玩家行动
+            seal.replyToSender(ctx, msg, `${currentPlayer.name} 的回合，请输入 ".penguin 攻击 技能名" 进行攻击！`);
+
+            // 等待玩家输入
+            // 这里需要实现一个等待玩家输入的逻辑，可以使用异步函数来实现
+            // 例如：使用 setTimeout 模拟等待玩家输入
+            setTimeout(() => {
+                // 假设玩家输入了攻击指令
+                const skillArg = '普通攻击'; // 假设玩家输入了普通攻击
+                let skillIndex = currentPlayer.skills.findIndex(skill => skill.name === skillArg);
+                if (skillIndex === -1) {
+                    seal.replyToSender(ctx, msg, '无效技能名！');
+                    return;
+                }
+
+                const skill = currentPlayer.skills[skillIndex];
+                if (currentPlayer.mana < skill.manaCost) {
+                    seal.replyToSender(ctx, msg, `魔力不足，无法使用技能 "${skill.name}"！`);
+                    return;
+                }
+
+                currentPlayer.mana -= skill.manaCost;
+                const effect = builtInEffectMap[skill.effectId];
+                const result = effect(currentPlayer, targetPlayer);
+
+                let response = `你使用了技能 "${skill.name}"`;
+                if (result.damage) response += `，对目标造成了 ${result.damage} 点伤害`;
+                if (result.defense) response += `，将自己的防御提升了 ${result.defense} 倍`;
+                if (result.attack) response += `，使对方的攻击降低为原来的 ${result.attack} 倍`;frozen
+                if (result.frozen) response += `，并使目标进入冻结状态`;
+                if (result.reflash) response += `，并使目标复活`;
+                if (result.healing) response += `，恢复了 ${result.healing} 点生命值`;
+                if (result.shield) response += `，为自己添加了一个可吸收 ${result.shield} 点伤害的护盾`;
+                if (result.poison) response += `，并使目标进入中毒状态`;
+
+                seal.replyToSender(ctx, msg, response + `！消耗魔力: ${skill.manaCost}\n${targetPlayer.name} 剩余血量：${targetPlayer.health}`);
+
+                // 切换回合
+                currentPlayer.pvpState.turn = targetPlayerId;
+                targetPlayer.pvpState.turn = playerId;
+
+                // 更新 debuff 和 buff
+                applyDebuffsAndBuffs(currentPlayer);
+                applyDebuffsAndBuffs(targetPlayer);
+
+                // 保存玩家数据
+                saveDatabase(dbKeyPlayerData, players);
+
+                // 继续下一回合
+                pvpRound();
+            }, 5000); // 假设等待5秒
+        };
+
+        // 开始第一回合
+        pvpRound();
+    };
+
+    // 结束 PvP 战斗
+    const endPvP = (winnerId) => {
+        const winner = players[winnerId];
+        const loserId = winner.pvpState.target;
+        const loser = players[loserId];
+
+        // 更新 PvP 战绩
+        const winnerPvPData = managePvPData(winnerId).loadPvP();
+        winnerPvPData.wins += 1;
+        managePvPData(winnerId).savePvP(winnerPvPData);
+
+        const loserPvPData = managePvPData(loserId).loadPvP();
+        loserPvPData.losses += 1;
+        managePvPData(loserId).savePvP(loserPvPData);
+
+        // 清除 PvP 状态
+        delete winner.pvpState;
+        delete loser.pvpState;
+
+        seal.replyToSender(ctx, msg, `${winner.name} 赢得了 PvP 战斗！`);
+
+        // 保存玩家数据
+        saveDatabase(dbKeyPlayerData, players);
+    };
 }
