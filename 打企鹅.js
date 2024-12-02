@@ -30,11 +30,13 @@ if (!seal.ext.find("penguinBattle")) {
   const builtInEffectMap = {
     1: (player, target) => {
       const damage = Math.max(player.attack - target.defense, 1);
+      damage = applyShield(target, damage);
       target.health -= damage;
       return { damage };
     },
     2: (player, target) => {
       const damage = player.attack * 2;
+      damage = applyShield(target, damage);
       target.health -= damage;
       return { damage };
     },
@@ -60,12 +62,14 @@ if (!seal.ext.find("penguinBattle")) {
     },
     5: (player, target) => {
       const damage = Math.max(player.attack - target.defense, 1);
+      damage = applyShield(target, damage);
       target.health -= damage;
       player.health = Math.min(player.maxHealth, player.health + damage);
       return { damage };
     },
     6: (player, target) => {
       const damage = player.attack * 2.5;
+      damage = applyShield(target, damage);
       target.health -= damage;
       return { damage };
     },
@@ -77,6 +81,7 @@ if (!seal.ext.find("penguinBattle")) {
     },
     8: (player, target) => {
       const damage = player.attack * 3;
+      damage = applyShield(target, damage);
       target.health -= damage;
       return { damage };
     },
@@ -112,6 +117,7 @@ if (!seal.ext.find("penguinBattle")) {
     },
     16: (player, target) => {
       const damage = player.attack;
+      damage = applyShield(target, damage);
       target.health -= damage;
       target.debuffs = target.debuffs || [];
       target.debuffs.push({ type: "poison", value: 5, duration: 2 }); // 中毒效果
@@ -649,49 +655,22 @@ if (!seal.ext.find("penguinBattle")) {
       return;
     }
 
-    // 初始化战斗状态
+    // 初始化 PvP 状态
     player.pvpState = {
       target: targetPlayerId,
-      round: 0,
       turn: playerId,
-      actions: [],
     };
 
     targetPlayer.pvpState = {
       target: playerId,
-      round: 0,
       turn: playerId,
-      actions: [],
     };
 
     seal.replyToSender(
       ctx,
       msg,
-      `PvP 战斗开始！${player.name} 对战 ${targetPlayer.name}！`
+      `PvP 战斗开始！${player.name} 对战 ${targetPlayer.name}！由 ${player.name} 开始行动！`
     );
-
-    // 开始回合制战斗
-    const pvpRound = () => {
-      const currentPlayer = players[player.pvpState.turn];
-      const targetPlayer = players[currentPlayer.pvpState.target];
-
-      // 检查是否有玩家死亡
-      if (currentPlayer.health <= 0) {
-        seal.replyToSender(ctx, msg, `${currentPlayer.name} 被击败了！`);
-        endPvP(currentPlayer.pvpState.target);
-        return;
-      }
-
-      // 轮到当前玩家行动
-      seal.replyToSender(
-        ctx,
-        msg,
-        `${currentPlayer.name} 的回合，请输入 ".penguin 攻击 技能名" 进行攻击！`
-      );
-    };
-
-    // 开始第一回合
-    pvpRound();
   };
 
   // 结束 PvP 战斗
@@ -700,39 +679,121 @@ if (!seal.ext.find("penguinBattle")) {
     const loserId = winner.pvpState.target;
     const loser = players[loserId];
 
-    // 更新 PvP 战绩
-    const winnerPvPData = managePvPData(winnerId).loadPvP();
-    winnerPvPData.wins += 1;
-    managePvPData(winnerId).savePvP(winnerPvPData);
-
-    const loserPvPData = managePvPData(loserId).loadPvP();
-    loserPvPData.losses += 1;
-    managePvPData(loserId).savePvP(loserPvPData);
-
     // 清除 PvP 状态
     delete winner.pvpState;
     delete loser.pvpState;
 
-    seal.replyToSender(ctx, msg, `${winner.name} 赢得了 PvP 战斗！`);
+    seal.replyToSender(
+      ctx,
+      msg,
+      `${winner.name} 赢得了 PvP 战斗！${loser.name} 惨遭失败！`
+    );
 
-    // 保存玩家数据
+    // 保存更新后的玩家数据
     saveDatabase(dbKeyPlayerData, players);
   };
 
-  // 更新 debuff 和 buff 的剩余轮数
+  // 更新 debuff 和 buff 的剩余轮数和处理特殊状态
   const applyDebuffsAndBuffs = (entity) => {
     if (entity.debuffs) {
-      entity.debuffs = entity.debuffs.filter((debuff) => {
+      entity.debuffs.forEach((debuff) => {
+        switch (debuff.type) {
+          case "frozen":
+            // 冻结状态：阻止行动
+            seal.replyToSender(
+              ctx,
+              msg,
+              `无法行动，当前处于冻结状态，剩余轮数 ${debuff.duration}`
+            );
+            break;
+
+          case "poison":
+            // 中毒状态：每回合扣除生命值
+            entity.health -= debuff.value;
+            seal.replyToSender(
+              ctx,
+              msg,
+              `中毒效果触发，扣除 ${debuff.value} 生命值，剩余轮数 ${debuff.duration}`
+            );
+            break;
+
+          case "attack":
+            // 攻击削弱：到期恢复原始攻击值
+            if (debuff.duration === 1) {
+              entity.attack += debuff.value;
+              seal.replyToSender(
+                ctx,
+                msg,
+                `攻击削弱效果结束，恢复原始攻击值。`
+              );
+            }
+            break;
+        }
+
+        // 减少 debuff 剩余轮数
         debuff.duration--;
-        return debuff.duration > 0;
       });
+
+      // 清理过期的 debuff
+      entity.debuffs = entity.debuffs.filter((debuff) => debuff.duration > 0);
     }
+
     if (entity.buffs) {
-      entity.buffs = entity.buffs.filter((buff) => {
+      entity.buffs.forEach((buff) => {
+        switch (buff.type) {
+          case "shield":
+            // 护盾状态：受伤时消耗护盾值，受伤逻辑单独处理
+            seal.replyToSender(ctx, msg, `护盾剩余值 ${buff.value}`);
+            break;
+
+          case "defense":
+            // 防御提升：到期恢复原始防御值
+            if (buff.duration === 1) {
+              entity.defense -= buff.value;
+              seal.replyToSender(
+                ctx,
+                msg,
+                `防御提升效果结束，恢复原始防御值。`
+              );
+            }
+            break;
+        }
+
+        // 减少 buff 剩余轮数
         buff.duration--;
-        return buff.duration > 0;
       });
+
+      // 清理过期的 buff
+      entity.buffs = entity.buffs.filter((buff) => buff.duration > 0);
     }
+  };
+
+  // 护盾逻辑函数
+  const applyShield = (entity, damage) => {
+    if (entity.buffs) {
+      const shieldBuff = entity.buffs.find((buff) => buff.type === "shield");
+      if (shieldBuff) {
+        // 用护盾吸收伤害
+        const absorbedDamage = Math.min(shieldBuff.value, damage);
+        shieldBuff.value -= absorbedDamage;
+        damage -= absorbedDamage;
+
+        seal.replyToSender(
+          ctx,
+          msg,
+          `护盾吸收了 ${absorbedDamage} 点伤害，剩余护盾值：${shieldBuff.value}`
+        );
+
+        // 如果护盾值耗尽，移除护盾
+        if (shieldBuff.value <= 0) {
+          entity.buffs = entity.buffs.filter((buff) => buff.type !== "shield");
+          seal.replyToSender(ctx, msg, "护盾已破！");
+        }
+      }
+    }
+
+    // 返回剩余未被护盾吸收的伤害
+    return damage;
   };
 
   // 房产侵入逻辑函数
@@ -1196,12 +1257,96 @@ ${titleList}`
       case "攻击": {
         // 检查玩家是否死亡
         const player = players[userId];
+        const targetId = player?.pvpState?.target;
         if (player.dead) {
           seal.replyToSender(
             ctx,
             msg,
             "你已经死亡，无法执行此操作！请使用复活药水或复活术复活。"
           );
+          return;
+        }
+
+        // 检查是否在 PvP 状态
+        if (targetId) {
+          const targetPlayer = players[targetId];
+          if (!targetPlayer) {
+            seal.replyToSender(ctx, msg, "你的 PvP 对手不存在！");
+            return;
+          }
+
+          // 检查是否是玩家的回合
+          if (player.pvpState.turn !== userId) {
+            seal.replyToSender(ctx, msg, "当前不是你的回合，无法攻击！");
+            return;
+          }
+
+          // 使用现有攻击逻辑处理 PvP 攻击
+          let skillArg = cmdArgs.getArgN(2);
+          let damage = 0;
+
+          if (skillArg) {
+            // 技能攻击
+            let skillIndex = parseInt(skillArg, 10) - 1;
+            if (isNaN(skillIndex)) {
+              skillIndex = player.skills.findIndex(
+                (skill) => skill.name === skillArg
+              );
+              if (skillIndex === -1) {
+                seal.replyToSender(ctx, msg, "无效技能编号或技能名！");
+                return;
+              }
+            }
+
+            const skill = player.skills[skillIndex];
+            if (player.mana < skill.manaCost) {
+              seal.replyToSender(
+                ctx,
+                msg,
+                `魔力不足，无法使用技能 "${skill.name}"！`
+              );
+              return;
+            }
+
+            player.mana -= skill.manaCost;
+            const effect = builtInEffectMap[skill.effectId];
+            const result = effect(player, targetPlayer);
+
+            // 输出技能效果
+            let response = `你对 ${targetPlayer.name} 使用了技能 "${skill.name}"`;
+            if (result.damage) response += `，造成 ${result.damage} 点伤害`;
+            if (result.frozen) response += "，并使目标进入冻结状态";
+            if (result.shield)
+              response += `，为自己添加 ${result.shield} 点护盾`;
+            if (result.poison) response += "，并使目标进入中毒状态";
+            seal.replyToSender(ctx, msg, response);
+          } else {
+            // 普通攻击
+            damage = Math.max(player.attack - targetPlayer.defense, 1);
+            damage = applyShield(targetPlayer, damage);
+            targetPlayer.health -= damage;
+
+            seal.replyToSender(
+              ctx,
+              msg,
+              `你对 ${targetPlayer.name} 造成了 ${damage} 点伤害！`
+            );
+          }
+
+          // 更新状态
+          applyDebuffsAndBuffs(player);
+          applyDebuffsAndBuffs(targetPlayer);
+
+          // 检查目标是否被击败
+          if (targetPlayer.health <= 0) {
+            seal.replyToSender(ctx, msg, `${targetPlayer.name} 被击败！`);
+            endPvP(userId); // 调用 PvP 结束逻辑
+            return;
+          }
+
+          // 切换回合
+          player.pvpState.turn = targetId;
+          seal.replyToSender(ctx, msg, `轮到 ${targetPlayer.name} 进行攻击！`);
           return;
         }
 
@@ -1313,6 +1458,7 @@ ${titleList}`
             seal.replyToSender(ctx, msg, `BOSS 的攻击打空了！`);
           }
 
+          bossDamage = applyShield(targetPlayer, bossDamage);
           targetPlayer.health -= bossDamage;
           seal.replyToSender(
             ctx,
@@ -1428,6 +1574,7 @@ ${titleList}`
             penguin.attack - player.defense,
             1
           );
+          retaliationDamage = applyShield(player, retaliationDamage);
           player.health = Math.max(1, player.health - retaliationDamage);
           seal.replyToSender(
             ctx,
@@ -1447,7 +1594,6 @@ ${titleList}`
         const encounterChance = 0.3; // 30% 触发奇遇
         const bossChance = 0.1; // 10% 生成 BOSS
         const infiltrateChance = 0.2; // 20% 触发房产侵入
-        const penguinChance = 0.4; // 40% 生成小企鹅
 
         // 检查玩家是否死亡或处于其他状态
         if (player.dead) {
