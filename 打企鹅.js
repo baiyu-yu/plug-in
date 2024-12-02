@@ -10,6 +10,8 @@
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
 // ==/UserScript==
 
+//TODO:applyDebuffsAndBuffs调用和技能效果叠加
+
 if (!seal.ext.find("penguinBattle")) {
   const ext = seal.ext.new("penguinBattle", "penguinMaster", "1.0.0");
   seal.ext.register(ext);
@@ -694,107 +696,112 @@ if (!seal.ext.find("penguinBattle")) {
   };
 
   // 更新 debuff 和 buff 的剩余轮数和处理特殊状态
-  const applyDebuffsAndBuffs = (entity) => {
-    if (entity.debuffs) {
-      entity.debuffs.forEach((debuff) => {
-        switch (debuff.type) {
-          case "frozen":
-            // 冻结状态：阻止行动
+  const applyDebuffsAndBuffs = (entity, context) => {
+    if (!entity) return;
+  
+    entity.buffs = entity.buffs || [];
+    entity.debuffs = entity.debuffs || [];
+  
+    // 处理 Debuffs（负面状态）
+    entity.debuffs.forEach((debuff) => {
+      switch (debuff.type) {
+        case "frozen":
+          if (context?.action === "attack") {
             seal.replyToSender(
-              ctx,
-              msg,
+              context.ctx,
+              context.msg,
               `无法行动，当前处于冻结状态，剩余轮数 ${debuff.duration}`
             );
-            break;
-
-          case "poison":
-            // 中毒状态：每回合扣除生命值
+            context.preventAction?.(); // 阻止行动
+          }
+          break;
+  
+        case "poison":
+          if (context?.action === "attack" || context?.action === "counter") {
             entity.health -= debuff.value;
             seal.replyToSender(
-              ctx,
-              msg,
+              context.ctx,
+              context.msg,
               `中毒效果触发，扣除 ${debuff.value} 生命值，剩余轮数 ${debuff.duration}`
             );
-            break;
-
-          case "attack":
-            // 攻击削弱：到期恢复原始攻击值
-            if (debuff.duration === 1) {
-              entity.attack += debuff.value;
-              seal.replyToSender(
-                ctx,
-                msg,
-                `攻击削弱效果结束，恢复原始攻击值。`
-              );
-            }
-            break;
-        }
-
-        // 减少 debuff 剩余轮数
-        debuff.duration--;
-      });
-
-      // 清理过期的 debuff
-      entity.debuffs = entity.debuffs.filter((debuff) => debuff.duration > 0);
-    }
-
-    if (entity.buffs) {
-      entity.buffs.forEach((buff) => {
-        switch (buff.type) {
-          case "shield":
-            // 护盾状态：受伤时消耗护盾值，受伤逻辑单独处理
-            seal.replyToSender(ctx, msg, `护盾剩余值 ${buff.value}`);
-            break;
-
-          case "defense":
-            // 防御提升：到期恢复原始防御值
-            if (buff.duration === 1) {
-              entity.defense -= buff.value;
-              seal.replyToSender(
-                ctx,
-                msg,
-                `防御提升效果结束，恢复原始防御值。`
-              );
-            }
-            break;
-        }
-
-        // 减少 buff 剩余轮数
-        buff.duration--;
-      });
-
-      // 清理过期的 buff
-      entity.buffs = entity.buffs.filter((buff) => buff.duration > 0);
-    }
+          }
+          break;
+  
+        case "attack":
+          if (debuff.duration === 1) {
+            entity.attack += debuff.value; // 恢复原攻击力
+            seal.replyToSender(
+              context.ctx,
+              context.msg,
+              "攻击削弱效果结束，恢复原始攻击力。"
+            );
+          }
+          break;
+  
+        default:
+          break;
+      }
+      debuff.duration--;
+    });
+  
+    entity.debuffs = entity.debuffs.filter((debuff) => debuff.duration > 0);
+  
+    // 处理 Buffs（正面状态）
+    entity.buffs.forEach((buff) => {
+      switch (buff.type) {
+        case "shield":
+          // 护盾状态已在 applyShield 中处理，这里仅减少轮数
+          break;
+  
+        case "defense":
+          if (buff.duration === 1) {
+            entity.defense -= buff.value; // 恢复原始防御力
+            seal.replyToSender(
+              context.ctx,
+              context.msg,
+              "防御提升效果结束，恢复原始防御力。"
+            );
+          }
+          break;
+  
+        default:
+          break;
+      }
+      buff.duration--;
+    });
+  
+    entity.buffs = entity.buffs.filter((buff) => buff.duration > 0);
   };
+  
+  
 
   // 护盾逻辑函数
-  const applyShield = (entity, damage) => {
-    if (entity.buffs) {
-      const shieldBuff = entity.buffs.find((buff) => buff.type === "shield");
-      if (shieldBuff) {
-        // 用护盾吸收伤害
-        const absorbedDamage = Math.min(shieldBuff.value, damage);
-        shieldBuff.value -= absorbedDamage;
-        damage -= absorbedDamage;
-
-        seal.replyToSender(
-          ctx,
-          msg,
-          `护盾吸收了 ${absorbedDamage} 点伤害，剩余护盾值：${shieldBuff.value}`
-        );
-
-        // 如果护盾值耗尽，移除护盾
-        if (shieldBuff.value <= 0) {
-          entity.buffs = entity.buffs.filter((buff) => buff.type !== "shield");
-          seal.replyToSender(ctx, msg, "护盾已破！");
-        }
+  const applyShield = (entity, damage, ctx, msg) => {
+    if (!entity.buffs) return damage;
+  
+    const shieldBuff = entity.buffs.find((buff) => buff.type === "shield");
+    if (shieldBuff) {
+      // 计算护盾吸收的伤害
+      const absorbedDamage = Math.min(shieldBuff.value, damage);
+      shieldBuff.value -= absorbedDamage;
+      damage -= absorbedDamage;
+  
+      // 消息提示
+      seal.replyToSender(
+        ctx,
+        msg,
+        `护盾吸收了 ${absorbedDamage} 点伤害，剩余护盾值：${shieldBuff.value}`
+      );
+  
+      // 如果护盾值耗尽，移除护盾状态
+      if (shieldBuff.value <= 0) {
+        seal.replyToSender(ctx, msg, "护盾已破！");
+        entity.buffs = entity.buffs.filter((buff) => buff.type !== "shield");
       }
     }
-
-    // 返回剩余未被护盾吸收的伤害
     return damage;
   };
+  
 
   // 房产侵入逻辑函数
   const attemptInfiltrateHouse = (player, players) => {
@@ -995,6 +1002,7 @@ if (!seal.ext.find("penguinBattle")) {
 .penguin 对战 @玩家 - 发起PvP对战
 .penguin 接受对战 - 接受PvP对战
 .penguin 拒绝对战 - 拒绝PvP对战
+.penguin 逃跑 - 从PvP对战中脱离
 .penguin 房产 - 查看房产信息
 .penguin 升级房产 - 升级房产
 .penguin 收取收益 - 收取房产收益
@@ -1135,10 +1143,15 @@ ${titleList}`
           return;
         }
         resetBossCooldown();
-        if (bossCooldown.count >= 3) {
-          seal.replyToSender(ctx, msg, "今天的BOSS战次数已用完，请明天再来！");
+
+        if (ossCooldown.count >= 3) {
+          const remainingCooldown = 24 * 60 * 60 * 1000 - (Date.now() - bossCooldown.lastReset);
+          const hours = Math.floor(remainingCooldown / (60 * 60 * 1000));
+          const minutes = Math.floor((remainingCooldown % (60 * 60 * 1000)) / (60 * 1000));
+          seal.replyToSender(ctx, msg, `BOSS 战冷却中，请等待 ${hours} 小时 ${minutes} 分钟后再尝试！`);
           return;
         }
+
         if (
           groupBossData.bossState === "preparing" ||
           groupBossData.bossState === "fighting"
@@ -1471,7 +1484,7 @@ ${titleList}`
           // 检查玩家是否死亡
           if (targetPlayer.health <= 0) {
             targetPlayer.dead = true;
-            seal.replyToSender(ctx, msg, `${targetPlayer.name} 被击败了！`);
+            seal.replyToSender(ctx, msg, `${targetPlayer.name} 被击败了！请使用复活药水或复活术复活。`);
           }
 
           // 检查所有参与者是否死亡
@@ -2252,6 +2265,24 @@ ${titleList}`
         );
         return;
       }
+
+      case "逃跑":
+        const player = players[userId];
+        if (!player.pvpState) {
+          seal.replyToSender(ctx, msg, "当前没有进行中的 PvP 战斗！");
+          return;
+        }
+        const opponentId = player.pvpState.target;
+        const opponent = players[opponentId];
+        delete player.pvpState;
+        delete opponent.pvpState;
+        seal.replyToSender(
+          ctx,
+          msg,
+          `${player.name} 选择逃跑，PvP 战斗结束！${opponent.name} 获胜！`
+        );
+        break;      
+
       case "房产": {
         const houseData = manageHouseData(userId).loadHouse();
         seal.replyToSender(
