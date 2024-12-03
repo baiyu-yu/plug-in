@@ -10,7 +10,8 @@
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E4%BC%81%E9%B9%85.js
 // ==/UserScript==
 
-//TODO:applyDebuffsAndBuffs调用和技能效果叠加
+//TODO:applyDebuffsAndBuffs调用和技能效果叠加和技能作用处理
+//头疼，可恶，不想写了
 
 if (!seal.ext.find("penguinBattle")) {
   const ext = seal.ext.new("penguinBattle", "penguinMaster", "1.0.0");
@@ -43,23 +44,21 @@ if (!seal.ext.find("penguinBattle")) {
       return { damage };
     },
     3: (player, target) => {
-      player.defense += player.defense * 0.5;
-      player.buffs = player.buffs || [];
-      player.buffs.push({
+      const newBuff = {
         type: "defense",
-        value: player.defense * 0.5,
-        duration: 3,
-      });
+        value: skill.effectValue,
+        duration: skill.effectDuration,
+      };
+      player.buffs.push(newBuff);
       return { defense: 1.5 };
     },
     4: (player, target) => {
-      target.attack = Math.floor(target.attack / 2);
-      target.debuffs = target.debuffs || [];
-      target.debuffs.push({
+      const newBuff = {
         type: "attack",
-        value: target.attack / 2,
-        duration: 1,
-      });
+        value: skill.effectValue,
+        duration: skill.effectDuration,
+      };
+      player.buffs.push(newBuff); 
       return { attack: 0.5 };
     },
     5: (player, target) => {
@@ -113,16 +112,21 @@ if (!seal.ext.find("penguinBattle")) {
       return { healing };
     },
     15: (player) => {
-      player.buffs = player.buffs || [];
-      player.buffs.push({ type: "shield", value: 30, duration: 3 }); // 3回合护盾
+      const newShield = {
+        type: "shield",
+        value: skill.effectValue,
+        duration: skill.effectDuration,
+      };
+      player.buffs.push(newShield);
       return { shield: 30 };
     },
     16: (player, target) => {
-      const damage = player.attack;
-      damage = applyShield(target, damage);
-      target.health -= damage;
-      target.debuffs = target.debuffs || [];
-      target.debuffs.push({ type: "poison", value: 5, duration: 2 }); // 中毒效果
+      const newPoison = {
+        type: "poison",
+        value: skill.effectValue,
+        duration: skill.effectDuration,
+      };
+      target.debuffs.push(newPoison);  // 中毒效果
       return { damage, poison: true };
     },
   };
@@ -713,6 +717,7 @@ if (!seal.ext.find("penguinBattle")) {
               `无法行动，当前处于冻结状态，剩余轮数 ${debuff.duration}`
             );
             context.preventAction?.(); // 阻止行动
+            actionPrevented = true;
           }
           break;
   
@@ -741,7 +746,7 @@ if (!seal.ext.find("penguinBattle")) {
         default:
           break;
       }
-      debuff.duration--;
+      if (!actionPrevented) debuff.duration--;
     });
   
     entity.debuffs = entity.debuffs.filter((debuff) => debuff.duration > 0);
@@ -776,31 +781,43 @@ if (!seal.ext.find("penguinBattle")) {
   
 
   // 护盾逻辑函数
-  const applyShield = (entity, damage, ctx, msg) => {
+  const applyShield = (entity, damage) => {
     if (!entity.buffs) return damage;
   
-    const shieldBuff = entity.buffs.find((buff) => buff.type === "shield");
-    if (shieldBuff) {
-      // 计算护盾吸收的伤害
-      const absorbedDamage = Math.min(shieldBuff.value, damage);
-      shieldBuff.value -= absorbedDamage;
-      damage -= absorbedDamage;
+    // 获取所有有效护盾，并按剩余轮数排序（升序）
+    const shieldBuffs = entity.buffs
+      .filter((buff) => buff.type === "shield")
+      .sort((a, b) => a.duration - b.duration);
   
-      // 消息提示
-      seal.replyToSender(
-        ctx,
-        msg,
-        `护盾吸收了 ${absorbedDamage} 点伤害，剩余护盾值：${shieldBuff.value}`
-      );
+    if (shieldBuffs.length === 0) return damage;
   
-      // 如果护盾值耗尽，移除护盾状态
-      if (shieldBuff.value <= 0) {
-        seal.replyToSender(ctx, msg, "护盾已破！");
-        entity.buffs = entity.buffs.filter((buff) => buff.type !== "shield");
+    let remainingDamage = damage;
+  
+    // 消耗护盾值
+    for (const shield of shieldBuffs) {
+      const absorb = Math.min(shield.value, remainingDamage);
+      shield.value -= absorb;
+      remainingDamage -= absorb;
+  
+      // 护盾已耗尽
+      if (shield.value <= 0) {
+        entity.buffs = entity.buffs.filter((buff) => buff !== shield);
       }
+  
+      // 如果伤害已被全部吸收，终止处理
+      if (remainingDamage <= 0) break;
     }
-    return damage;
+  
+    const absorbedDamage = damage - remainingDamage;
+    seal.replyToSender(
+      ctx,
+      msg,
+      `护盾吸收了 ${absorbedDamage} 点伤害，剩余未吸收伤害：${remainingDamage}`
+    );
+  
+    return remainingDamage; // 返回未被吸收的伤害
   };
+  
   
 
   // 房产侵入逻辑函数
@@ -1321,6 +1338,19 @@ ${titleList}`
               return;
             }
 
+            let actionPrevented = false;
+            applyDebuffsAndBuffs(player, {
+              action: "attack",
+              preventAction: () => {
+                seal.replyToSender(ctx, msg, "你的攻击被冻结状态阻止！");
+                actionPrevented = true;
+              },
+            });
+
+            if (actionPrevented) {
+              return;
+            }
+
             player.mana -= skill.manaCost;
             const effect = builtInEffectMap[skill.effectId];
             const result = effect(player, targetPlayer);
@@ -1347,8 +1377,8 @@ ${titleList}`
           }
 
           // 更新状态
-          applyDebuffsAndBuffs(player);
-          applyDebuffsAndBuffs(targetPlayer);
+          applyDebuffsAndBuffs(player , { action: "attack" });
+          applyDebuffsAndBuffs(targetPlayer , { action: "takeDamage" });
 
           // 检查目标是否被击败
           if (targetPlayer.health <= 0) {
@@ -1399,6 +1429,19 @@ ${titleList}`
               break;
             }
 
+            let actionPrevented = false;
+            applyDebuffsAndBuffs(player, {
+              action: "attack",
+              preventAction: () => {
+                seal.replyToSender(ctx, msg, "你处于冻结状态，无法攻击！");
+                actionPrevented = true;
+              },
+            });
+  
+            if (actionPrevented) {
+              return;
+            }
+
             player.mana -= skill.manaCost;
             const effect = builtInEffectMap[skill.effectId];
             const result = effect(player, boss);
@@ -1435,8 +1478,8 @@ ${titleList}`
             );
           }
 
-          applyDebuffsAndBuffs(player); // 更新玩家的 debuff 和 buff
-          applyDebuffsAndBuffs(boss); // 更新BOSS的 debuff 和 buff
+          applyDebuffsAndBuffs(player , { action: "attack" });
+          applyDebuffsAndBuffs(boss , { action: "takeDamage" });
 
           if (boss.health <= 0) {
             // BOSS 被击败
@@ -1454,8 +1497,21 @@ ${titleList}`
             participants[Math.floor(Math.random() * participants.length)];
           const targetPlayer = players[target];
 
+          let actionPrevented = false;
+          applyDebuffsAndBuffs(boss, {
+            action: "attack",
+            preventAction: () => {
+              seal.replyToSender(ctx, msg, "boss企鹅处于冻结状态，无法反击！");
+              actionPrevented = true;
+            },
+          });
+
+          if (actionPrevented) {
+            return;
+          }
+
           // 计算暴击和打空概率
-          const criticalChance = 0.1; // 10% 暴击概率
+          const criticalChance = 0.3; // 30% 暴击概率
           const missChance = Math.max(
             0,
             0.2 - (boss.speed - targetPlayer.speed) * 0.01
@@ -1479,7 +1535,7 @@ ${titleList}`
             `${targetPlayer.name} 被 BOSS 反击，掉了 ${bossDamage} 点血！`
           );
 
-          applyDebuffsAndBuffs(targetPlayer); // 更新 debuff 和 buff
+          applyDebuffsAndBuffs(boss , { action: "attack" });
 
           // 检查玩家是否死亡
           if (targetPlayer.health <= 0) {
@@ -1535,6 +1591,20 @@ ${titleList}`
             break;
           }
 
+          //有一说一这里和boss那里做冻结状态检查没啥意义……嘛，万一哪天要给boss写技能
+          let actionPrevented = false;
+          applyDebuffsAndBuffs(player, {
+            action: "attack",
+            preventAction: () => {
+              seal.replyToSender(ctx, msg, "你处于冻结状态，无法攻击！");
+              actionPrevented = true;
+            },
+          });
+
+          if (actionPrevented) {
+            return;
+          }
+
           player.mana -= skill.manaCost;
           const effect = builtInEffectMap[skill.effectId];
           const result = effect(player, penguin);
@@ -1570,8 +1640,8 @@ ${titleList}`
           );
         }
 
-        applyDebuffsAndBuffs(player); // 更新玩家的 debuff 和 buff
-        applyDebuffsAndBuffs(penguin); // 更新小企鹅的 debuff 和 buff
+        applyDebuffsAndBuffs(player , { action: "attack" });
+        applyDebuffsAndBuffs(penguin , { action: "takeDamage" });
 
         if (penguin.health <= 0) {
           player.gold += penguin.gold;
@@ -1594,6 +1664,7 @@ ${titleList}`
             msg,
             `小企鹅进行了反击，你受到了 ${retaliationDamage} 点伤害！当前生命值：${player.health}`
           );
+          applyDebuffsAndBuffs(penguin , { action: "attack" });
           penguinManager.savePenguin(penguin);
         }
 
