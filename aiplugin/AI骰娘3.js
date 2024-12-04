@@ -494,7 +494,7 @@ if (!seal.ext.find('aiplugin3')) {
                     if (match) {
                         let url = match[1];
                         try {
-                            let reply = await globalThis.image.imageToText(url)
+                            let reply = await globalThis.image.imageToText(url , ctx )
                             text = text.replace(/\[CQ:image,file=http.*?\]/, `<|${reply}|>`)
                         } catch (error) {
                             console.error('Error in imageToText:', error);
