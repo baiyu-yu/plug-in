@@ -2,7 +2,7 @@
 // @name         AI图片小偷
 // @author       错误
 // @version      1.0.1
-// @description  为aiplugin插件提供识别图片信息的能力。 
+// @description  为aiplugin插件提供识别图片信息的能力。
 // @timestamp    1728126311
 // 2024-10-05 19:05:11
 // @license      MIT
