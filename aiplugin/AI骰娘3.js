@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI Plugin3
 // @author       错误、白鱼
-// @version      3.1.1
+// @version      3.1.2
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。
 // @timestamp    1721822416
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('aiplugin3')) {
-    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.1.1');
+    const ext = seal.ext.new('aiplugin3', 'baiyu&错误', '3.1.2');
     seal.ext.register(ext);
 
     // 注册配置项
@@ -494,7 +494,7 @@ if (!seal.ext.find('aiplugin3')) {
                     if (match) {
                         let url = match[1];
                         try {
-                            let reply = await globalThis.image.imageToText(url)
+                            let reply = await globalThis.image.imageToText(url , ctx )
                             text = text.replace(/\[CQ:image,file=http.*?\]/, `<|${reply}|>`)
                         } catch (error) {
                             console.error('Error in imageToText:', error);
