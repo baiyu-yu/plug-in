@@ -44,25 +44,18 @@
       }
       if (this.cmdArgs == null) {
         Config.printLog(`暂时无法使用AI命令，请先使用任意指令`);
+        return;
       }
       if (commands.length > 10) {
         console.error(`AI命令数量过多，请限制在10个以内`);
         return;
       }
-      const commandMap = commands.reduce((acc, item) => {
-        const match = item.match(/(.+)#.*/);
-        if (match !== null) {
-          const key = match[1];
-          acc[key] = item.replace(/.*#/, "");
-        } else {
-          acc[item] = "";
-        }
-        return acc;
-      }, {});
-      for (const cmd of Object.keys(commandMap)) {
-        const arg = commandMap[cmd];
+      const cmds = commands.map((item) => item.split("#"));
+      for (let i = 0; i < cmds.length; i++) {
+        const cmd = cmds[i][0];
+        const args = cmds[i].slice(1);
         if (this.cmdMap.hasOwnProperty(cmd)) {
-          this.cmdMap[cmd].solve(ctx, msg, this.cmdArgs, arg);
+          this.cmdMap[cmd].solve(ctx, msg, this.cmdArgs, ...args);
         } else {
           console.error(`AI命令${cmd}不存在`);
         }
