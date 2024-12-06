@@ -227,11 +227,12 @@
       }
       const samplesMessages = samples.map((item, index) => {
         const role = index % 2 === 0 ? "user" : "assistant";
-        return {
-          role,
-          content: item
-        };
-      });
+        if (item == "") {
+          return null;
+        } else {
+          return { role, content: item };
+        }
+      }).filter((item) => item !== null);
       const systemMessages = [systemMessage, ...samplesMessages];
       return { systemMessages, isCmd };
     }
