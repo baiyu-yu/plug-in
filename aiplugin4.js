@@ -312,10 +312,12 @@
     }
     static registerRepeatConfig() {
       seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
+      seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
     }
     static getRepeatConfig() {
       const stopRepeat = seal.ext.getBoolConfig(this.ext, "禁止AI复读");
-      return { stopRepeat };
+      const similarityLimit = seal.ext.getFloatConfig(this.ext, "视作复读的最低相似度");
+      return { stopRepeat, similarityLimit };
     }
     static registerInterruptConfig() {
       seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
@@ -476,6 +478,42 @@
       return [];
     }
   }
+  function levenshteinDistance(s1, s2) {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const dp = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+    for (let i = 0; i <= len1; i++) {
+      dp[i][0] = i;
+    }
+    for (let j = 0; j <= len2; j++) {
+      dp[0][j] = j;
+    }
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            // 删除
+            dp[i][j - 1] + 1,
+            // 插入
+            dp[i - 1][j - 1] + 1
+            // 替换
+          );
+        }
+      }
+    }
+    return dp[len1][len2];
+  }
+  function calculateSimilarity(s1, s2) {
+    if (s1.length === 0 || s2.length === 0) {
+      return 0;
+    }
+    const distance = levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    return 1 - distance / maxLength;
+  }
 
   // src/image/imageManager.ts
   var ImageManager = class {
@@ -614,7 +652,7 @@
 
   // src/utils/handleReplyUtils.ts
   function repeatDetection(s, messages) {
-    const { stopRepeat } = Config.getRepeatConfig();
+    const { stopRepeat, similarityLimit } = Config.getRepeatConfig();
     if (!stopRepeat) {
       return false;
     }
@@ -623,8 +661,10 @@
     }).filter((item) => item !== null);
     if (assContents.length > 0) {
       const { index, content } = assContents[assContents.length - 1];
-      const clearText = content.replace(/<[\|｜\$].*[\|｜\$]>/g, "");
-      if (clearText.trim() === s.trim()) {
+      const clearText = content.replace(/<[\|｜].*?[\|｜]>/g, "");
+      const similarity = calculateSimilarity(clearText.trim(), s.trim());
+      Config.printLog(`复读相似度：${similarity}`);
+      if (similarity > similarityLimit) {
         messages.splice(index, 1);
         return true;
       }
