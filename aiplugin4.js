@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.0.0
+// @version      4.0.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -97,7 +97,7 @@
     ext.cmdMap["modu"].solve(ctx, msg, cmdArgs);
   };
   CommandManager.registerCommand(cmdModuRoll);
-  var cmdModuSearch = new Command("查询模组", "modu", "show");
+  var cmdModuSearch = new Command("查询模组", "modu", "search");
   cmdModuSearch.prompt = "查询模组的命令:<$查询模组#要查询的关键词$>";
   cmdModuSearch.solve = (ctx, msg, cmdArgs, name) => {
     cmdModuSearch.handleCmdArgs(cmdArgs, name);
@@ -629,7 +629,7 @@
     }
     const segments = s.split(/<[\|｜]from.*?[\|｜]>/);
     s = segments[0] ? segments[0] : segments[1] ? segments[1] : s;
-    s = s.replace(/<[\|｜].*?[\|｜]>/g, "").slice(0, maxChar);
+    s = s.replace(/<[\|｜].*?[\|｜]>/g, "").replace(/<br>/g, "\n").slice(0, maxChar);
     const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}]` : ``;
     const reply = prefix + s.replace(/<\$(.+?)\$>/g, "");
     return { s, reply, commands };
@@ -945,7 +945,7 @@
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.0");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.1");
       seal.ext.register(ext);
     }
     Config.ext = ext;
