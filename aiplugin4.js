@@ -304,9 +304,16 @@
       seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
       seal.ext.registerStringConfig(this.ext, "插嘴API Key", "你的API Key", "");
       seal.ext.registerTemplateConfig(this.ext, "插嘴body", [
+        `"messages":null`,
         `"model":"deepseek-chat"`,
-        `"max_tokens":2`
-      ], "");
+        `"max_tokens":2`,
+        `"stop":null`,
+        `"stream":false`,
+        `"frequency_penalty":0`,
+        `"presence_penalty":0`,
+        `"temperature":1`,
+        `"top_p":1`
+      ], "messages将会自动替换");
       seal.ext.registerIntConfig(this.ext, "参与插嘴检测的上下文轮数", 8, "");
       ;
       seal.ext.registerStringConfig(this.ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "");
@@ -1020,11 +1027,18 @@
           const id2 = val2 === "now" ? id : val2;
           const ai2 = aim.getAI(id2);
           const pr = ai2.privilege;
+          const counter = pr.counter > -1 ? `${pr.counter}条` : "关闭";
+          const timer = pr.timer > -1 ? `${pr.timer}秒` : "关闭";
+          const prob = pr.prob > -1 ? `${pr.prob}%` : "关闭";
+          const interrupt = pr.interrupt > -1 ? `${pr.interrupt}` : "关闭";
+          const standby = pr.standby ? "开启" : "关闭";
           const s = `${id}
-权限${pr.limit}
-c.${pr.counter} t.${pr.timer}
-p.${pr.prob} i.${pr.interrupt}
-sb.${pr.standby}`;
+权限限制:${pr.limit}
+计数器模式(c):${counter}
+计时器模式(t):${timer}
+概率模式(p):${prob}
+插嘴模式(i):${interrupt}
+待机模式:${standby}`;
           seal.replyToSender(ctx, msg, s);
           return ret;
         }
@@ -1034,11 +1048,18 @@ sb.${pr.standby}`;
             seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
             return ret;
           }
+          const counter = pr.counter > -1 ? `${pr.counter}条` : "关闭";
+          const timer = pr.timer > -1 ? `${pr.timer}秒` : "关闭";
+          const prob = pr.prob > -1 ? `${pr.prob}%` : "关闭";
+          const interrupt = pr.interrupt > -1 ? `${pr.interrupt}` : "关闭";
+          const standby = pr.standby ? "开启" : "关闭";
           const s = `${id}
-权限${pr.limit}
-c.${pr.counter} t.${pr.timer}
-p.${pr.prob} i.${pr.interrupt}
-sb.${pr.standby}`;
+权限限制:${pr.limit}
+计数器模式(c):${counter}
+计时器模式(t):${timer}
+概率模式(p):${prob}
+插嘴模式(i):${interrupt}
+待机模式:${standby}`;
           seal.replyToSender(ctx, msg, s);
           return ret;
         }
@@ -1077,28 +1098,28 @@ sb.${pr.standby}`;
               case "counter": {
                 pr.counter = exist && !isNaN(value) ? value : 10;
                 text += `
-计数器模式`;
+计数器模式:${pr.counter}条`;
                 break;
               }
               case "t":
               case "timer": {
                 pr.timer = exist && !isNaN(value) ? value : 60;
                 text += `
-计时器模式`;
+计时器模式:${pr.timer}秒`;
                 break;
               }
               case "p":
               case "prob": {
                 pr.prob = exist && !isNaN(value) ? value : 10;
                 text += `
-概率模式`;
+概率模式:${pr.prob}%`;
                 break;
               }
               case "i":
               case "interrupt": {
                 pr.interrupt = exist && !isNaN(value) ? value : 8;
                 text += `
-插嘴模式`;
+插嘴模式:${pr.interrupt}`;
                 break;
               }
             }
