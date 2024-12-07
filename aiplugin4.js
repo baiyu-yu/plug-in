@@ -1112,9 +1112,9 @@
       ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.3");
       seal.ext.register(ext);
     }
+    CommandManager.init();
     Config.ext = ext;
     Config.register();
-    CommandManager.init();
     const aim = new AIManager();
     const CQTypesAllow = ["at", "image", "reply", "face"];
     const cmdAI = seal.ext.newCmdItemInfo();
