@@ -40,7 +40,7 @@
   function registerCmdFace() {
     const cmdFace = new Command("表情");
     cmdFace.buildPrompt = () => {
-      const { localImages } = Config.getLocalImageConfig();
+      const { localImages } = ConfigManager.getLocalImageConfig();
       const imagesNames = Object.keys(localImages);
       if (imagesNames.length == 0) {
         return "暂无本地表情";
@@ -52,7 +52,7 @@
         console.error(`发送表情需要一个表情名称`);
         return;
       }
-      const { localImages } = Config.getLocalImageConfig();
+      const { localImages } = ConfigManager.getLocalImageConfig();
       if (localImages.hasOwnProperty(arg1)) {
         seal.replyToSender(ctx, msg, `[CQ:image,file=${localImages[arg1]}]`);
       } else {
@@ -225,10 +225,10 @@
     }
     static handleCommands(ctx, msg, commands) {
       if (commands.length !== 0) {
-        Config.printLog(`AI命令:`, JSON.stringify(commands));
+        ConfigManager.printLog(`AI命令:`, JSON.stringify(commands));
       }
       if (this.cmdArgs == null) {
-        Config.printLog(`暂时无法使用AI命令，请先使用任意指令`);
+        ConfigManager.printLog(`暂时无法使用AI命令，请先使用任意指令`);
         return;
       }
       if (commands.length > 10) {
@@ -251,7 +251,7 @@
   CommandManager.cmdMap = {};
 
   // src/utils/configUtils.ts
-  var Config = class _Config {
+  var ConfigManager = class _ConfigManager {
     static register() {
       this.registerPrintLogConfig();
       this.registerRequestConfig();
@@ -270,12 +270,13 @@
       this.registerImageProbabilityConfig();
       this.registerImageRequestConfig();
       this.registerImageTriggerConfig();
+      this.registerImageStorageConfig();
     }
     static registerPrintLogConfig() {
       seal.ext.registerBoolConfig(this.ext, "是否打印日志细节", true, "");
     }
     static printLog(...data) {
-      const printlog = seal.ext.getBoolConfig(_Config.ext, "是否打印日志细节");
+      const printlog = seal.ext.getBoolConfig(_ConfigManager.ext, "是否打印日志细节");
       if (printlog) {
         console.log(...data);
       }
@@ -639,7 +640,7 @@
       this.stealStatus = false;
       let data = {};
       try {
-        data = JSON.parse(Config.ext.storageGet(`image_${id}`) || "{}");
+        data = JSON.parse(ConfigManager.ext.storageGet(`image_${id}`) || "{}");
       } catch (error) {
         console.error(`从数据库中获取${`image_${id}`}失败:`, error);
       }
@@ -654,10 +655,10 @@
       }
     }
     saveImage() {
-      Config.ext.storageSet(`image_${this.id}`, JSON.stringify(this));
+      ConfigManager.ext.storageSet(`image_${this.id}`, JSON.stringify(this));
     }
     drawLocalImage() {
-      const { localImages } = Config.getLocalImageConfig();
+      const { localImages } = ConfigManager.getLocalImageConfig();
       const keys = Object.keys(localImages);
       if (keys.length == 0) {
         return "";
@@ -679,7 +680,7 @@
       return url;
     }
     async drawImage() {
-      const { localImages } = Config.getLocalImageConfig();
+      const { localImages } = ConfigManager.getLocalImageConfig();
       const values = Object.values(localImages);
       if (this.images.length == 0 && values.length == 0) {
         return "";
@@ -718,7 +719,7 @@
       return isValid;
     }
     async imageToText(ctx, imageUrl, text = "") {
-      const { condition } = Config.getImageConditionConfig();
+      const { condition } = ConfigManager.getImageConditionConfig();
       const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
       if (fmtCondition == 0) {
         return "图片";
@@ -736,7 +737,7 @@
           }
         ]
       }];
-      const { url, apiKey, maxChars, bodyTemplate } = Config.getImageRequestConfig();
+      const { url, apiKey, maxChars, bodyTemplate } = ConfigManager.getImageRequestConfig();
       try {
         const bodyObject = parseBody(bodyTemplate, messages);
         const response = await fetch(url, {
@@ -771,7 +772,7 @@
 
   // src/utils/handleReplyUtils.ts
   function repeatDetection(s, messages) {
-    const { stopRepeat, similarityLimit } = Config.getRepeatConfig();
+    const { stopRepeat, similarityLimit } = ConfigManager.getRepeatConfig();
     if (!stopRepeat) {
       return false;
     }
@@ -782,7 +783,7 @@
       const { index, content } = assContents[assContents.length - 1];
       const clearText = content.replace(/<[\|｜].*?[\|｜]>/g, "");
       const similarity = calculateSimilarity(clearText.trim(), s.trim());
-      Config.printLog(`复读相似度：${similarity}`);
+      ConfigManager.printLog(`复读相似度：${similarity}`);
       if (similarity > similarityLimit) {
         messages.splice(index, 1);
         return true;
@@ -791,7 +792,7 @@
     return false;
   }
   function handleReply(ctx, msg, s) {
-    const { maxChar, cut, replymsg } = Config.getHandleReplyConfig();
+    const { maxChar, cut, replymsg } = ConfigManager.getHandleReplyConfig();
     let commands = s.match(/<\$(.+?)\$>/g);
     if (commands !== null) {
       commands = commands.map((item) => {
@@ -821,7 +822,7 @@
       }
       return value;
     });
-    Config.printLog(`请求发送前的上下文:
+    ConfigManager.printLog(`请求发送前的上下文:
 `, s);
     const response = await fetch(url, {
       method: "POST",
@@ -838,7 +839,7 @@
     return response;
   }
   async function sendRequest(messages) {
-    const { url, apiKey, bodyTemplate } = Config.getRequestConfig();
+    const { url, apiKey, bodyTemplate } = ConfigManager.getRequestConfig();
     try {
       const bodyObject = parseBody(bodyTemplate, messages);
       const time = Date.now();
@@ -849,7 +850,7 @@
       }
       if (data_response.choices && data_response.choices.length > 0) {
         const reply = data_response.choices[0].message.content;
-        Config.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
+        ConfigManager.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
         return reply;
       } else {
         throw new Error("服务器响应中没有choices或choices为空");
@@ -952,7 +953,7 @@
     async iteration(ctx, s, role) {
       const messages = this.context.messages;
       const contextTs = this.context.timestamp;
-      const { maxRounds, isPrefix, ctxCacheTime } = Config.getStorageConfig();
+      const { maxRounds, isPrefix, ctxCacheTime } = ConfigManager.getStorageConfig();
       const timestamp = parseInt(seal.format(ctx, "{$tTimestamp}"));
       if (timestamp - contextTs > ctxCacheTime * 60) {
         this.context.messages = [];
@@ -1000,12 +1001,12 @@
       const { s, reply, commands } = handleReply(ctx, msg, raw_reply);
       if (repeatDetection(reply, this.context.messages) && reply !== "") {
         if (retry == 3) {
-          Config.printLog(`发现复读，已达到最大重试次数，清除AI上下文`);
+          ConfigManager.printLog(`发现复读，已达到最大重试次数，清除AI上下文`);
           this.context.messages = messages.filter((item) => item.role != "assistant");
           return { s: "", reply: "", commands: [] };
         }
         retry++;
-        Config.printLog(`发现复读，一秒后进行重试:[${retry}/3]`);
+        ConfigManager.printLog(`发现复读，一秒后进行重试:[${retry}/3]`);
         await new Promise((resolve) => setTimeout(resolve, 1e3));
         return await this.getReply(ctx, msg, systemMessages, retry);
       }
@@ -1013,13 +1014,13 @@
     }
     async chat(ctx, msg) {
       if (this.isChatting) {
-        Config.printLog(this.id, `正在处理消息，跳过`);
+        ConfigManager.printLog(this.id, `正在处理消息，跳过`);
         return [];
       }
       this.isChatting = true;
       const result = [];
       this.clearData();
-      const { systemMessages, isCmd } = Config.getSystemMessageConfig(ctx.group.groupName);
+      const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
       const { s, reply, commands } = await this.getReply(ctx, msg, systemMessages);
       result.push(reply);
       this.context.lastReply = reply;
@@ -1027,7 +1028,7 @@
       if (isCmd && commands.length !== 0) {
         CommandManager.handleCommands(ctx, msg, commands);
       }
-      const { p } = Config.getImageProbabilityConfig();
+      const { p } = ConfigManager.getImageProbabilityConfig();
       if (Math.random() <= p) {
         const file = await this.image.drawImage();
         if (file) {
@@ -1038,7 +1039,7 @@
       return result;
     }
     async getAct() {
-      const { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime } = Config.getInterruptConfig();
+      const { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime } = ConfigManager.getInterruptConfig();
       const timestamp = Math.floor(Date.now() / 1e3);
       if (timestamp < this.data.interrupt.timestamp) {
         return 0;
@@ -1069,7 +1070,7 @@
         }
         if (data_response.choices && data_response.choices.length > 0) {
           const reply = data_response.choices[0].message.content;
-          Config.printLog(`返回活跃度:`, reply);
+          ConfigManager.printLog(`返回活跃度:`, reply);
           const act = parseInt(reply.replace("<｜end▁of▁sentence｜>", "").trim());
           if (isNaN(act) || act < 1 || act > 10) {
             throw new Error("AI 返回的积极性数值无效");
@@ -1102,7 +1103,7 @@
       if (!this.cache.hasOwnProperty(id)) {
         let data = {};
         try {
-          data = JSON.parse(Config.ext.storageGet(`AI_${id}`) || "{}");
+          data = JSON.parse(ConfigManager.ext.storageGet(`AI_${id}`) || "{}");
         } catch (error) {
           console.error(`从数据库中获取${`AI_${id}`}失败:`, error);
         }
@@ -1112,7 +1113,7 @@
     }
     saveAI(id) {
       if (this.cache.hasOwnProperty(id)) {
-        Config.ext.storageSet(`AI_${id}`, JSON.stringify(this.cache[id]));
+        ConfigManager.ext.storageSet(`AI_${id}`, JSON.stringify(this.cache[id]));
       }
     }
   };
@@ -1125,8 +1126,8 @@
       seal.ext.register(ext);
     }
     CommandManager.init();
-    Config.ext = ext;
-    Config.register();
+    ConfigManager.ext = ext;
+    ConfigManager.register();
     const aim = new AIManager();
     const CQTypesAllow = ["at", "image", "reply", "face"];
     const cmdAI = seal.ext.newCmdItemInfo();
@@ -1535,7 +1536,7 @@
       }
     };
     ext.onNotCommandReceived = async (ctx, msg) => {
-      const { canPrivate } = Config.getPrivateConfig();
+      const { canPrivate } = ConfigManager.getPrivateConfig();
       if (ctx.isPrivate && !canPrivate) {
         return;
       }
@@ -1544,7 +1545,7 @@
       const id = ctx.isPrivate ? userId : groupId;
       const message = msg.message;
       const ai = aim.getAI(id);
-      const { clearWords, clearReplys } = Config.getForgetConfig();
+      const { clearWords, clearReplys } = ConfigManager.getForgetConfig();
       if (clearWords.some((item) => message === item)) {
         const pr = ai.privilege;
         if (ctx.privilegeLevel < pr.limit) {
@@ -1557,7 +1558,7 @@
         aim.saveAI(id);
         return;
       }
-      const { condition, trigger } = Config.getImageTriggerConfig(message);
+      const { condition, trigger } = ConfigManager.getImageTriggerConfig(message);
       if (trigger) {
         const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
         if (fmtCondition !== 0) {
@@ -1570,7 +1571,7 @@
       }
       const CQTypes = getCQTypes(message);
       if (CQTypes.includes("image") && ai.image.stealStatus) {
-        const { maxImageNum } = Config.getImageStorageConfig();
+        const { maxImageNum } = ConfigManager.getImageStorageConfig();
         const urls = getUrlsInCQCode(message);
         if (urls.length !== 0) {
           ai.image.images = ai.image.images.concat(urls).slice(-maxImageNum);
@@ -1578,7 +1579,7 @@
         }
       }
       if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
-        const { trigger: trigger2, condition: condition2 } = Config.getTriggerConfig(message);
+        const { trigger: trigger2, condition: condition2 } = ConfigManager.getTriggerConfig(message);
         clearTimeout(ai.data.timer);
         ai.data.timer = null;
         if (trigger2) {
@@ -1587,7 +1588,7 @@
             return;
           }
           await ai.iteration(ctx, message, "user");
-          Config.printLog("非指令触发回复");
+          ConfigManager.printLog("非指令触发回复");
           const result = await ai.chat(ctx, msg);
           for (let i = 0; i < result.length; i++) {
             seal.replyToSender(ctx, msg, result[i]);
@@ -1603,7 +1604,7 @@
           if (pr.counter > -1) {
             ai.data.counter += 1;
             if (ai.data.counter >= pr.counter) {
-              Config.printLog("计数器触发回复");
+              ConfigManager.printLog("计数器触发回复");
               ai.data.counter = 0;
               const result = await ai.chat(ctx, msg);
               for (let i = 0; i < result.length; i++) {
@@ -1617,7 +1618,7 @@
           if (pr.prob > -1) {
             const ran = Math.random() * 100;
             if (ran <= pr.prob) {
-              Config.printLog("概率触发回复");
+              ConfigManager.printLog("概率触发回复");
               const result = await ai.chat(ctx, msg);
               for (let i = 0; i < result.length; i++) {
                 seal.replyToSender(ctx, msg, result[i]);
@@ -1630,7 +1631,7 @@
           if (pr.interrupt > -1) {
             const act = await ai.getAct();
             if (act >= pr.interrupt) {
-              Config.printLog(`插嘴触发回复:${act}`);
+              ConfigManager.printLog(`插嘴触发回复:${act}`);
               ai.data.interrupt.act = 0;
               const result = await ai.chat(ctx, msg);
               for (let i = 0; i < result.length; i++) {
@@ -1643,7 +1644,7 @@
           }
           if (pr.timer > -1) {
             ai.data.timer = setTimeout(async () => {
-              Config.printLog("计时器触发回复");
+              ConfigManager.printLog("计时器触发回复");
               ai.data.timer = null;
               const result = await ai.chat(ctx, msg);
               for (let i = 0; i < result.length; i++) {
@@ -1660,7 +1661,7 @@
       if (CommandManager.cmdArgs === null) {
         CommandManager.cmdArgs = cmdArgs;
       }
-      const { allcmd } = Config.getMonitorCommandConfig();
+      const { allcmd } = ConfigManager.getMonitorCommandConfig();
       if (allcmd) {
         const uid = ctx.player.userId;
         const gid = ctx.group.groupId;
@@ -1677,7 +1678,7 @@
       }
     };
     ext.onMessageSend = async (ctx, msg) => {
-      const { allmsg } = Config.getMonitorAllMessageConfig();
+      const { allmsg } = ConfigManager.getMonitorAllMessageConfig();
       if (allmsg) {
         const uid = ctx.player.userId;
         const gid = ctx.group.groupId;
