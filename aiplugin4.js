@@ -41,7 +41,11 @@
     const cmdFace = new Command("表情");
     cmdFace.buildPrompt = () => {
       const { localImages } = Config.getLocalImageConfig();
-      return `发送表情的指令:<$表情#表情名称$>,表情名称有:${Object.keys(localImages).join("，")}。`;
+      const imagesNames = Object.keys(localImages);
+      if (imagesNames.length == 0) {
+        return "暂无本地表情";
+      }
+      return `发送表情的指令:<$表情#表情名称$>,表情名称有:${imagesNames.join("，")}。`;
     };
     cmdFace.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -514,14 +518,19 @@
     static registerImageTriggerConfig() {
       seal.ext.registerStringConfig(this.ext, "图片非指令触发需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
       seal.ext.registerTemplateConfig(this.ext, "图片非指令关键词", ["咪"], "包含关键词将进行回复");
-      seal.ext.registerIntConfig(this.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
     }
     static getImageTriggerConfig(s) {
       const condition = seal.ext.getStringConfig(this.ext, "图片非指令触发需要满足的条件");
       const keyWords = seal.ext.getTemplateConfig(this.ext, "图片非指令关键词");
       const trigger = keyWords.some((item) => s.includes(item));
+      return { condition, trigger };
+    }
+    static registerImageStorageConfig() {
+      seal.ext.registerIntConfig(this.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
+    }
+    static getImageStorageConfig() {
       const maxImageNum = seal.ext.getIntConfig(this.ext, "偷取图片存储上限");
-      return { condition, trigger, maxImageNum };
+      return { maxImageNum };
     }
   };
 
@@ -650,6 +659,9 @@
     drawLocalImage() {
       const { localImages } = Config.getLocalImageConfig();
       const keys = Object.keys(localImages);
+      if (keys.length == 0) {
+        return "";
+      }
       const index = Math.floor(Math.random() * keys.length);
       return localImages[keys[index]];
     }
@@ -667,11 +679,11 @@
       return url;
     }
     async drawImage() {
-      if (this.images.length == 0) {
-        return this.drawLocalImage();
-      }
       const { localImages } = Config.getLocalImageConfig();
       const values = Object.values(localImages);
+      if (this.images.length == 0 && values.length == 0) {
+        return "";
+      }
       const index = Math.floor(Math.random() * (values.length + this.images.length));
       if (index < values.length) {
         return values[index];
@@ -1428,6 +1440,7 @@
             case "local": {
               const image = ai.image.drawLocalImage();
               if (!image) {
+                seal.replyToSender(ctx, msg, "暂无本地图片");
                 return ret;
               }
               seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
@@ -1435,16 +1448,18 @@
             }
             case "stl":
             case "stolen": {
-              const image = ai.image.drawStolenImage();
+              const image = await ai.image.drawStolenImage();
               if (!image) {
+                seal.replyToSender(ctx, msg, "暂无偷取图片");
                 return ret;
               }
               seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
               return ret;
             }
             case "all": {
-              const image = ai.image.drawImage();
+              const image = await ai.image.drawImage();
               if (!image) {
+                seal.replyToSender(ctx, msg, "暂无图片");
                 return ret;
               }
               seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
@@ -1542,33 +1557,32 @@
         aim.saveAI(id);
         return;
       }
-      const CQTypes = getCQTypes(message);
-      if (CQTypes.includes("image")) {
-        const { condition, trigger, maxImageNum } = Config.getImageTriggerConfig(message);
-        if (trigger) {
-          const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
-          if (fmtCondition !== 0) {
-            const image = await ai.image.drawImage();
-            if (image !== "") {
-              seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
-              return;
-            }
-          }
-        }
-        if (ai.image.stealStatus) {
-          const urls = getUrlsInCQCode(message);
-          if (urls.length !== 0) {
-            ai.image.images = ai.image.images.concat(urls).slice(-maxImageNum);
-            ai.image.saveImage();
+      const { condition, trigger } = Config.getImageTriggerConfig(message);
+      if (trigger) {
+        const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
+        if (fmtCondition !== 0) {
+          const image = await ai.image.drawImage();
+          if (image !== "") {
+            seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+            return;
           }
         }
       }
+      const CQTypes = getCQTypes(message);
+      if (CQTypes.includes("image") && ai.image.stealStatus) {
+        const { maxImageNum } = Config.getImageStorageConfig();
+        const urls = getUrlsInCQCode(message);
+        if (urls.length !== 0) {
+          ai.image.images = ai.image.images.concat(urls).slice(-maxImageNum);
+          ai.image.saveImage();
+        }
+      }
       if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
-        const { trigger, condition } = Config.getTriggerConfig(message);
+        const { trigger: trigger2, condition: condition2 } = Config.getTriggerConfig(message);
         clearTimeout(ai.data.timer);
         ai.data.timer = null;
-        if (trigger) {
-          const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
+        if (trigger2) {
+          const fmtCondition = parseInt(seal.format(ctx, `{${condition2}}`));
           if (fmtCondition == 0) {
             return;
           }
@@ -1583,9 +1597,6 @@
           return;
         } else {
           const pr = ai.privilege;
-          if (ctx.privilegeLevel < pr.limit) {
-            return;
-          }
           if (pr.standby) {
             await ai.iteration(ctx, message, "user");
           }
@@ -1641,7 +1652,6 @@
               }
               aim.saveAI(id);
             }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
-            return;
           }
         }
       }
