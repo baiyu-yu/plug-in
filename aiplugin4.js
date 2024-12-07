@@ -1015,16 +1015,15 @@
     async chat(ctx, msg) {
       if (this.isChatting) {
         ConfigManager.printLog(this.id, `正在处理消息，跳过`);
-        return [];
+        return;
       }
       this.isChatting = true;
-      const result = [];
       this.clearData();
       const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
       const { s, reply, commands } = await this.getReply(ctx, msg, systemMessages);
-      result.push(reply);
       this.context.lastReply = reply;
       await this.iteration(ctx, s, "assistant");
+      seal.replyToSender(ctx, msg, reply);
       if (isCmd && commands.length !== 0) {
         CommandManager.handleCommands(ctx, msg, commands);
       }
@@ -1032,11 +1031,10 @@
       if (Math.random() <= p) {
         const file = await this.image.drawImage();
         if (file) {
-          result.push(`[CQ:image,file=${file}]`);
+          seal.replyToSender(ctx, msg, `[CQ:image,file=${file}]`);
         }
       }
       this.isChatting = false;
-      return result;
     }
     async getAct() {
       const { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime } = ConfigManager.getInterruptConfig();
@@ -1589,11 +1587,7 @@
           }
           await ai.iteration(ctx, message, "user");
           ConfigManager.printLog("非指令触发回复");
-          const result = await ai.chat(ctx, msg);
-          for (let i = 0; i < result.length; i++) {
-            seal.replyToSender(ctx, msg, result[i]);
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
+          await ai.chat(ctx, msg);
           aim.saveAI(id);
           return;
         } else {
@@ -1606,11 +1600,7 @@
             if (ai.data.counter >= pr.counter) {
               ConfigManager.printLog("计数器触发回复");
               ai.data.counter = 0;
-              const result = await ai.chat(ctx, msg);
-              for (let i = 0; i < result.length; i++) {
-                seal.replyToSender(ctx, msg, result[i]);
-                await new Promise((resolve) => setTimeout(resolve, 500));
-              }
+              await ai.chat(ctx, msg);
               aim.saveAI(id);
               return;
             }
@@ -1619,11 +1609,7 @@
             const ran = Math.random() * 100;
             if (ran <= pr.prob) {
               ConfigManager.printLog("概率触发回复");
-              const result = await ai.chat(ctx, msg);
-              for (let i = 0; i < result.length; i++) {
-                seal.replyToSender(ctx, msg, result[i]);
-                await new Promise((resolve) => setTimeout(resolve, 500));
-              }
+              await ai.chat(ctx, msg);
               aim.saveAI(id);
               return;
             }
@@ -1633,11 +1619,7 @@
             if (act >= pr.interrupt) {
               ConfigManager.printLog(`插嘴触发回复:${act}`);
               ai.data.interrupt.act = 0;
-              const result = await ai.chat(ctx, msg);
-              for (let i = 0; i < result.length; i++) {
-                seal.replyToSender(ctx, msg, result[i]);
-                await new Promise((resolve) => setTimeout(resolve, 500));
-              }
+              await ai.chat(ctx, msg);
               aim.saveAI(id);
               return;
             }
@@ -1646,11 +1628,7 @@
             ai.data.timer = setTimeout(async () => {
               ConfigManager.printLog("计时器触发回复");
               ai.data.timer = null;
-              const result = await ai.chat(ctx, msg);
-              for (let i = 0; i < result.length; i++) {
-                seal.replyToSender(ctx, msg, result[i]);
-                await new Promise((resolve) => setTimeout(resolve, 500));
-              }
+              await ai.chat(ctx, msg);
               aim.saveAI(id);
             }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
           }
