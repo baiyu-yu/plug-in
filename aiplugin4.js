@@ -14,7 +14,12 @@
 (() => {
   // src/utils/commandUtils.ts
   var Command = class {
-    constructor(name, command, ...args) {
+    /**
+     * @param name 命令的名字，<$这一部分#参数1#参数2$>
+     * @param command 指令，如 .st show 的st，没有可以不写
+     * @param args 命令的参数
+     */
+    constructor(name, command = "", ...args) {
       this.name = name;
       this.command = command;
       this.args = args;
@@ -64,7 +69,7 @@
   };
   CommandManager.cmdArgs = null;
   CommandManager.cmdMap = {};
-  var cmdDraw = new Command("deck", "");
+  var cmdDraw = new Command("deck");
   cmdDraw.prompt = "抽取牌堆的命令:<$deck#牌堆的名字$>";
   cmdDraw.solve = (ctx, msg, _, name) => {
     const dr = seal.deck.draw(ctx, name, true);
@@ -78,7 +83,7 @@
     seal.replyToSender(ctx, msg, result);
   };
   CommandManager.registerCommand(cmdDraw);
-  var cmdRename = new Command("rename", "");
+  var cmdRename = new Command("rename");
   cmdRename.prompt = "设置群名片的命令:<$rename#要设置的名字$>";
   cmdRename.solve = (ctx, msg, _, name) => {
     try {
@@ -129,7 +134,7 @@
     ext.cmdMap["jrrp"].solve(ctx, msg, cmdArgs);
   };
   CommandManager.registerCommand(cmdJrrp);
-  var cmdFace = new Command("face", "");
+  var cmdFace = new Command("face");
   cmdFace.prompt = "";
   cmdFace.solve = (ctx, msg, _, name) => {
     const { localImages } = Config.getLocalImageConfig();
