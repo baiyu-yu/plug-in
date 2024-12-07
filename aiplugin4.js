@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.0.2
+// @version      4.0.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -12,19 +12,177 @@
 // ==/UserScript==
 
 (() => {
-  // src/utils/commandUtils.ts
+  // src/command/cmd_draw.ts
+  function registerCmdDraw() {
+    const cmdDraw = new Command("抽取");
+    cmdDraw.buildPrompt = () => {
+      return "抽取牌堆的命令:<$抽取#牌堆的名字$>";
+    };
+    cmdDraw.solve = (ctx, msg, _, arg1) => {
+      if (!arg1) {
+        console.error(`抽取牌堆需要一个牌堆的名字`);
+        return;
+      }
+      const dr = seal.deck.draw(ctx, arg1, true);
+      if (!dr.exists) {
+        console.error(`牌堆${arg1}不存在:${dr.err}`);
+      }
+      const result = dr.result;
+      if (result == null) {
+        console.error(`牌堆${arg1}结果为空:${dr.err}`);
+      }
+      seal.replyToSender(ctx, msg, result);
+    };
+    CommandManager.registerCommand(cmdDraw);
+  }
+
+  // src/command/cmd_face.ts
+  function registerCmdFace() {
+    const cmdFace = new Command("表情");
+    cmdFace.buildPrompt = () => {
+      const { localImages } = Config.getLocalImageConfig();
+      return `发送表情的指令:<$表情#表情名称$>,表情名称有:${Object.keys(localImages).join("，")}。`;
+    };
+    cmdFace.solve = (ctx, msg, _, arg1) => {
+      if (!arg1) {
+        console.error(`发送表情需要一个表情名称`);
+        return;
+      }
+      const { localImages } = Config.getLocalImageConfig();
+      if (localImages.hasOwnProperty(arg1)) {
+        seal.replyToSender(ctx, msg, `[CQ:image,file=${localImages[arg1]}]`);
+      } else {
+        console.error(`本地图片${arg1}不存在`);
+      }
+    };
+    CommandManager.registerCommand(cmdFace);
+  }
+
+  // src/command/cmd_jrrp.ts
+  function registerCmdJrrp() {
+    const cmdJrrp = new Command("今日人品", "jrrp");
+    cmdJrrp.buildPrompt = () => {
+      return "查看今日人品的指令:<$今日人品$>";
+    };
+    cmdJrrp.solve = (ctx, msg, cmdArgs) => {
+      cmdJrrp.handleCmdArgs(cmdArgs);
+      const ext = seal.ext.find("fun");
+      ext.cmdMap["jrrp"].solve(ctx, msg, cmdArgs);
+    };
+    CommandManager.registerCommand(cmdJrrp);
+  }
+
+  // src/command/cmd_modu.ts
+  function registerCmdModu() {
+    const cmdModu = new Command("随机模组", "modu", "roll");
+    cmdModu.buildPrompt = () => {
+      return `随机模组的命令:<$模组#随机$>,
+查询模组的命令:<$模组#查询#要查询的关键词$>`;
+    };
+    cmdModu.solve = (ctx, msg, cmdArgs, arg1, arg2) => {
+      if (!arg1) {
+        console.error(`随机模组需要一个指令`);
+        return;
+      }
+      switch (arg1) {
+        case "随机": {
+          arg1 = "roll";
+          cmdModu.handleCmdArgs(cmdArgs, arg1);
+          break;
+        }
+        case "查询": {
+          if (!arg2) {
+            console.error(`查询模组需要一个关键词`);
+            return;
+          }
+          arg1 = "search";
+          cmdModu.handleCmdArgs(cmdArgs, arg1, arg2);
+          break;
+        }
+        default: {
+          console.error(`未知的模组指令:${arg1}`);
+          return;
+        }
+      }
+      const ext = seal.ext.find("story");
+      ext.cmdMap["modu"].solve(ctx, msg, cmdArgs);
+    };
+    CommandManager.registerCommand(cmdModu);
+  }
+
+  // src/command/cmd_ra.ts
+  function registerCmdRa() {
+    const cmdRa = new Command("检定", "ra");
+    cmdRa.buildPrompt = () => {
+      return "进行检定的命令:<$检定#检定目的或技能名$>";
+    };
+    cmdRa.solve = (ctx, msg, cmdArgs, arg1) => {
+      if (!arg1) {
+        console.error(`检定需要一个检定目的或技能名`);
+        return;
+      }
+      cmdRa.handleCmdArgs(cmdArgs, arg1);
+      const ext = seal.ext.find("coc7");
+      ext.cmdMap["ra"].solve(ctx, msg, cmdArgs);
+    };
+    CommandManager.registerCommand(cmdRa);
+  }
+
+  // src/command/cmd_rename.ts
+  function registerCmdRename() {
+    const cmdRename = new Command("改名");
+    cmdRename.buildPrompt = () => {
+      return "设置群名片的命令:<$改名#要设置的名字$>";
+    };
+    cmdRename.solve = (ctx, msg, _, arg1) => {
+      if (!arg1) {
+        console.error(`改名需要一个名字`);
+        return;
+      }
+      try {
+        seal.setPlayerGroupCard(ctx, arg1);
+        seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>的群名片设置为<${arg1}>`);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    CommandManager.registerCommand(cmdRename);
+  }
+
+  // src/command/cmd_st.ts
+  function registerCmdSt() {
+    const cmdStShow = new Command("展示", "st", "show");
+    cmdStShow.buildPrompt = () => {
+      return "展示属性的指令:<$展示$>";
+    };
+    cmdStShow.solve = (ctx, msg, cmdArgs) => {
+      cmdStShow.handleCmdArgs(cmdArgs);
+      const ext = seal.ext.find("coc7");
+      ext.cmdMap["st"].solve(ctx, msg, cmdArgs);
+    };
+    CommandManager.registerCommand(cmdStShow);
+  }
+
+  // src/command/commandManager.ts
   var Command = class {
     /**
      * @param name 命令的名字，<$这一部分#参数1#参数2$>
      * @param command 指令，如 .st show 的st，没有可以不写
-     * @param args 命令的参数
+     * @param args 指令的参数
      */
     constructor(name, command = "", ...args) {
       this.name = name;
       this.command = command;
       this.args = args;
-      this.prompt = "";
+      this.buildPrompt = () => "";
+      this.solve = (_, __, ___) => {
+      };
     }
+    /**
+     * 利用预存的指令信息和额外输入的参数构建一个cmdArgs
+     * @param cmdArgs
+     * @param extraArgs
+     */
     handleCmdArgs(cmdArgs, ...extraArgs) {
       cmdArgs.command = this.command;
       cmdArgs.args = this.args.concat(extraArgs);
@@ -37,11 +195,29 @@
     }
   };
   var CommandManager = class {
+    static init() {
+      registerCmdDraw();
+      registerCmdFace();
+      registerCmdJrrp();
+      registerCmdModu();
+      registerCmdRa();
+      registerCmdRename();
+      registerCmdSt();
+    }
     static registerCommand(cmd) {
       this.cmdMap[cmd.name] = cmd;
     }
-    static getCommandsPrompt() {
-      return Object.values(this.cmdMap).map((item) => item.prompt).join(",");
+    static getCommandNames() {
+      return Object.keys(this.cmdMap);
+    }
+    static getCommandsPrompts(cmdAllow) {
+      return Object.values(this.cmdMap).map((item) => {
+        if (cmdAllow.includes(item.name)) {
+          return item.buildPrompt();
+        } else {
+          return null;
+        }
+      }).filter((item) => item !== null);
     }
     static handleCommands(ctx, msg, commands) {
       if (commands.length !== 0) {
@@ -69,82 +245,6 @@
   };
   CommandManager.cmdArgs = null;
   CommandManager.cmdMap = {};
-  var cmdDraw = new Command("deck");
-  cmdDraw.prompt = "抽取牌堆的命令:<$deck#牌堆的名字$>";
-  cmdDraw.solve = (ctx, msg, _, name) => {
-    const dr = seal.deck.draw(ctx, name, true);
-    if (!dr.exists) {
-      console.error(`牌堆${name}不存在:${dr.err}`);
-    }
-    const result = dr.result;
-    if (result == null) {
-      console.error(`牌堆${name}结果为空:${dr.err}`);
-    }
-    seal.replyToSender(ctx, msg, result);
-  };
-  CommandManager.registerCommand(cmdDraw);
-  var cmdRename = new Command("rename");
-  cmdRename.prompt = "设置群名片的命令:<$rename#要设置的名字$>";
-  cmdRename.solve = (ctx, msg, _, name) => {
-    try {
-      seal.setPlayerGroupCard(ctx, name);
-      seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>的群名片设置为<${name}>`);
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  CommandManager.registerCommand(cmdRename);
-  var cmdModuRoll = new Command("随机模组", "modu", "roll");
-  cmdModuRoll.prompt = "随机模组的命令:<$随机模组$>";
-  cmdModuRoll.solve = (ctx, msg, cmdArgs) => {
-    cmdModuRoll.handleCmdArgs(cmdArgs);
-    const ext = seal.ext.find("story");
-    ext.cmdMap["modu"].solve(ctx, msg, cmdArgs);
-  };
-  CommandManager.registerCommand(cmdModuRoll);
-  var cmdModuSearch = new Command("查询模组", "modu", "search");
-  cmdModuSearch.prompt = "查询模组的命令:<$查询模组#要查询的关键词$>";
-  cmdModuSearch.solve = (ctx, msg, cmdArgs, name) => {
-    cmdModuSearch.handleCmdArgs(cmdArgs, name);
-    const ext = seal.ext.find("story");
-    ext.cmdMap["modu"].solve(ctx, msg, cmdArgs);
-  };
-  CommandManager.registerCommand(cmdModuSearch);
-  var cmdRa = new Command("检定", "ra");
-  cmdRa.prompt = "进行检定的命令:<$检定#检定目的或技能名$>";
-  cmdRa.solve = (ctx, msg, cmdArgs, name) => {
-    cmdRa.handleCmdArgs(cmdArgs, name);
-    const ext = seal.ext.find("coc7");
-    ext.cmdMap["ra"].solve(ctx, msg, cmdArgs);
-  };
-  CommandManager.registerCommand(cmdRa);
-  var cmdStShow = new Command("show", "st", "show");
-  cmdStShow.prompt = "展示属性的指令:<$show$>";
-  cmdStShow.solve = (ctx, msg, cmdArgs) => {
-    cmdStShow.handleCmdArgs(cmdArgs);
-    const ext = seal.ext.find("coc7");
-    ext.cmdMap["st"].solve(ctx, msg, cmdArgs);
-  };
-  CommandManager.registerCommand(cmdStShow);
-  var cmdJrrp = new Command("今日人品", "jrrp");
-  cmdJrrp.prompt = "查看今日人品的指令:<$今日人品$>";
-  cmdJrrp.solve = (ctx, msg, cmdArgs) => {
-    cmdJrrp.handleCmdArgs(cmdArgs);
-    const ext = seal.ext.find("fun");
-    ext.cmdMap["jrrp"].solve(ctx, msg, cmdArgs);
-  };
-  CommandManager.registerCommand(cmdJrrp);
-  var cmdFace = new Command("face");
-  cmdFace.prompt = "";
-  cmdFace.solve = (ctx, msg, _, name) => {
-    const { localImages } = Config.getLocalImageConfig();
-    if (localImages.hasOwnProperty(name)) {
-      seal.replyToSender(ctx, msg, `[CQ:image,file=${localImages[name]}]`);
-    } else {
-      console.error(`本地图片${name}不存在`);
-    }
-  };
-  CommandManager.registerCommand(cmdFace);
 
   // src/utils/configUtils.ts
   var Config = class _Config {
@@ -212,6 +312,7 @@
         "我不好<$今日人品$>"
       ], "顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(this.ext, "是否开启AI调用命令功能", true, "");
+      seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", CommandManager.getCommandNames());
     }
     static getSystemMessageConfig(groupName) {
       const roleSetting = seal.ext.getTemplateConfig(this.ext, "角色设定")[0];
@@ -223,12 +324,11 @@
 当前群聊:${groupName}`
       };
       if (isCmd) {
-        const commandsPrompt = CommandManager.getCommandsPrompt();
-        const { localImages } = _Config.getLocalImageConfig();
-        const facePrompt = `发送表情的指令:<$face#表情名称$>,表情名称有:${Object.keys(localImages).join("，")}`;
+        const cmdAllow = seal.ext.getTemplateConfig(this.ext, "允许使用的AI命令");
+        const commandsPrompts = CommandManager.getCommandsPrompts(cmdAllow);
         systemMessage.content += `
 
-在对话中你可以使用以下命令：${commandsPrompt},${facePrompt}`;
+在对话中你可以使用以下命令：${commandsPrompts.join(",")}`;
       }
       const samplesMessages = samples.map((item, index) => {
         const role = index % 2 === 0 ? "user" : "assistant";
@@ -1007,9 +1107,10 @@
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.2");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.3");
       seal.ext.register(ext);
     }
+    CommandManager.init();
     Config.ext = ext;
     Config.register();
     const aim = new AIManager();
@@ -1476,6 +1577,7 @@
             seal.replyToSender(ctx, msg, result[i]);
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
+          aim.saveAI(id);
           return;
         } else {
           const pr = ai.privilege;
@@ -1495,6 +1597,7 @@
                 seal.replyToSender(ctx, msg, result[i]);
                 await new Promise((resolve) => setTimeout(resolve, 500));
               }
+              aim.saveAI(id);
               return;
             }
           }
@@ -1507,6 +1610,7 @@
                 seal.replyToSender(ctx, msg, result[i]);
                 await new Promise((resolve) => setTimeout(resolve, 500));
               }
+              aim.saveAI(id);
               return;
             }
           }
@@ -1520,6 +1624,7 @@
                 seal.replyToSender(ctx, msg, result[i]);
                 await new Promise((resolve) => setTimeout(resolve, 500));
               }
+              aim.saveAI(id);
               return;
             }
           }
@@ -1532,6 +1637,7 @@
                 seal.replyToSender(ctx, msg, result[i]);
                 await new Promise((resolve) => setTimeout(resolve, 500));
               }
+              aim.saveAI(id);
             }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
             return;
           }
