@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.0.3
+// @version      4.0.4
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -16,7 +16,8 @@
   function registerCmdDraw() {
     const cmdDraw = new Command("抽取");
     cmdDraw.buildPrompt = () => {
-      return "抽取牌堆的命令:<$抽取#牌堆的名字>";
+      const { decks } = ConfigManager.getDeckConfig();
+      return `抽取牌堆的命令:<$抽取#牌堆的名字>,牌堆的名字有:${decks.join("、")}。`;
     };
     cmdDraw.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -45,7 +46,7 @@
       if (imagesNames.length == 0) {
         return "暂无本地表情";
       }
-      return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("，")}。`;
+      return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("、")}。`;
     };
     cmdFace.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -256,6 +257,7 @@
       this.registerPrintLogConfig();
       this.registerRequestConfig();
       this.registerSystemMessageConfig();
+      this.registerDeckConfig();
       this.registerStorageConfig();
       this.registerMonitorCommandConfig();
       this.registerMonitorAllMessageConfig();
@@ -349,6 +351,13 @@ ${commandsPrompts.join(",\n")}`;
       }).filter((item) => item !== null);
       const systemMessages = [systemMessage, ...samplesMessages];
       return { systemMessages, isCmd };
+    }
+    static registerDeckConfig() {
+      seal.ext.registerTemplateConfig(this.ext, "提供给AI的牌堆名称", ["牌堆1", "牌堆2"], "");
+    }
+    static getDeckConfig() {
+      const decks = seal.ext.getTemplateConfig(this.ext, "提供给AI的牌堆名称");
+      return { decks };
     }
     static registerStorageConfig() {
       seal.ext.registerBoolConfig(this.ext, "是否在消息内添加前缀", true, "");
@@ -1124,7 +1133,7 @@ ${commandsPrompts.join(",\n")}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.3");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.4");
       seal.ext.register(ext);
     }
     CommandManager.init();
