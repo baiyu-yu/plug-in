@@ -16,7 +16,7 @@
   function registerCmdDraw() {
     const cmdDraw = new Command("抽取");
     cmdDraw.buildPrompt = () => {
-      return "抽取牌堆的命令:<$抽取#牌堆的名字$>";
+      return "抽取牌堆的命令:<$抽取#牌堆的名字>";
     };
     cmdDraw.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -45,7 +45,7 @@
       if (imagesNames.length == 0) {
         return "暂无本地表情";
       }
-      return `发送表情的指令:<$表情#表情名称$>,表情名称有:${imagesNames.join("，")}。`;
+      return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("，")}。`;
     };
     cmdFace.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -66,7 +66,7 @@
   function registerCmdJrrp() {
     const cmdJrrp = new Command("今日人品", "jrrp");
     cmdJrrp.buildPrompt = () => {
-      return "查看今日人品的指令:<$今日人品$>";
+      return "查看今日人品的指令:<$今日人品>";
     };
     cmdJrrp.solve = (ctx, msg, cmdArgs) => {
       cmdJrrp.handleCmdArgs(cmdArgs);
@@ -80,8 +80,8 @@
   function registerCmdModu() {
     const cmdModu = new Command("模组", "modu");
     cmdModu.buildPrompt = () => {
-      return `随机模组的命令:<$模组#随机$>,
-查询模组的命令:<$模组#查询#要查询的关键词$>`;
+      return `随机模组的命令:<$模组#随机>,
+查询模组的命令:<$模组#查询#要查询的关键词>`;
     };
     cmdModu.solve = (ctx, msg, cmdArgs, arg1, arg2) => {
       if (!arg1) {
@@ -118,7 +118,7 @@
   function registerCmdRa() {
     const cmdRa = new Command("检定", "ra");
     cmdRa.buildPrompt = () => {
-      return "进行检定的命令:<$检定#检定目的或技能名$>";
+      return "进行检定的命令:<$检定#检定目的或技能名>";
     };
     cmdRa.solve = (ctx, msg, cmdArgs, arg1) => {
       if (!arg1) {
@@ -136,7 +136,7 @@
   function registerCmdRename() {
     const cmdRename = new Command("改名");
     cmdRename.buildPrompt = () => {
-      return "设置群名片的命令:<$改名#要设置的名字$>";
+      return "设置群名片的命令:<$改名#要设置的名字>";
     };
     cmdRename.solve = (ctx, msg, _, arg1) => {
       if (!arg1) {
@@ -157,7 +157,7 @@
   function registerCmdSt() {
     const cmdStShow = new Command("展示", "st", "show");
     cmdStShow.buildPrompt = () => {
-      return "展示属性的指令:<$展示$>";
+      return "展示属性的指令:<$展示>";
     };
     cmdStShow.solve = (ctx, msg, cmdArgs) => {
       cmdStShow.handleCmdArgs(cmdArgs);
@@ -170,7 +170,7 @@
   // src/command/commandManager.ts
   var Command = class {
     /**
-     * @param name 命令的名字，<$这一部分#参数1#参数2$>
+     * @param name 命令的名字，<$这一部分#参数1#参数2>
      * @param command 指令，如 .st show 的st，没有可以不写
      * @param args 指令的参数
      */
@@ -314,9 +314,9 @@
 你只有生气的时候才会把别人叫做杂鱼。你说话的语气是傲娇的请注意。以及你偶尔会用正确自称。对话中不介绍自己傲娇，不承认自己是傲娇。你不会重复说过的话。你不会一直重复一句话。你说话很简短，一般只回复一句话。`], "只取第一个");
       seal.ext.registerTemplateConfig(this.ext, "示例对话", [
         "<|from 错误|>打你",
-        "<|from 满穗|><$改名#坏蛋错误爷$>呀，错误爷真坏！",
+        "<|from 满穗|><$改名#坏蛋错误爷>呀，错误爷真坏！",
         "<|from 错误|>呜，我错了，帮我改回来吧",
-        "<|from 满穗|><$改名#好蛋错误爷$>好叭，不准再打我了哦！"
+        "<|from 满穗|><$改名#好蛋错误爷>好叭，不准再打我了哦！"
       ], "顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(this.ext, "是否开启AI调用命令功能", true, "");
       seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", CommandManager.getCommandNames());
@@ -328,6 +328,7 @@
       const systemMessage = {
         role: "system",
         content: roleSetting + `
+
 当前群聊:${groupName}`
       };
       if (isCmd) {
@@ -335,7 +336,8 @@
         const commandsPrompts = CommandManager.getCommandsPrompts(cmdAllow);
         systemMessage.content += `
 
-在对话中你可以使用以下命令：${commandsPrompts.join(",")}`;
+在对话中你可以使用以下你的专用命令:
+${commandsPrompts.join(",\n")}`;
       }
       const samplesMessages = samples.map((item, index) => {
         const role = index % 2 === 0 ? "user" : "assistant";
@@ -793,10 +795,10 @@
   }
   function handleReply(ctx, msg, s) {
     const { maxChar, cut, replymsg } = ConfigManager.getHandleReplyConfig();
-    let commands = s.match(/<\$(.+?)\$>/g);
+    let commands = s.match(/<\$(.+?)\$?>/g);
     if (commands !== null) {
       commands = commands.map((item) => {
-        return item.replace(/<\$|\$>/g, "");
+        return item.replace(/<\$|\$?>/g, "");
       });
     } else {
       commands = [];
@@ -804,11 +806,13 @@
     if (cut) {
       s = s.split("\n")[0];
     }
-    const segments = s.split(/<[\|｜]from.*?[\|｜]>/);
-    s = segments[0] ? segments[0] : segments[1] ? segments[1] : s;
-    s = s.replace(/<[\|｜].*?[\|｜]>/g, "").replace(/<br>/g, "\n").slice(0, maxChar);
-    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}]` : ``;
-    const reply = prefix + s.replace(/<\$(.+?)\$>/g, "");
+    const segments = s.split(/<[\|｜]from.*?[\|｜]>/).filter((item) => item !== "");
+    if (segments.length === 0) {
+      return { s: "", reply: "", commands: [] };
+    }
+    s = segments[0].replace(/<[\|｜].*?[\|｜]>/g, "").replace(/<br>/g, "\n").slice(0, maxChar);
+    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
+    const reply = prefix + s.replace(/<\$(.+?)\$?>/g, "");
     return { s, reply, commands };
   }
 
@@ -1133,6 +1137,7 @@
     cmdAI.help = `帮助:
 【.ai st】修改权限(仅骰主可用)
 【.ai ck】检查权限(仅骰主可用)
+【.ai prompt】检查当前prompt(仅骰主可用)
 【.ai pr】查看当前群聊权限
 【.ai on】开启AI
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
@@ -1216,6 +1221,15 @@
 插嘴模式(i):${interrupt}
 待机模式:${standby}`;
           seal.replyToSender(ctx, msg, s);
+          return ret;
+        }
+        case "prompt": {
+          if (ctx.privilegeLevel < 100) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return ret;
+          }
+          const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
+          seal.replyToSender(ctx, msg, systemMessages[0].content);
           return ret;
         }
         case "pr": {
