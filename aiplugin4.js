@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.0.4
+// @version      4.1.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -19,7 +19,7 @@
       const { decks } = ConfigManager.getDeckConfig();
       return `抽取牌堆的命令:<$抽取#牌堆的名字>,牌堆的名字有:${decks.join("、")}。`;
     };
-    cmdDraw.solve = (ctx, msg, _, arg1) => {
+    cmdDraw.solve = (ctx, msg, _, __, arg1) => {
       if (!arg1) {
         console.error(`抽取牌堆需要一个牌堆的名字`);
         return;
@@ -48,7 +48,7 @@
       }
       return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("、")}。`;
     };
-    cmdFace.solve = (ctx, msg, _, arg1) => {
+    cmdFace.solve = (ctx, msg, _, __, arg1) => {
       if (!arg1) {
         console.error(`发送表情需要一个表情名称`);
         return;
@@ -63,13 +63,117 @@
     CommandManager.registerCommand(cmdFace);
   }
 
+  // src/utils/utils.ts
+  function getCQTypes(s) {
+    const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
+    if (match) {
+      return match.map((item) => item.match(/\[CQ:([^,]*?),/)[1]);
+    } else {
+      return [];
+    }
+  }
+  function getMsg(messageType, senderId, groupId = "") {
+    let msg = seal.newMessage();
+    if (messageType == "group") {
+      msg.groupId = groupId;
+      msg.guildId = "";
+    }
+    msg.messageType = messageType;
+    msg.sender.userId = senderId;
+    return msg;
+  }
+  function getCtx(epId, msg) {
+    const eps = seal.getEndPoints();
+    for (let i = 0; i < eps.length; i++) {
+      if (eps[i].userId === epId) {
+        return seal.createTempCtx(eps[i], msg);
+      }
+    }
+    return void 0;
+  }
+  function getNameById(epId, gid, uid, diceName) {
+    if (epId === uid) {
+      return diceName;
+    }
+    const msg = getMsg(gid === "" ? "private" : "group", uid, gid);
+    const ctx = getCtx(epId, msg);
+    return ctx.player.name || "未知用户";
+  }
+  function parseBody(template, messages) {
+    try {
+      const bodyObject = JSON.parse(`{${template.join(",")}}`);
+      if (bodyObject.messages === null) {
+        bodyObject.messages = messages;
+      }
+      if (bodyObject.stream !== false) {
+        console.error(`不支持流式传输，请将stream设置为false`);
+        bodyObject.stream = false;
+      }
+      return bodyObject;
+    } catch (err) {
+      throw new Error(`解析body时出现错误:${err}`);
+    }
+  }
+  function getUrlsInCQCode(s) {
+    const match = s.match(/\[CQ:image,file=(http.*?)\]/g);
+    if (match !== null) {
+      const urls = match.map((item) => item.match(/\[CQ:image,file=(http.*?)\]/)[1]);
+      return urls;
+    } else {
+      return [];
+    }
+  }
+  function levenshteinDistance(s1, s2) {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const dp = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
+    for (let i = 0; i <= len1; i++) {
+      dp[i][0] = i;
+    }
+    for (let j = 0; j <= len2; j++) {
+      dp[0][j] = j;
+    }
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (s1[i - 1] === s2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j] + 1,
+            // 删除
+            dp[i][j - 1] + 1,
+            // 插入
+            dp[i - 1][j - 1] + 1
+            // 替换
+          );
+        }
+      }
+    }
+    return dp[len1][len2];
+  }
+  function calculateSimilarity(s1, s2) {
+    if (s1.length === 0 || s2.length === 0) {
+      return 0;
+    }
+    const distance = levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    return 1 - distance / maxLength;
+  }
+
   // src/command/cmd_jrrp.ts
   function registerCmdJrrp() {
     const cmdJrrp = new Command("今日人品", "jrrp");
     cmdJrrp.buildPrompt = () => {
-      return "查看今日人品的指令:<$今日人品>";
+      return "查看今日人品的指令:<$今日人品#被查看的人的名字>";
     };
-    cmdJrrp.solve = (ctx, msg, cmdArgs) => {
+    cmdJrrp.solve = (ctx, msg, cmdArgs, context, arg1) => {
+      if (arg1) {
+        const uid = context.findUid(arg1);
+        if (uid !== null) {
+          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+          ctx = getCtx(ctx.endPoint.userId, msg);
+        }
+      }
       cmdJrrp.handleCmdArgs(cmdArgs);
       const ext = seal.ext.find("fun");
       ext.cmdMap["jrrp"].solve(ctx, msg, cmdArgs);
@@ -84,7 +188,7 @@
       return `随机模组的命令:<$模组#随机>,
 查询模组的命令:<$模组#查询#要查询的关键词>`;
     };
-    cmdModu.solve = (ctx, msg, cmdArgs, arg1, arg2) => {
+    cmdModu.solve = (ctx, msg, cmdArgs, _, arg1, arg2) => {
       if (!arg1) {
         console.error(`随机模组需要一个指令`);
         return;
@@ -119,14 +223,27 @@
   function registerCmdRa() {
     const cmdRa = new Command("检定", "ra");
     cmdRa.buildPrompt = () => {
-      return "进行检定的命令:<$检定#检定目的或技能名>";
+      return "进行检定的命令:<$检定#被检定人的名字#检定目的或技能名>";
     };
-    cmdRa.solve = (ctx, msg, cmdArgs, arg1) => {
+    cmdRa.solve = (ctx, msg, cmdArgs, context, arg1, arg2) => {
       if (!arg1) {
         console.error(`检定需要一个检定目的或技能名`);
         return;
       }
-      cmdRa.handleCmdArgs(cmdArgs, arg1);
+      if (arg2) {
+        const uid = context.findUid(arg1);
+        if (uid !== null) {
+          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+          ctx = getCtx(ctx.endPoint.userId, msg);
+        }
+      } else {
+        arg2 = arg1;
+      }
+      const [v, _] = seal.vars.intGet(ctx, arg2);
+      if (v == 0) {
+        arg2 += "50";
+      }
+      cmdRa.handleCmdArgs(cmdArgs, arg2);
       const ext = seal.ext.find("coc7");
       ext.cmdMap["ra"].solve(ctx, msg, cmdArgs);
     };
@@ -137,16 +254,25 @@
   function registerCmdRename() {
     const cmdRename = new Command("改名");
     cmdRename.buildPrompt = () => {
-      return "设置群名片的命令:<$改名#要设置的名字>";
+      return "设置群名片的命令:<$改名#被改名者的名字#要设置的名字>";
     };
-    cmdRename.solve = (ctx, msg, _, arg1) => {
+    cmdRename.solve = (ctx, msg, _, context, arg1, arg2) => {
       if (!arg1) {
         console.error(`改名需要一个名字`);
         return;
       }
+      if (arg2) {
+        const uid = context.findUid(arg1);
+        if (uid !== null) {
+          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+          ctx = getCtx(ctx.endPoint.userId, msg);
+        }
+      } else {
+        arg2 = arg1;
+      }
       try {
-        seal.setPlayerGroupCard(ctx, arg1);
-        seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>的群名片设置为<${arg1}>`);
+        seal.setPlayerGroupCard(ctx, arg2);
+        seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>的群名片设置为<${arg2}>`);
       } catch (e) {
         console.error(e);
       }
@@ -158,9 +284,16 @@
   function registerCmdSt() {
     const cmdStShow = new Command("展示", "st", "show");
     cmdStShow.buildPrompt = () => {
-      return "展示属性的指令:<$展示>";
+      return "展示属性的指令:<$展示#被展示者的名字>";
     };
-    cmdStShow.solve = (ctx, msg, cmdArgs) => {
+    cmdStShow.solve = (ctx, msg, cmdArgs, context, arg1) => {
+      if (arg1) {
+        const uid = context.findUid(arg1);
+        if (uid !== null) {
+          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+          ctx = getCtx(ctx.endPoint.userId, msg);
+        }
+      }
       cmdStShow.handleCmdArgs(cmdArgs);
       const ext = seal.ext.find("coc7");
       ext.cmdMap["st"].solve(ctx, msg, cmdArgs);
@@ -180,7 +313,7 @@
       this.command = command;
       this.args = args;
       this.buildPrompt = () => "";
-      this.solve = (_, __, ___) => {
+      this.solve = (_, __, ___, ____) => {
       };
     }
     /**
@@ -224,7 +357,7 @@
         }
       }).filter((item) => item !== null);
     }
-    static handleCommands(ctx, msg, commands) {
+    static handleCommands(ctx, msg, commands, context) {
       if (commands.length !== 0) {
         ConfigManager.printLog(`AI命令:`, JSON.stringify(commands));
       }
@@ -241,7 +374,7 @@
         const cmd = cmds[i][0];
         const args = cmds[i].slice(1);
         if (this.cmdMap.hasOwnProperty(cmd)) {
-          this.cmdMap[cmd].solve(ctx, msg, this.cmdArgs, ...args);
+          this.cmdMap[cmd].solve(ctx, msg, this.cmdArgs, context, ...args);
         } else {
           console.error(`AI命令${cmd}不存在`);
         }
@@ -257,6 +390,7 @@
       this.registerPrintLogConfig();
       this.registerRequestConfig();
       this.registerSystemMessageConfig();
+      this.registerPrefixConfig();
       this.registerDeckConfig();
       this.registerStorageConfig();
       this.registerMonitorCommandConfig();
@@ -265,7 +399,6 @@
       this.registerTriggerConfig();
       this.registerForgetConfig();
       this.registerHandleReplyConfig();
-      this.registerRepeatConfig();
       this.registerInterruptConfig();
       this.registerLocalImageConfig();
       this.registerImageConditionConfig();
@@ -316,9 +449,7 @@
 你只有生气的时候才会把别人叫做杂鱼。你说话的语气是傲娇的请注意。以及你偶尔会用正确自称。对话中不介绍自己傲娇，不承认自己是傲娇。你不会重复说过的话。你不会一直重复一句话。你说话很简短，一般只回复一句话。`], "只取第一个");
       seal.ext.registerTemplateConfig(this.ext, "示例对话", [
         "<|from 错误|>打你",
-        "<|from 满穗|><$改名#坏蛋错误爷>呀，错误爷真坏！",
-        "<|from 错误|>呜，我错了，帮我改回来吧",
-        "<|from 满穗|><$改名#好蛋错误爷>好叭，不准再打我了哦！"
+        "<|from 满穗|><$改名#错误#坏蛋错误爷>呀，错误爷真坏！"
       ], "顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(this.ext, "是否开启AI调用命令功能", true, "");
       seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", CommandManager.getCommandNames());
@@ -330,8 +461,11 @@
       const systemMessage = {
         role: "system",
         content: roleSetting + `
-
-当前群聊:${groupName}`
+当前群聊:${groupName}
+<@xxx>表示@群成员xxx`,
+        uid: "",
+        name: "",
+        timestamp: 0
       };
       if (isCmd) {
         const cmdAllow = seal.ext.getTemplateConfig(this.ext, "允许使用的AI命令");
@@ -346,11 +480,24 @@ ${commandsPrompts.join(",\n")}`;
         if (item == "") {
           return null;
         } else {
-          return { role, content: item };
+          return {
+            role,
+            content: item,
+            uid: "",
+            name: "",
+            timestamp: 0
+          };
         }
       }).filter((item) => item !== null);
       const systemMessages = [systemMessage, ...samplesMessages];
       return { systemMessages, isCmd };
+    }
+    static registerPrefixConfig() {
+      seal.ext.registerBoolConfig(this.ext, "是否在消息内添加前缀", true, "");
+    }
+    static getPrefixConfig() {
+      const isPrefix = seal.ext.getBoolConfig(this.ext, "是否在消息内添加前缀");
+      return { isPrefix };
     }
     static registerDeckConfig() {
       seal.ext.registerTemplateConfig(this.ext, "提供给AI的牌堆名称", ["牌堆1", "牌堆2"], "");
@@ -360,15 +507,13 @@ ${commandsPrompts.join(",\n")}`;
       return { decks };
     }
     static registerStorageConfig() {
-      seal.ext.registerBoolConfig(this.ext, "是否在消息内添加前缀", true, "");
       seal.ext.registerIntConfig(this.ext, "存储上下文对话限制轮数", 10, "");
       seal.ext.registerFloatConfig(this.ext, "上下文的缓存时间/min", 240, "可填小数，例如0.5");
     }
     static getStorageConfig() {
       const maxRounds = seal.ext.getIntConfig(this.ext, "存储上下文对话限制轮数");
-      const isPrefix = seal.ext.getBoolConfig(this.ext, "是否在消息内添加前缀");
       const ctxCacheTime = seal.ext.getFloatConfig(this.ext, "上下文的缓存时间/min");
-      return { maxRounds, isPrefix, ctxCacheTime };
+      return { maxRounds, ctxCacheTime };
     }
     static registerMonitorCommandConfig() {
       seal.ext.registerBoolConfig(this.ext, "是否录入指令消息", false, "");
@@ -426,21 +571,16 @@ ${commandsPrompts.join(",\n")}`;
       seal.ext.registerBoolConfig(this.ext, "回复是否引用", true, "");
       seal.ext.registerIntConfig(this.ext, "回复最大字数", 1e3, "防止最大Tokens限制不起效，仅对该插件生效");
       seal.ext.registerBoolConfig(this.ext, "回复换行截断", false, "");
+      seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
+      seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
     }
     static getHandleReplyConfig() {
       const maxChar = seal.ext.getIntConfig(this.ext, "回复最大字数");
       const cut = seal.ext.getBoolConfig(this.ext, "回复换行截断");
       const replymsg = seal.ext.getBoolConfig(this.ext, "回复是否引用");
-      return { maxChar, cut, replymsg };
-    }
-    static registerRepeatConfig() {
-      seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
-      seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
-    }
-    static getRepeatConfig() {
       const stopRepeat = seal.ext.getBoolConfig(this.ext, "禁止AI复读");
       const similarityLimit = seal.ext.getFloatConfig(this.ext, "视作复读的最低相似度");
-      return { stopRepeat, similarityLimit };
+      return { maxChar, cut, replymsg, stopRepeat, similarityLimit };
     }
     static registerInterruptConfig() {
       seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
@@ -546,103 +686,6 @@ ${commandsPrompts.join(",\n")}`;
     }
   };
 
-  // src/utils/utils.ts
-  function getCQTypes(s) {
-    const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
-    if (match) {
-      return match.map((item) => item.match(/\[CQ:([^,]*?),/)[1]);
-    } else {
-      return [];
-    }
-  }
-  function getMsg(messageType, senderId, groupId = "") {
-    let msg = seal.newMessage();
-    if (messageType == "group") {
-      msg.groupId = groupId;
-      msg.guildId = "";
-    }
-    msg.messageType = messageType;
-    msg.sender.userId = senderId;
-    return msg;
-  }
-  function getCtx(epId, msg) {
-    const eps = seal.getEndPoints();
-    for (let i = 0; i < eps.length; i++) {
-      if (eps[i].userId === epId) {
-        return seal.createTempCtx(eps[i], msg);
-      }
-    }
-    return void 0;
-  }
-  function getNameById(epId, gid, uid, diceName) {
-    if (epId === uid) {
-      return diceName;
-    }
-    const msg = getMsg(gid === "" ? "private" : "group", uid, gid);
-    const ctx = getCtx(epId, msg);
-    return ctx.player.name || "未知用户";
-  }
-  function parseBody(template, messages) {
-    try {
-      const bodyObject = JSON.parse(`{${template.join(",")}}`);
-      if (bodyObject.messages === null) {
-        bodyObject.messages = messages;
-      }
-      if (bodyObject.stream !== false) {
-        console.error(`不支持流式传输，请将stream设置为false`);
-        bodyObject.stream = false;
-      }
-      return bodyObject;
-    } catch (err) {
-      throw new Error(`解析body时出现错误:${err}`);
-    }
-  }
-  function getUrlsInCQCode(s) {
-    const match = s.match(/\[CQ:image,file=(http.*?)\]/g);
-    if (match !== null) {
-      const urls = match.map((item) => item.match(/\[CQ:image,file=(http.*?)\]/)[1]);
-      return urls;
-    } else {
-      return [];
-    }
-  }
-  function levenshteinDistance(s1, s2) {
-    const len1 = s1.length;
-    const len2 = s2.length;
-    const dp = Array.from({ length: len1 + 1 }, () => Array(len2 + 1).fill(0));
-    for (let i = 0; i <= len1; i++) {
-      dp[i][0] = i;
-    }
-    for (let j = 0; j <= len2; j++) {
-      dp[0][j] = j;
-    }
-    for (let i = 1; i <= len1; i++) {
-      for (let j = 1; j <= len2; j++) {
-        if (s1[i - 1] === s2[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1];
-        } else {
-          dp[i][j] = Math.min(
-            dp[i - 1][j] + 1,
-            // 删除
-            dp[i][j - 1] + 1,
-            // 插入
-            dp[i - 1][j - 1] + 1
-            // 替换
-          );
-        }
-      }
-    }
-    return dp[len1][len2];
-  }
-  function calculateSimilarity(s1, s2) {
-    if (s1.length === 0 || s2.length === 0) {
-      return 0;
-    }
-    const distance = levenshteinDistance(s1, s2);
-    const maxLength = Math.max(s1.length, s2.length);
-    return 1 - distance / maxLength;
-  }
-
   // src/image/imageManager.ts
   var ImageManager = class {
     constructor(id) {
@@ -667,6 +710,25 @@ ${commandsPrompts.join(",\n")}`;
     }
     saveImage() {
       ConfigManager.ext.storageSet(`image_${this.id}`, JSON.stringify(this));
+    }
+    async handleImageMessage(ctx, message) {
+      const { maxImageNum } = ConfigManager.getImageStorageConfig();
+      const urls = getUrlsInCQCode(message);
+      try {
+        const url = urls[0];
+        const reply = await this.imageToText(ctx, url);
+        if (reply) {
+          message = message.replace(/\[CQ:image,file=http.*?\]/, `<|图片:${reply}|>`);
+        }
+      } catch (error) {
+        console.error("Error in imageToText:", error);
+      }
+      message = message.replace(/\[CQ:image,file=.*?\]/, "<|图片|>");
+      if (urls.length !== 0) {
+        this.images = this.images.concat(urls).slice(-maxImageNum);
+        this.saveImage();
+      }
+      return message;
     }
     drawLocalImage() {
       const { localImages } = ConfigManager.getLocalImageConfig();
@@ -782,28 +844,8 @@ ${commandsPrompts.join(",\n")}`;
   };
 
   // src/utils/handleReplyUtils.ts
-  function repeatDetection(s, messages) {
-    const { stopRepeat, similarityLimit } = ConfigManager.getRepeatConfig();
-    if (!stopRepeat) {
-      return false;
-    }
-    const assContents = messages.map((item, index) => {
-      return item.role === "assistant" ? { index, content: item.content } : null;
-    }).filter((item) => item !== null);
-    if (assContents.length > 0) {
-      const { index, content } = assContents[assContents.length - 1];
-      const clearText = content.replace(/<[\|｜].*?[\|｜]>/g, "");
-      const similarity = calculateSimilarity(clearText.trim(), s.trim());
-      ConfigManager.printLog(`复读相似度：${similarity}`);
-      if (similarity > similarityLimit) {
-        messages.splice(index, 1);
-        return true;
-      }
-    }
-    return false;
-  }
-  function handleReply(ctx, msg, s) {
-    const { maxChar, cut, replymsg } = ConfigManager.getHandleReplyConfig();
+  function handleReply(ctx, msg, s, context) {
+    const { maxChar, cut, replymsg, stopRepeat, similarityLimit } = ConfigManager.getHandleReplyConfig();
     let commands = s.match(/<\$(.+?)\$?>/g);
     if (commands !== null) {
       commands = commands.map((item) => {
@@ -815,14 +857,37 @@ ${commandsPrompts.join(",\n")}`;
     if (cut) {
       s = s.split("\n")[0];
     }
-    const segments = s.split(/<[\|｜]from.*?[\|｜]>/).filter((item) => item !== "");
+    const segments = s.split(/<[\|｜].*?[\|｜]?>/).filter((item) => item !== "");
     if (segments.length === 0) {
-      return { s: "", reply: "", commands: [] };
+      return { s: "", reply: "", commands: [], isRepeat: false };
     }
-    s = segments[0].replace(/<[\|｜].*?[\|｜]>/g, "").replace(/<br>/g, "\n").slice(0, maxChar);
+    s = segments[0].replace(/<br>/g, "\n").slice(0, maxChar);
     const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
-    const reply = prefix + s.replace(/<\$(.+?)\$?>/g, "");
-    return { s, reply, commands };
+    const reply = prefix + s.replace(/<@(.+?)>/g, (_, p1) => {
+      const uid = context.findUid(p1);
+      if (uid !== null) {
+        return `[CQ:at,qq=${uid.replace(/\D+/g, "")}] `;
+      } else {
+        return ` @${p1} `;
+      }
+    }).replace(/<\$(.+?)\$?>/g, "");
+    let isRepeat = false;
+    if (stopRepeat) {
+      const assContents = context.messages.map((item, index) => {
+        return item.role === "assistant" ? { index, content: item.content } : null;
+      }).filter((item) => item !== null);
+      if (assContents.length > 0) {
+        const { index, content } = assContents[assContents.length - 1];
+        const clearText = content.replace(/<[\|｜].*?[\|｜]>/g, "");
+        const similarity = calculateSimilarity(clearText.trim(), s.trim());
+        ConfigManager.printLog(`复读相似度：${similarity}`);
+        if (similarity > similarityLimit) {
+          context.messages.splice(index, 1);
+          isRepeat = true;
+        }
+      }
+    }
+    return { s, reply, commands, isRepeat };
   }
 
   // src/utils/requestUtils.ts
@@ -874,23 +939,116 @@ ${commandsPrompts.join(",\n")}`;
     }
   }
 
+  // src/AI/context.ts
+  var Context = class _Context {
+    constructor() {
+      this.messages = [];
+      this.lastReply = "";
+      this.counter = 0;
+      this.timer = null;
+      this.interrupt = {
+        act: 0,
+        timestamp: 0
+      };
+    }
+    static parse(data) {
+      if (data === null || typeof data !== "object" || Array.isArray(data)) {
+        data = {};
+      }
+      const context = new _Context();
+      if (data.hasOwnProperty("messages") && Array.isArray(data.messages)) {
+        for (const message of data.messages) {
+          if (message.hasOwnProperty("role") && typeof message.role === "string" && message.hasOwnProperty("content") && typeof message.content === "string" && message.hasOwnProperty("uid") && typeof message.uid === "string" && message.hasOwnProperty("name") && typeof message.name === "string" && message.hasOwnProperty("timestamp") && typeof message.timestamp === "number") {
+            context.messages.push({
+              role: message.role,
+              content: message.content,
+              uid: message.uid,
+              name: message.name,
+              timestamp: message.timestamp
+            });
+          }
+        }
+      }
+      if (data.hasOwnProperty("lastReply") && typeof data.lastReply === "string") {
+        context.lastReply = data.lastReply;
+      }
+      if (data.hasOwnProperty("counter") && typeof data.counter === "number") {
+        context.counter = data.counter;
+      }
+      if (data.hasOwnProperty("timer") && typeof data.timer === "number") {
+        context.timer = data.timer;
+      }
+      if (data.hasOwnProperty("interrupt") && typeof data.interrupt === "object" && !Array.isArray(data.interrupt)) {
+        if (data.interrupt.hasOwnProperty("act") && typeof data.interrupt.act === "number") {
+          context.interrupt.act = data.interrupt.act;
+        }
+        if (data.interrupt.hasOwnProperty("timestamp") && typeof data.interrupt.timestamp === "number") {
+          context.interrupt.timestamp = data.interrupt.timestamp;
+        }
+      }
+      return context;
+    }
+    async iteration(ctx, s, role) {
+      const messages = this.messages;
+      const { maxRounds, ctxCacheTime } = ConfigManager.getStorageConfig();
+      const timestamp = Math.floor(Date.now() / 1e3);
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (timestamp - messages[i].timestamp > ctxCacheTime) {
+          messages.splice(0, i + 1);
+          break;
+        }
+      }
+      if (role === "assistant") {
+        s = s.replace(/\[图:.*?\]/g, "").replace(/\[语音:.*?\]/g, "").replace(/\[视频:.*?\]/g, "");
+      }
+      s = s.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, "").replace(/\[CQ:at,qq=(\d+)\]/g, (_, p1) => {
+        const epId = ctx.endPoint.userId;
+        const gid = ctx.group.groupId;
+        const uid2 = `QQ:${p1}`;
+        const dice_name = seal.formatTmpl(ctx, "核心:骰子名字");
+        return `<@${getNameById(epId, gid, uid2, dice_name)}>`;
+      }).replace(/\[CQ:.*?\]/g, "");
+      const name = role == "user" ? ctx.player.name : seal.formatTmpl(ctx, "核心:骰子名字");
+      const uid = role == "user" ? ctx.player.userId : ctx.endPoint.userId;
+      const rounds = messages.length;
+      if (rounds !== 0 && messages[rounds - 1].name === name) {
+        this.messages[rounds - 1].content += " " + s;
+      } else {
+        const message = {
+          role,
+          content: s,
+          uid,
+          name,
+          timestamp
+        };
+        messages.push(message);
+      }
+      if (rounds > maxRounds) {
+        this.messages = messages.slice(-maxRounds);
+      }
+    }
+    findUid(name) {
+      const messages = this.messages;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (name === messages[i].name) {
+          return messages[i].uid;
+        }
+        if (name.length > 5) {
+          const distance = levenshteinDistance(name, messages[i].name);
+          if (distance <= 2) {
+            return messages[i].uid;
+          }
+        }
+      }
+      return null;
+    }
+  };
+
   // src/AI/AI.ts
   var AI = class _AI {
     constructor(id) {
       this.id = id;
-      this.context = {
-        messages: [],
-        timestamp: 0,
-        lastReply: ""
-      };
-      this.data = {
-        counter: 0,
-        timer: null,
-        interrupt: {
-          act: 0,
-          timestamp: 0
-        }
-      };
+      this.context = new Context();
       this.privilege = {
         limit: 100,
         counter: -1,
@@ -909,31 +1067,7 @@ ${commandsPrompts.join(",\n")}`;
       }
       const ai = new _AI(id);
       if (data.hasOwnProperty("context") && typeof data.context === "object" && !Array.isArray(data.context)) {
-        if (data.context.hasOwnProperty("messages") && Array.isArray(data.context.messages)) {
-          ai.context.messages = data.context.messages;
-        }
-        if (data.context.hasOwnProperty("timestamp") && typeof data.context.timestamp === "number") {
-          ai.context.timestamp = data.context.timestamp;
-        }
-        if (data.context.hasOwnProperty("lastReply") && typeof data.context.lastReply === "string") {
-          ai.context.lastReply = data.context.lastReply;
-        }
-      }
-      if (data.hasOwnProperty("data") && typeof data.data === "object" && !Array.isArray(data.data)) {
-        if (data.data.hasOwnProperty("counter") && typeof data.data.counter === "number") {
-          ai.data.counter = data.data.counter;
-        }
-        if (data.data.hasOwnProperty("timer") && typeof data.data.timer === "number") {
-          ai.data.timer = data.data.timer;
-        }
-        if (data.data.hasOwnProperty("interrupt") && typeof data.data.interrupt === "object" && !Array.isArray(data.data.interrupt)) {
-          if (data.data.interrupt.hasOwnProperty("act") && typeof data.data.interrupt.act === "number") {
-            ai.data.interrupt.act = data.data.interrupt.act;
-          }
-          if (data.data.interrupt.hasOwnProperty("timestamp") && typeof data.data.interrupt.timestamp === "number") {
-            ai.data.interrupt.timestamp = data.data.interrupt.timestamp;
-          }
-        }
+        ai.context = Context.parse(data.context);
       }
       if (data.hasOwnProperty("privilege") && typeof data.privilege === "object" && !Array.isArray(data.privilege)) {
         if (data.privilege.hasOwnProperty("limit") && typeof data.privilege.limit === "number") {
@@ -958,61 +1092,34 @@ ${commandsPrompts.join(",\n")}`;
       return ai;
     }
     clearData() {
-      clearTimeout(this.data.timer);
-      this.data.timer = null;
-      this.data.counter = 0;
-      this.data.interrupt.act = 0;
-    }
-    async iteration(ctx, s, role) {
-      const messages = this.context.messages;
-      const contextTs = this.context.timestamp;
-      const { maxRounds, isPrefix, ctxCacheTime } = ConfigManager.getStorageConfig();
-      const timestamp = parseInt(seal.format(ctx, "{$tTimestamp}"));
-      if (timestamp - contextTs > ctxCacheTime * 60) {
-        this.context.messages = [];
-      }
-      this.context.timestamp = timestamp;
-      const CQTypes = getCQTypes(s);
-      if (CQTypes.includes("image")) {
-        const urls = getUrlsInCQCode(s);
-        const url = urls[0];
-        try {
-          const reply = await this.image.imageToText(ctx, url);
-          s = s.replace(/\[CQ:image,file=http.*?\]/, `<|${reply}|>`);
-        } catch (error) {
-          console.error("Error in imageToText:", error);
-        }
-        s = s.replace(/\[CQ:image,file=.*?\]/, "<|图片|>");
-      }
-      if (role === "assistant") {
-        s = s.replace(/\[图:.*?\]/g, "").replace(/\[语音:.*?\]/g, "").replace(/\[视频:.*?\]/g, "");
-      }
-      s = s.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, "").replace(/\[CQ:at,qq=(\d+)\]/g, (_, p1) => {
-        const epId = ctx.endPoint.userId;
-        const gid = ctx.group.groupId;
-        const uid = `QQ:${p1}`;
-        const dice_name = seal.formatTmpl(ctx, "核心:骰子名字");
-        return `@${getNameById(epId, gid, uid, dice_name)}`;
-      }).replace(/\[CQ:.*?\]/g, "");
-      const senderName = role == "user" ? ctx.player.name : seal.formatTmpl(ctx, "核心:骰子名字");
-      const rounds = messages.length;
-      if (rounds !== 0 && messages[rounds - 1].content.includes(`<|from ${senderName}|>`)) {
-        this.context.messages[rounds - 1].content += " " + s;
-      } else {
-        const prefix = isPrefix ? `<|from ${senderName}|> ` : ``;
-        s = prefix + s;
-        const message = { role, content: s };
-        messages.push(message);
-      }
-      if (rounds > maxRounds) {
-        this.context.messages = messages.slice(-maxRounds);
-      }
+      clearTimeout(this.context.timer);
+      this.context.timer = null;
+      this.context.counter = 0;
+      this.context.interrupt.act = 0;
     }
     async getReply(ctx, msg, systemMessages, retry = 0) {
       const messages = [...systemMessages, ...this.context.messages];
-      const raw_reply = await sendRequest(messages);
-      const { s, reply, commands } = handleReply(ctx, msg, raw_reply);
-      if (repeatDetection(reply, this.context.messages) && reply !== "") {
+      let processedMessages = [];
+      const isPrefix = ConfigManager.getPrefixConfig();
+      if (isPrefix) {
+        processedMessages = messages.map((message) => {
+          const prefix = `<|from:${message.name}|>`;
+          return {
+            role: message.role,
+            content: prefix + message.content
+          };
+        });
+      } else {
+        processedMessages = messages.map((message) => {
+          return {
+            role: message.role,
+            content: message.content
+          };
+        });
+      }
+      const raw_reply = await sendRequest(processedMessages);
+      const { s, reply, commands, isRepeat } = handleReply(ctx, msg, raw_reply, this.context);
+      if (isRepeat && reply !== "") {
         if (retry == 3) {
           ConfigManager.printLog(`发现复读，已达到最大重试次数，清除AI上下文`);
           this.context.messages = messages.filter((item) => item.role != "assistant");
@@ -1035,10 +1142,10 @@ ${commandsPrompts.join(",\n")}`;
       const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
       const { s, reply, commands } = await this.getReply(ctx, msg, systemMessages);
       this.context.lastReply = reply;
-      await this.iteration(ctx, s, "assistant");
+      await this.context.iteration(ctx, s, "assistant");
       seal.replyToSender(ctx, msg, reply);
       if (isCmd && commands.length !== 0) {
-        CommandManager.handleCommands(ctx, msg, commands);
+        CommandManager.handleCommands(ctx, msg, commands, this.context);
       }
       const { p } = ConfigManager.getImageProbabilityConfig();
       if (Math.random() <= p) {
@@ -1052,16 +1159,16 @@ ${commandsPrompts.join(",\n")}`;
     async getAct() {
       const { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime } = ConfigManager.getInterruptConfig();
       const timestamp = Math.floor(Date.now() / 1e3);
-      if (timestamp < this.data.interrupt.timestamp) {
+      if (timestamp < this.context.interrupt.timestamp) {
         return 0;
       }
-      this.data.interrupt.timestamp = timestamp + cacheTime;
+      this.context.interrupt.timestamp = timestamp + cacheTime;
       if (this.isGettingAct) {
         return 0;
       }
       this.isGettingAct = true;
-      clearTimeout(this.data.timer);
-      this.data.timer = null;
+      clearTimeout(this.context.timer);
+      this.context.timer = null;
       const systemMessage = {
         role: "system",
         content: `你是QQ群里的群员，你感兴趣的话题有:${topics}...你现在要决定参与话题的积极性，不要说多余的话，请只回复1~10之间的数字，请只回复1~10之间的数字，需要分析的对话如下:`
@@ -1086,10 +1193,10 @@ ${commandsPrompts.join(",\n")}`;
           if (isNaN(act) || act < 1 || act > 10) {
             throw new Error("AI 返回的积极性数值无效");
           }
-          if (this.data.interrupt.act === 0) {
-            this.data.interrupt.act = act;
+          if (this.context.interrupt.act === 0) {
+            this.context.interrupt.act = act;
           } else {
-            this.data.interrupt.act = this.data.interrupt.act * 0.2 + act * 0.8;
+            this.context.interrupt.act = this.context.interrupt.act * 0.2 + act * 0.8;
           }
         } else {
           throw new Error("服务器响应中没有choices或choices为空");
@@ -1098,7 +1205,7 @@ ${commandsPrompts.join(",\n")}`;
         console.error("在getAct中出错：", error);
       }
       this.isGettingAct = false;
-      return this.data.interrupt.act;
+      return this.context.interrupt.act;
     }
   };
 
@@ -1133,7 +1240,7 @@ ${commandsPrompts.join(",\n")}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.0.4");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.1.0");
       seal.ext.register(ext);
     }
     CommandManager.init();
@@ -1564,7 +1671,7 @@ ${commandsPrompts.join(",\n")}`;
       const userId = ctx.player.userId;
       const groupId = ctx.group.groupId;
       const id = ctx.isPrivate ? userId : groupId;
-      const message = msg.message;
+      let message = msg.message;
       const ai = aim.getAI(id);
       const { clearWords, clearReplys } = ConfigManager.getForgetConfig();
       if (clearWords.some((item) => message === item)) {
@@ -1591,24 +1698,19 @@ ${commandsPrompts.join(",\n")}`;
         }
       }
       const CQTypes = getCQTypes(message);
-      if (CQTypes.includes("image") && ai.image.stealStatus) {
-        const { maxImageNum } = ConfigManager.getImageStorageConfig();
-        const urls = getUrlsInCQCode(message);
-        if (urls.length !== 0) {
-          ai.image.images = ai.image.images.concat(urls).slice(-maxImageNum);
-          ai.image.saveImage();
-        }
-      }
       if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
+        if (CQTypes.includes("image") && ai.image.stealStatus) {
+          message = await ai.image.handleImageMessage(ctx, message);
+        }
         const { trigger: trigger2, condition: condition2 } = ConfigManager.getTriggerConfig(message);
-        clearTimeout(ai.data.timer);
-        ai.data.timer = null;
+        clearTimeout(ai.context.timer);
+        ai.context.timer = null;
         if (trigger2) {
           const fmtCondition = parseInt(seal.format(ctx, `{${condition2}}`));
           if (fmtCondition == 0) {
             return;
           }
-          await ai.iteration(ctx, message, "user");
+          await ai.context.iteration(ctx, message, "user");
           ConfigManager.printLog("非指令触发回复");
           await ai.chat(ctx, msg);
           aim.saveAI(id);
@@ -1616,13 +1718,13 @@ ${commandsPrompts.join(",\n")}`;
         } else {
           const pr = ai.privilege;
           if (pr.standby) {
-            await ai.iteration(ctx, message, "user");
+            await ai.context.iteration(ctx, message, "user");
           }
           if (pr.counter > -1) {
-            ai.data.counter += 1;
-            if (ai.data.counter >= pr.counter) {
+            ai.context.counter += 1;
+            if (ai.context.counter >= pr.counter) {
               ConfigManager.printLog("计数器触发回复");
-              ai.data.counter = 0;
+              ai.context.counter = 0;
               await ai.chat(ctx, msg);
               aim.saveAI(id);
               return;
@@ -1641,16 +1743,16 @@ ${commandsPrompts.join(",\n")}`;
             const act = await ai.getAct();
             if (act >= pr.interrupt) {
               ConfigManager.printLog(`插嘴触发回复:${act}`);
-              ai.data.interrupt.act = 0;
+              ai.context.interrupt.act = 0;
               await ai.chat(ctx, msg);
               aim.saveAI(id);
               return;
             }
           }
           if (pr.timer > -1) {
-            ai.data.timer = setTimeout(async () => {
+            ai.context.timer = setTimeout(async () => {
               ConfigManager.printLog("计时器触发回复");
-              ai.data.timer = null;
+              ai.context.timer = null;
               await ai.chat(ctx, msg);
               aim.saveAI(id);
             }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
@@ -1673,7 +1775,7 @@ ${commandsPrompts.join(",\n")}`;
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
-            await ai.iteration(ctx, message, "user");
+            await ai.context.iteration(ctx, message, "user");
           }
         }
       }
@@ -1694,7 +1796,7 @@ ${commandsPrompts.join(",\n")}`;
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
-            await ai.iteration(ctx, message, "assistant");
+            await ai.context.iteration(ctx, message, "assistant");
             return;
           }
         }
