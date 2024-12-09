@@ -508,7 +508,7 @@ ${commandsPrompts.join(",\n")}`;
     }
     static getStorageConfig() {
       const maxRounds = seal.ext.getIntConfig(this.ext, "存储上下文对话限制轮数");
-      const ctxCacheTime = seal.ext.getFloatConfig(this.ext, "上下文的缓存时间/min");
+      const ctxCacheTime = seal.ext.getFloatConfig(this.ext, "上下文的缓存时间/min") * 60;
       return { maxRounds, ctxCacheTime };
     }
     static registerMonitorCommandConfig() {
@@ -609,7 +609,6 @@ ${commandsPrompts.join(",\n")}`;
       }
       ;
       const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "插嘴body");
-      ;
       const ctxLength = seal.ext.getIntConfig(this.ext, "参与插嘴检测的上下文轮数");
       const topics = seal.ext.getStringConfig(this.ext, "进行插嘴检测的话题");
       const maxChar = seal.ext.getIntConfig(this.ext, "参与插嘴检测的最大字数");
