@@ -171,6 +171,7 @@
         const uid = context.findUid(arg1);
         if (uid === null) {
           console.error(`未找到<${arg1}>`);
+          return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
         ctx = getCtx(ctx.endPoint.userId, msg);
@@ -238,6 +239,7 @@
         const uid = context.findUid(arg1);
         if (uid === null) {
           console.error(`未找到<${arg1}>`);
+          return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
         ctx = getCtx(ctx.endPoint.userId, msg);
@@ -273,6 +275,7 @@
         const uid = context.findUid(arg1);
         if (uid === null) {
           console.error(`未找到<${arg1}>`);
+          return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
         ctx = getCtx(ctx.endPoint.userId, msg);
@@ -303,6 +306,7 @@
         const uid = context.findUid(arg1);
         if (uid === null) {
           console.error(`未找到<${arg1}>`);
+          return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
         ctx = getCtx(ctx.endPoint.userId, msg);
