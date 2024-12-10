@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.1.0
+// @version      4.1.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -169,9 +169,13 @@
     cmdJrrp.solve = (ctx, msg, cmdArgs, context, arg1) => {
       if (arg1) {
         const uid = context.findUid(arg1);
-        if (uid !== null) {
-          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
-          ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === null) {
+          console.error(`未找到<${arg1}>`);
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
         }
       }
       cmdJrrp.handleCmdArgs(cmdArgs);
@@ -232,9 +236,13 @@
       }
       if (arg2) {
         const uid = context.findUid(arg1);
-        if (uid !== null) {
-          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
-          ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === null) {
+          console.error(`未找到<${arg1}>`);
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
         }
       } else {
         arg2 = arg1;
@@ -263,9 +271,13 @@
       }
       if (arg2) {
         const uid = context.findUid(arg1);
-        if (uid !== null) {
-          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
-          ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === null) {
+          console.error(`未找到<${arg1}>`);
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
         }
       } else {
         arg2 = arg1;
@@ -289,9 +301,13 @@
     cmdStShow.solve = (ctx, msg, cmdArgs, context, arg1) => {
       if (arg1) {
         const uid = context.findUid(arg1);
-        if (uid !== null) {
-          msg = getMsg(msg.messageType, uid, ctx.group.groupId);
-          ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === null) {
+          console.error(`未找到<${arg1}>`);
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
         }
       }
       cmdStShow.handleCmdArgs(cmdArgs);
@@ -345,9 +361,6 @@
     static registerCommand(cmd) {
       this.cmdMap[cmd.name] = cmd;
     }
-    static getCommandNames() {
-      return Object.keys(this.cmdMap);
-    }
     static getCommandsPrompts(cmdAllow) {
       return Object.values(this.cmdMap).map((item) => {
         if (cmdAllow.includes(item.name)) {
@@ -365,8 +378,8 @@
         ConfigManager.printLog(`暂时无法使用AI命令，请先使用任意指令`);
         return;
       }
-      if (commands.length > 10) {
-        console.error(`AI命令数量过多，请限制在10个以内`);
+      if (commands.length > 5) {
+        console.error(`AI命令数量过多，请限制在5个以内`);
         return;
       }
       const cmds = commands.map((item) => item.split("#"));
@@ -448,7 +461,15 @@
         "<|from:满穗|><$改名#错误#坏蛋错误爷>呀，错误爷真坏！"
       ], "顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(this.ext, "是否开启AI调用命令功能", true, "");
-      seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", CommandManager.getCommandNames());
+      seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", [
+        "抽取",
+        "表情",
+        "今日人品",
+        "模组",
+        "检定",
+        "改名",
+        "展示"
+      ]);
     }
     static getSystemMessageConfig(groupName) {
       const roleSetting = seal.ext.getTemplateConfig(this.ext, "角色设定")[0];
@@ -1037,6 +1058,15 @@ ${commandsPrompts.join(",\n")}`;
       }
       return null;
     }
+    getNames() {
+      const names = [];
+      for (const message of this.messages) {
+        if (message.role === "user" && message.name && !names.includes(message.name)) {
+          names.push(message.name);
+        }
+      }
+      return names;
+    }
   };
 
   // src/AI/AI.ts
@@ -1235,12 +1265,12 @@ ${commandsPrompts.join(",\n")}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.1.0");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.1.1");
       seal.ext.register(ext);
     }
-    CommandManager.init();
     ConfigManager.ext = ext;
     ConfigManager.register();
+    CommandManager.init();
     const aim = new AIManager();
     const CQTypesAllow = ["at", "image", "reply", "face"];
     const cmdAI = seal.ext.newCmdItemInfo();
@@ -1250,6 +1280,7 @@ ${commandsPrompts.join(",\n")}`;
 【.ai ck】检查权限(仅骰主可用)
 【.ai prompt】检查当前prompt(仅骰主可用)
 【.ai pr】查看当前群聊权限
+【.ai ctxn】查看上下文里的名字
 【.ai on】开启AI
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
 【.ai off】关闭AI，此时仍能用关键词触发
@@ -1361,6 +1392,18 @@ ${commandsPrompts.join(",\n")}`;
 概率模式(p):${prob}
 插嘴模式(i):${interrupt}
 待机模式:${standby}`;
+          seal.replyToSender(ctx, msg, s);
+          return ret;
+        }
+        case "ctxn": {
+          const pr = ai.privilege;
+          if (ctx.privilegeLevel < pr.limit) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return ret;
+          }
+          const names = ai.context.getNames();
+          const s = `上下文里的名字有：
+<${names.join(">\n<")}>`;
           seal.replyToSender(ctx, msg, s);
           return ret;
         }
