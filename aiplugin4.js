@@ -144,7 +144,6 @@
         const group_id = ctx.group.groupId.replace(/\D+/g, "");
         const user_id = ctx.player.userId.replace(/\D+/g, "");
         globalThis.http.getData(epId, `set_group_ban?group_id=${group_id}&user_id=${user_id}&duration=${arg2}`);
-        seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>禁言<${arg2}>秒`);
       } catch (e) {
         console.error(e);
       }
