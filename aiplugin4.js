@@ -12,57 +12,6 @@
 // ==/UserScript==
 
 (() => {
-  // src/command/cmd_draw.ts
-  function registerCmdDraw() {
-    const cmdDraw = new Command("抽取");
-    cmdDraw.buildPrompt = () => {
-      const { decks } = ConfigManager.getDeckConfig();
-      return `抽取牌堆的命令:<$抽取#牌堆的名字>,牌堆的名字有:${decks.join("、")}。`;
-    };
-    cmdDraw.solve = (ctx, msg, _, __, arg1) => {
-      if (!arg1) {
-        console.error(`抽取牌堆需要一个牌堆的名字`);
-        return;
-      }
-      const dr = seal.deck.draw(ctx, arg1, true);
-      if (!dr.exists) {
-        console.error(`牌堆${arg1}不存在:${dr.err}`);
-      }
-      const result = dr.result;
-      if (result == null) {
-        console.error(`牌堆${arg1}结果为空:${dr.err}`);
-      }
-      seal.replyToSender(ctx, msg, result);
-    };
-    CommandManager.registerCommand(cmdDraw);
-  }
-
-  // src/command/cmd_face.ts
-  function registerCmdFace() {
-    const cmdFace = new Command("表情");
-    cmdFace.buildPrompt = () => {
-      const { localImages } = ConfigManager.getLocalImageConfig();
-      const imagesNames = Object.keys(localImages);
-      if (imagesNames.length == 0) {
-        return "暂无本地表情";
-      }
-      return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("、")}。`;
-    };
-    cmdFace.solve = (ctx, msg, _, __, arg1) => {
-      if (!arg1) {
-        console.error(`发送表情需要一个表情名称`);
-        return;
-      }
-      const { localImages } = ConfigManager.getLocalImageConfig();
-      if (localImages.hasOwnProperty(arg1)) {
-        seal.replyToSender(ctx, msg, `[CQ:image,file=${localImages[arg1]}]`);
-      } else {
-        console.error(`本地图片${arg1}不存在`);
-      }
-    };
-    CommandManager.registerCommand(cmdFace);
-  }
-
   // src/utils/utils.ts
   function getCQTypes(s) {
     const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
@@ -158,6 +107,100 @@
     const distance = levenshteinDistance(s1, s2);
     const maxLength = Math.max(s1.length, s2.length);
     return 1 - distance / maxLength;
+  }
+
+  // src/command/cmd_ban.ts
+  function registerCmdBan() {
+    const cmdBan = new Command("禁言");
+    cmdBan.buildPrompt = () => {
+      return "禁言别人的命令:<$禁言#被禁言者的名字#要设置的禁言秒数>";
+    };
+    cmdBan.solve = (ctx, msg, _, context, arg1, arg2) => {
+      const extHttp = seal.ext.find("HTTP依赖");
+      if (!extHttp) {
+        console.error(`未找到HTTP依赖`);
+        return;
+      }
+      if (!arg1) {
+        console.error(`禁言需要一个名字`);
+        return;
+      }
+      if (arg2) {
+        const uid = context.findUid(arg1);
+        if (uid === null) {
+          console.error(`未找到<${arg1}>`);
+          return;
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
+        }
+      } else {
+        arg2 = "2400";
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = ctx.player.userId.replace(/\D+/g, "");
+        globalThis.http.getData(epId, `set_group_ban?group_id=${group_id}&user_id=${user_id}&duration=${arg2}`);
+        seal.replyToSender(ctx, msg, `已将<${ctx.player.name}>禁言<${arg2}>秒`);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    CommandManager.registerCommand(cmdBan);
+  }
+
+  // src/command/cmd_draw.ts
+  function registerCmdDraw() {
+    const cmdDraw = new Command("抽取");
+    cmdDraw.buildPrompt = () => {
+      const { decks } = ConfigManager.getDeckConfig();
+      return `抽取牌堆的命令:<$抽取#牌堆的名字>,牌堆的名字有:${decks.join("、")}。`;
+    };
+    cmdDraw.solve = (ctx, msg, _, __, arg1) => {
+      if (!arg1) {
+        console.error(`抽取牌堆需要一个牌堆的名字`);
+        return;
+      }
+      const dr = seal.deck.draw(ctx, arg1, true);
+      if (!dr.exists) {
+        console.error(`牌堆${arg1}不存在:${dr.err}`);
+      }
+      const result = dr.result;
+      if (result == null) {
+        console.error(`牌堆${arg1}结果为空:${dr.err}`);
+      }
+      seal.replyToSender(ctx, msg, result);
+    };
+    CommandManager.registerCommand(cmdDraw);
+  }
+
+  // src/command/cmd_face.ts
+  function registerCmdFace() {
+    const cmdFace = new Command("表情");
+    cmdFace.buildPrompt = () => {
+      const { localImages } = ConfigManager.getLocalImageConfig();
+      const imagesNames = Object.keys(localImages);
+      if (imagesNames.length == 0) {
+        return "暂无本地表情";
+      }
+      return `发送表情的指令:<$表情#表情名称>,表情名称有:${imagesNames.join("、")}。`;
+    };
+    cmdFace.solve = (ctx, msg, _, __, arg1) => {
+      if (!arg1) {
+        console.error(`发送表情需要一个表情名称`);
+        return;
+      }
+      const { localImages } = ConfigManager.getLocalImageConfig();
+      if (localImages.hasOwnProperty(arg1)) {
+        seal.replyToSender(ctx, msg, `[CQ:image,file=${localImages[arg1]}]`);
+      } else {
+        console.error(`本地图片${arg1}不存在`);
+      }
+    };
+    CommandManager.registerCommand(cmdFace);
   }
 
   // src/command/cmd_jrrp.ts
@@ -361,6 +404,7 @@
       registerCmdRa();
       registerCmdRename();
       registerCmdSt();
+      registerCmdBan();
     }
     static registerCommand(cmd) {
       this.cmdMap[cmd.name] = cmd;
