@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.2.0
-// @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
+// @version      4.2.1
+// @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情、记忆、戳一戳、ai语音、群禁言\n部分功能需求使用http依赖插件
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
 // @license      MIT
@@ -12,6 +12,63 @@
 // ==/UserScript==
 
 (() => {
+  // src/command/cmd_aitts.ts
+  var characterMap = {
+    "小新": "lucy-voice-laibixiaoxin",
+    "猴哥": "lucy-voice-houge",
+    "四郎": "lucy-voice-silang",
+    "东北老妹儿": "lucy-voice-guangdong-f1",
+    "广西大表哥": "lucy-voice-guangxi-m1",
+    "妲己": "lucy-voice-daji",
+    "霸道总裁": "lucy-voice-lizeyan",
+    "酥心御姐": "lucy-voice-suxinjiejie",
+    "说书先生": "lucy-voice-m8",
+    "憨憨小弟": "lucy-voice-male1",
+    "憨厚老哥": "lucy-voice-male3",
+    "吕布": "lucy-voice-lvbu",
+    "元气少女": "lucy-voice-xueling",
+    "文艺少女": "lucy-voice-f37",
+    "磁性大叔": "lucy-voice-male2",
+    "邻家小妹": "lucy-voice-female1",
+    "低沉男声": "lucy-voice-m14",
+    "傲娇少女": "lucy-voice-f38",
+    "爹系男友": "lucy-voice-m101",
+    "暖心姐姐": "lucy-voice-female2",
+    "温柔妹妹": "lucy-voice-f36",
+    "书香少女": "lucy-voice-f34"
+  };
+  function registerCmdAitts() {
+    const cmdAitts = new Command("语音");
+    cmdAitts.buildPrompt = () => {
+      return "发送语音的命令:<$语音#发送语音的内容>";
+    };
+    cmdAitts.solve = (ctx, _, __, ___, arg1) => {
+      const extHttp = seal.ext.find("HTTP依赖");
+      if (!extHttp) {
+        console.error(`未找到HTTP依赖`);
+        return;
+      }
+      if (!arg1) {
+        console.error(`没有发送语音的内容`);
+        return;
+      }
+      try {
+        const { character } = ConfigManager.getAittsCharacterConfig();
+        const characterId = characterMap[character];
+        if (!characterId) {
+          console.error(`未找到对应的 character_id: ${character}`);
+          return;
+        }
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        globalThis.http.getData(epId, `send_group_ai_record?character=${characterId}&group_id=${group_id}&text=${arg1}`);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    CommandManager.registerCommand(cmdAitts);
+  }
+
   // src/utils/utils.ts
   function getCQTypes(s) {
     const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
@@ -398,6 +455,44 @@
     CommandManager.registerCommand(cmdStShow);
   }
 
+  // src/command/cmd_poke.ts
+  function registerCmdPoke() {
+    const cmdPoke = new Command("戳");
+    cmdPoke.buildPrompt = () => {
+      return "戳戳别人的命令:<$戳#被戳的名字>";
+    };
+    cmdPoke.solve = (ctx, msg, _, context, arg1) => {
+      const extHttp = seal.ext.find("HTTP依赖");
+      if (!extHttp) {
+        console.error(`未找到HTTP依赖`);
+        return;
+      }
+      if (!arg1) {
+        console.error(`戳戳需要一个名字`);
+        return;
+      }
+      const uid = context.findUid(arg1);
+      if (uid === null) {
+        console.error(`未找到<${arg1}>`);
+        return;
+      }
+      msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+      ctx = getCtx(ctx.endPoint.userId, msg);
+      if (uid === ctx.endPoint.userId) {
+        ctx.player.name = arg1;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = ctx.player.userId.replace(/\D+/g, "");
+        globalThis.http.getData(epId, `group_poke?group_id=${group_id}&user_id=${user_id}`);
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    CommandManager.registerCommand(cmdPoke);
+  }
+
   // src/command/commandManager.ts
   var Command = class {
     /**
@@ -440,6 +535,8 @@
       registerCmdSt();
       registerCmdBan();
       registerCmdMemory();
+      registerCmdAitts();
+      registerCmdPoke();
     }
     static registerCommand(cmd) {
       this.cmdMap[cmd.name] = cmd;
@@ -503,6 +600,8 @@
       this.registerImageRequestConfig();
       this.registerImageTriggerConfig();
       this.registerImageStorageConfig();
+      this.AittsCharacterConfig();
+      this.getAittsCharacterConfig();
     }
     static registerPrintLogConfig() {
       seal.ext.registerBoolConfig(this.ext, "是否打印日志细节", true, "");
@@ -553,7 +652,10 @@
         "模组",
         "检定",
         "改名",
-        "展示"
+        "展示",
+        "记忆",
+        "语音",
+        "戳"
       ]);
     }
     static getSystemMessageConfig(ctx, context) {
@@ -798,6 +900,13 @@ ${commandsPrompts.join(",\n")}`;
     static getImageStorageConfig() {
       const maxImageNum = seal.ext.getIntConfig(this.ext, "偷取图片存储上限");
       return { maxImageNum };
+    }
+    static AittsCharacterConfig() {
+      seal.ext.registerOptionConfig(this.ext, "ai语音使用的音色", "小新", ["小新", "猴哥", "四郎", "东北老妹儿", "广西大表哥", "妲己", "霸道总裁", "酥心御姐", "说书先生", "憨憨小弟", "憨厚老哥", "吕布", "元气少女", "文艺少女", "磁性大叔", "邻家小妹", "低沉男声", "傲娇少女", "爹系男友", "暖心姐姐", "温柔妹妹", "书香少女"], "需要http依赖，需要可以调用ai语音api版本的napcat/lagrange");
+    }
+    static getAittsCharacterConfig() {
+      const character = seal.ext.getOptionConfig(this.ext, "ai语音使用的音色");
+      return { character };
     }
   };
 
