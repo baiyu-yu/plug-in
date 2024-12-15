@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.1.1
+// @version      4.2.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -128,7 +128,7 @@
       if (arg2) {
         const uid = context.findUid(arg1);
         if (uid === null) {
-          console.error(`未找到<${arg1}>`);
+          console.log(`未找到<${arg1}>`);
           return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
@@ -212,7 +212,7 @@
       if (arg1) {
         const uid = context.findUid(arg1);
         if (uid === null) {
-          console.error(`未找到<${arg1}>`);
+          console.log(`未找到<${arg1}>`);
           return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
@@ -226,6 +226,41 @@
       ext.cmdMap["jrrp"].solve(ctx, msg, cmdArgs);
     };
     CommandManager.registerCommand(cmdJrrp);
+  }
+
+  // src/command/cmd_memory.ts
+  function registerCmdMemory() {
+    const cmdStShow = new Command("记忆");
+    cmdStShow.buildPrompt = () => {
+      return "添加记忆或者留下对别人印象的指令:<$记忆#被记忆者的名字#记忆的内容>";
+    };
+    cmdStShow.solve = (ctx, msg, __, context, arg1, arg2) => {
+      if (!arg1) {
+        console.error(`添加记忆需要一个名字`);
+        return;
+      }
+      if (arg2) {
+        const uid = context.findUid(arg1);
+        if (uid === null) {
+          console.log(`未找到<${arg1}>`);
+          return;
+        }
+        msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+        ctx = getCtx(ctx.endPoint.userId, msg);
+        if (uid === ctx.endPoint.userId) {
+          ctx.player.name = arg1;
+          console.error("不能添加自己的记忆");
+          return;
+        }
+        const ai = AIManager.getAI(uid);
+        ai.context.addMemory(ctx.group.groupName, arg2);
+        AIManager.saveAI(uid);
+      } else {
+        console.error(`添加记忆需要一个内容`);
+        return;
+      }
+    };
+    CommandManager.registerCommand(cmdStShow);
   }
 
   // src/command/cmd_modu.ts
@@ -280,7 +315,7 @@
       if (arg2) {
         const uid = context.findUid(arg1);
         if (uid === null) {
-          console.error(`未找到<${arg1}>`);
+          console.log(`未找到<${arg1}>`);
           return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
@@ -316,7 +351,7 @@
       if (arg2) {
         const uid = context.findUid(arg1);
         if (uid === null) {
-          console.error(`未找到<${arg1}>`);
+          console.log(`未找到<${arg1}>`);
           return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
@@ -347,7 +382,7 @@
       if (arg1) {
         const uid = context.findUid(arg1);
         if (uid === null) {
-          console.error(`未找到<${arg1}>`);
+          console.log(`未找到<${arg1}>`);
           return;
         }
         msg = getMsg(msg.messageType, uid, ctx.group.groupId);
@@ -404,6 +439,7 @@
       registerCmdRename();
       registerCmdSt();
       registerCmdBan();
+      registerCmdMemory();
     }
     static registerCommand(cmd) {
       this.cmdMap[cmd.name] = cmd;
@@ -452,6 +488,7 @@
       this.registerSystemMessageConfig();
       this.registerPrefixConfig();
       this.registerDeckConfig();
+      this.registerMemoryConfig();
       this.registerStorageConfig();
       this.registerMonitorCommandConfig();
       this.registerMonitorAllMessageConfig();
@@ -509,6 +546,7 @@
       ], "顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(this.ext, "是否开启AI调用命令功能", true, "");
       seal.ext.registerTemplateConfig(this.ext, "允许使用的AI命令", [
+        "记忆",
         "抽取",
         "表情",
         "今日人品",
@@ -518,19 +556,26 @@
         "展示"
       ]);
     }
-    static getSystemMessageConfig(groupName) {
+    static getSystemMessageConfig(ctx, context) {
       const roleSetting = seal.ext.getTemplateConfig(this.ext, "角色设定")[0];
       const isCmd = seal.ext.getBoolConfig(this.ext, "是否开启AI调用命令功能");
       const samples = seal.ext.getTemplateConfig(this.ext, "示例对话");
       const systemMessage = {
         role: "system",
-        content: roleSetting + `
-当前群聊:${groupName}
-<@xxx>表示@群成员xxx`,
+        content: roleSetting,
         uid: "",
         name: "",
         timestamp: 0
       };
+      if (!ctx.isPrivate) {
+        systemMessage.content += `
+当前群聊:${ctx.group.groupName}
+<@xxx>表示@群成员xxx`;
+      }
+      const memeryPrompt = context.getMemoryPrompt(ctx);
+      if (memeryPrompt) {
+        systemMessage.content += "\n下列是对话相关记忆，如果与上述设定冲突，请遵守角色设定。记忆如下:\n" + memeryPrompt;
+      }
       if (isCmd) {
         const cmdAllow = seal.ext.getTemplateConfig(this.ext, "允许使用的AI命令");
         const commandsPrompts = CommandManager.getCommandsPrompts(cmdAllow);
@@ -569,6 +614,13 @@ ${commandsPrompts.join(",\n")}`;
     static getDeckConfig() {
       const decks = seal.ext.getTemplateConfig(this.ext, "提供给AI的牌堆名称");
       return { decks };
+    }
+    static registerMemoryConfig() {
+      seal.ext.registerIntConfig(this.ext, "额外记忆上限", 5, "");
+    }
+    static getMemoryConfig() {
+      const extraMemory = seal.ext.getIntConfig(this.ext, "额外记忆上限");
+      return { extraMemory };
     }
     static registerStorageConfig() {
       seal.ext.registerIntConfig(this.ext, "存储上下文对话限制轮数", 10, "");
@@ -1013,6 +1065,9 @@ ${commandsPrompts.join(",\n")}`;
         act: 0,
         timestamp: 0
       };
+      this.memories = {
+        system: []
+      };
     }
     static parse(data) {
       if (data === null || typeof data !== "object" || Array.isArray(data)) {
@@ -1047,6 +1102,13 @@ ${commandsPrompts.join(",\n")}`;
         }
         if (data.interrupt.hasOwnProperty("timestamp") && typeof data.interrupt.timestamp === "number") {
           context.interrupt.timestamp = data.interrupt.timestamp;
+        }
+      }
+      if (data.hasOwnProperty("memories") && typeof data.memories === "object" && !Array.isArray(data.memories)) {
+        for (const k in data.memories) {
+          if (data.memories.hasOwnProperty(k) && Array.isArray(data.memories[k])) {
+            context.memories[k] = data.memories[k];
+          }
         }
       }
       return context;
@@ -1090,6 +1152,86 @@ ${commandsPrompts.join(",\n")}`;
         this.messages = messages.slice(-maxRounds);
       }
     }
+    setSystemMemory(s) {
+      this.memories.system = [s];
+    }
+    getMemoryLength() {
+      let length = 0;
+      for (const k in this.memories) {
+        length += this.memories[k].length;
+      }
+      return length;
+    }
+    addMemory(k, s) {
+      const { extraMemory } = ConfigManager.getMemoryConfig();
+      if (!k) {
+        k = "私聊";
+      }
+      if (!this.memories.hasOwnProperty(k)) {
+        this.memories[k] = [];
+      }
+      s = s.slice(0, 100);
+      this.memories[k].push(s);
+      let length = this.getMemoryLength();
+      while (length > extraMemory) {
+        let maxLength = 0;
+        let maxKey = "";
+        for (const k2 in this.memories) {
+          if (this.memories[k2].length > maxLength) {
+            maxLength = this.memories[k2].length;
+            maxKey = k2;
+          }
+        }
+        this.memories[maxKey].shift();
+        if (this.memories[maxKey].length === 0) {
+          delete this.memories[maxKey];
+        }
+        length = this.getMemoryLength();
+      }
+    }
+    getPrivateMemoryPrompt() {
+      let s = "";
+      for (const key in this.memories) {
+        if (this.memories[key].length === 0) {
+          continue;
+        }
+        if (key === "system") {
+          s += `
+- 设定记忆:${this.memories.system.join("、")}`;
+        } else {
+          s += `
+- 在<${key}>中的记忆:${this.memories[key].join("、")}`;
+        }
+      }
+      return s;
+    }
+    getMemoryPrompt(ctx) {
+      let s = "";
+      if (ctx.isPrivate) {
+        s += this.getPrivateMemoryPrompt();
+      } else {
+        const arr = [];
+        for (const message of this.messages) {
+          if (!arr.includes(message.uid) && message.role === "user") {
+            const name = message.name;
+            const uid = message.uid;
+            const ai = AIManager.getAI(uid);
+            const text = ai.context.getPrivateMemoryPrompt();
+            if (text) {
+              s += `
+有关<${name}>:${text}`;
+            }
+            arr.push(uid);
+          }
+        }
+      }
+      return s;
+    }
+    clearMemory() {
+      this.memories = {
+        system: []
+      };
+    }
     findUid(name) {
       const messages = this.messages;
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -1121,6 +1263,7 @@ ${commandsPrompts.join(",\n")}`;
     constructor(id) {
       this.id = id;
       this.context = new Context();
+      this.image = new ImageManager(id);
       this.privilege = {
         limit: 100,
         counter: -1,
@@ -1131,7 +1274,6 @@ ${commandsPrompts.join(",\n")}`;
       };
       this.isChatting = false;
       this.isGettingAct = false;
-      this.image = new ImageManager(id);
     }
     static parse(data, id) {
       if (data === null || typeof data !== "object" || Array.isArray(data)) {
@@ -1211,7 +1353,7 @@ ${commandsPrompts.join(",\n")}`;
       }
       this.isChatting = true;
       this.clearData();
-      const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
+      const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx, this.context);
       const { s, reply, commands } = await this.getReply(ctx, msg, systemMessages);
       this.context.lastReply = reply;
       await this.context.iteration(ctx, s, "assistant");
@@ -1283,13 +1425,10 @@ ${commandsPrompts.join(",\n")}`;
 
   // src/AI/AIManager.ts
   var AIManager = class {
-    constructor() {
+    static clearCache() {
       this.cache = {};
     }
-    clearCache() {
-      this.cache = {};
-    }
-    getAI(id) {
+    static getAI(id) {
       if (!this.cache.hasOwnProperty(id)) {
         let data = {};
         try {
@@ -1301,24 +1440,24 @@ ${commandsPrompts.join(",\n")}`;
       }
       return this.cache[id];
     }
-    saveAI(id) {
+    static saveAI(id) {
       if (this.cache.hasOwnProperty(id)) {
         ConfigManager.ext.storageSet(`AI_${id}`, JSON.stringify(this.cache[id]));
       }
     }
   };
+  AIManager.cache = {};
 
   // src/index.ts
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.1.1");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.2.0");
       seal.ext.register(ext);
     }
     ConfigManager.ext = ext;
     ConfigManager.register();
     CommandManager.init();
-    const aim = new AIManager();
     const CQTypesAllow = ["at", "image", "reply", "face"];
     const cmdAI = seal.ext.newCmdItemInfo();
     cmdAI.name = "ai";
@@ -1331,14 +1470,15 @@ ${commandsPrompts.join(",\n")}`;
 【.ai on】开启AI
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
 【.ai off】关闭AI，此时仍能用关键词触发
-【.ai fgt】遗忘上下文`;
+【.ai fgt】遗忘上下文
+【.ai memo】修改AI的记忆`;
     cmdAI.solve = (ctx, msg, cmdArgs) => {
       const val = cmdArgs.getArgN(1);
       const uid = ctx.player.userId;
       const gid = ctx.group.groupId;
       const id = ctx.isPrivate ? uid : gid;
       const ret = seal.ext.newCmdExecuteResult(true);
-      const ai = aim.getAI(id);
+      const ai = AIManager.getAI(id);
       switch (val) {
         case "st": {
           if (ctx.privilegeLevel < 100) {
@@ -1371,10 +1511,10 @@ ${commandsPrompts.join(",\n")}`;
             return ret;
           }
           const id2 = val2 === "now" ? id : val2;
-          const ai2 = aim.getAI(id2);
+          const ai2 = AIManager.getAI(id2);
           ai2.privilege.limit = limit;
           seal.replyToSender(ctx, msg, "权限修改完成");
-          aim.saveAI(id2);
+          AIManager.saveAI(id2);
           return ret;
         }
         case "ck": {
@@ -1395,7 +1535,7 @@ ${commandsPrompts.join(",\n")}`;
             return ret;
           }
           const id2 = val2 === "now" ? id : val2;
-          const ai2 = aim.getAI(id2);
+          const ai2 = AIManager.getAI(id2);
           const pr = ai2.privilege;
           const counter = pr.counter > -1 ? `${pr.counter}条` : "关闭";
           const timer = pr.timer > -1 ? `${pr.timer}秒` : "关闭";
@@ -1417,7 +1557,7 @@ ${commandsPrompts.join(",\n")}`;
             seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
             return ret;
           }
-          const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx.group.groupName);
+          const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx, ai.context);
           seal.replyToSender(ctx, msg, systemMessages[0].content);
           return ret;
         }
@@ -1517,7 +1657,7 @@ ${commandsPrompts.join(",\n")}`;
           });
           pr.standby = true;
           seal.replyToSender(ctx, msg, text);
-          aim.saveAI(id);
+          AIManager.saveAI(id);
           return ret;
         }
         case "sb": {
@@ -1533,7 +1673,7 @@ ${commandsPrompts.join(",\n")}`;
           pr.standby = true;
           ai.clearData();
           seal.replyToSender(ctx, msg, "AI已开启待机模式");
-          aim.saveAI(id);
+          AIManager.saveAI(id);
           return ret;
         }
         case "off": {
@@ -1551,7 +1691,7 @@ ${commandsPrompts.join(",\n")}`;
             pr.standby = false;
             ai.clearData();
             seal.replyToSender(ctx, msg, "AI已关闭");
-            aim.saveAI(id);
+            AIManager.saveAI(id);
             return ret;
           }
           let text = `AI已关闭：`;
@@ -1590,7 +1730,7 @@ ${commandsPrompts.join(",\n")}`;
           });
           ai.clearData();
           seal.replyToSender(ctx, msg, text);
-          aim.saveAI(id);
+          AIManager.saveAI(id);
           return ret;
         }
         case "f":
@@ -1608,19 +1748,55 @@ ${commandsPrompts.join(",\n")}`;
             case "assistant": {
               ai.context.messages = messages.filter((item) => item.role !== "assistant");
               seal.replyToSender(ctx, msg, "ai上下文已清除");
-              aim.saveAI(id);
+              AIManager.saveAI(id);
               return ret;
             }
             case "user": {
               ai.context.messages = messages.filter((item) => item.role !== "user");
               seal.replyToSender(ctx, msg, "用户上下文已清除");
-              aim.saveAI(id);
+              AIManager.saveAI(id);
               return ret;
             }
             default: {
               ai.context.messages = [];
               seal.replyToSender(ctx, msg, "上下文已清除");
-              aim.saveAI(id);
+              AIManager.saveAI(id);
+              return ret;
+            }
+          }
+        }
+        case "memo": {
+          const ai2 = AIManager.getAI(uid);
+          const val2 = cmdArgs.getArgN(2);
+          switch (val2) {
+            case "st": {
+              const s = cmdArgs.getRestArgsFrom(3);
+              if (s.length > 20) {
+                seal.replyToSender(ctx, msg, "记忆过长，请控制在20字以内");
+                return ret;
+              }
+              ai2.context.setSystemMemory(s);
+              seal.replyToSender(ctx, msg, "记忆已添加");
+              AIManager.saveAI(uid);
+              return ret;
+            }
+            case "clr": {
+              ai2.context.clearMemory();
+              seal.replyToSender(ctx, msg, "记忆已清除");
+              AIManager.saveAI(uid);
+              return ret;
+            }
+            case "show": {
+              const s = ai2.context.getPrivateMemoryPrompt();
+              seal.replyToSender(ctx, msg, s || "暂无记忆");
+              return ret;
+            }
+            default: {
+              const s = `帮助:
+【.ai memo st <内容>】设置记忆
+【.ai memo clr】清除记忆
+【.ai memo show】展示记忆`;
+              seal.replyToSender(ctx, msg, s);
               return ret;
             }
           }
@@ -1645,7 +1821,7 @@ ${commandsPrompts.join(",\n")}`;
       const gid = ctx.group.groupId;
       const id = ctx.isPrivate ? uid : gid;
       const ret = seal.ext.newCmdExecuteResult(true);
-      const ai = aim.getAI(id);
+      const ai = AIManager.getAI(id);
       switch (val) {
         case "draw": {
           const type = cmdArgs.getArgN(2);
@@ -1757,7 +1933,7 @@ ${commandsPrompts.join(",\n")}`;
       const groupId = ctx.group.groupId;
       const id = ctx.isPrivate ? userId : groupId;
       let message = msg.message;
-      const ai = aim.getAI(id);
+      const ai = AIManager.getAI(id);
       const { clearWords, clearReplys } = ConfigManager.getForgetConfig();
       if (clearWords.some((item) => message === item)) {
         const pr = ai.privilege;
@@ -1768,7 +1944,7 @@ ${commandsPrompts.join(",\n")}`;
         ai.context.messages = [];
         const s = clearReplys[Math.floor(Math.random() * clearReplys.length)];
         seal.replyToSender(ctx, msg, s);
-        aim.saveAI(id);
+        AIManager.saveAI(id);
         return;
       }
       const { condition, trigger } = ConfigManager.getImageTriggerConfig(message);
@@ -1798,7 +1974,7 @@ ${commandsPrompts.join(",\n")}`;
           await ai.context.iteration(ctx, message, "user");
           ConfigManager.printLog("非指令触发回复");
           await ai.chat(ctx, msg);
-          aim.saveAI(id);
+          AIManager.saveAI(id);
           return;
         } else {
           const pr = ai.privilege;
@@ -1811,7 +1987,7 @@ ${commandsPrompts.join(",\n")}`;
               ConfigManager.printLog("计数器触发回复");
               ai.context.counter = 0;
               await ai.chat(ctx, msg);
-              aim.saveAI(id);
+              AIManager.saveAI(id);
               return;
             }
           }
@@ -1820,7 +1996,7 @@ ${commandsPrompts.join(",\n")}`;
             if (ran <= pr.prob) {
               ConfigManager.printLog("概率触发回复");
               await ai.chat(ctx, msg);
-              aim.saveAI(id);
+              AIManager.saveAI(id);
               return;
             }
           }
@@ -1830,7 +2006,7 @@ ${commandsPrompts.join(",\n")}`;
               ConfigManager.printLog(`插嘴触发回复:${act}`);
               ai.context.interrupt.act = 0;
               await ai.chat(ctx, msg);
-              aim.saveAI(id);
+              AIManager.saveAI(id);
               return;
             }
           }
@@ -1839,7 +2015,7 @@ ${commandsPrompts.join(",\n")}`;
               ConfigManager.printLog("计时器触发回复");
               ai.context.timer = null;
               await ai.chat(ctx, msg);
-              aim.saveAI(id);
+              AIManager.saveAI(id);
             }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
           }
         }
@@ -1854,7 +2030,7 @@ ${commandsPrompts.join(",\n")}`;
         const uid = ctx.player.userId;
         const gid = ctx.group.groupId;
         const id = ctx.isPrivate ? uid : gid;
-        const ai = aim.getAI(id);
+        const ai = AIManager.getAI(id);
         const message = msg.message;
         const CQTypes = getCQTypes(message);
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
@@ -1871,7 +2047,7 @@ ${commandsPrompts.join(",\n")}`;
         const uid = ctx.player.userId;
         const gid = ctx.group.groupId;
         const id = ctx.isPrivate ? uid : gid;
-        const ai = aim.getAI(id);
+        const ai = AIManager.getAI(id);
         const message = msg.message;
         if (message === ai.context.lastReply) {
           ai.context.lastReply = "";
