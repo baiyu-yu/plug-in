@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.2.1
+// @version      4.2.2
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\n新增了AI命令功能，AI可以使用的命令有:抽取牌堆、设置群名片、随机模组、查询模组、进行检定、展示属性、今日人品、发送表情、记忆、戳一戳、ai语音、群禁言\n部分功能需求使用http依赖插件
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -1261,11 +1261,17 @@ ${commandsPrompts.join(",\n")}`;
       }
     }
     setSystemMemory(s) {
+      if (!s) {
+        this.memories.system = [];
+      }
       this.memories.system = [s];
     }
     getMemoryLength() {
       let length = 0;
       for (const k in this.memories) {
+        if (k === "system") {
+          continue;
+        }
         length += this.memories[k].length;
       }
       return length;
@@ -1285,6 +1291,9 @@ ${commandsPrompts.join(",\n")}`;
         let maxLength = 0;
         let maxKey = "";
         for (const k2 in this.memories) {
+          if (k2 === "system") {
+            continue;
+          }
           if (this.memories[k2].length > maxLength) {
             maxLength = this.memories[k2].length;
             maxKey = k2;
@@ -1337,7 +1346,7 @@ ${commandsPrompts.join(",\n")}`;
     }
     clearMemory() {
       this.memories = {
-        system: []
+        system: this.memories.system
       };
     }
     findUid(name) {
@@ -1560,7 +1569,7 @@ ${commandsPrompts.join(",\n")}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.2.0");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.2.2");
       seal.ext.register(ext);
     }
     ConfigManager.ext = ext;
@@ -1580,6 +1589,7 @@ ${commandsPrompts.join(",\n")}`;
 【.ai off】关闭AI，此时仍能用关键词触发
 【.ai fgt】遗忘上下文
 【.ai memo】修改AI的记忆`;
+    cmdAI.allowDelegate = true;
     cmdAI.solve = (ctx, msg, cmdArgs) => {
       const val = cmdArgs.getArgN(1);
       const uid = ctx.player.userId;
@@ -1874,7 +1884,13 @@ ${commandsPrompts.join(",\n")}`;
           }
         }
         case "memo": {
-          const ai2 = AIManager.getAI(uid);
+          const mctx = seal.getCtxProxyFirst(ctx, cmdArgs);
+          const muid = mctx.player.userId;
+          if (ctx.privilegeLevel < 100 && muid !== uid) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return ret;
+          }
+          const ai2 = AIManager.getAI(muid);
           const val2 = cmdArgs.getArgN(2);
           switch (val2) {
             case "st": {
@@ -1885,13 +1901,13 @@ ${commandsPrompts.join(",\n")}`;
               }
               ai2.context.setSystemMemory(s);
               seal.replyToSender(ctx, msg, "记忆已添加");
-              AIManager.saveAI(uid);
+              AIManager.saveAI(muid);
               return ret;
             }
             case "clr": {
               ai2.context.clearMemory();
               seal.replyToSender(ctx, msg, "记忆已清除");
-              AIManager.saveAI(uid);
+              AIManager.saveAI(muid);
               return ret;
             }
             case "show": {
