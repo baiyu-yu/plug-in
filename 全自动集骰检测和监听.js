@@ -32,6 +32,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     seal.ext.registerTemplateConfig(ext, "监听指令名称", ["bot", "r"], "");
     seal.ext.registerBoolConfig(ext, "是否计入全部消息", false, "");
     seal.ext.registerTemplateConfig(ext, "计入消息模版", ["SealDice|Shiki|AstralDice|OlivaDice|SitaNya", "[Dd]\\d"], "使用正则表达式");
+    seal.ext.registerTemplateConfig(ext, "排除消息模版", ["\\[CQ:image,[^\\]]*\\]"], "使用正则表达式，匹配的消息部分将被移除后再进行检测");
     seal.ext.registerIntConfig(ext, "指令后n秒内计入", 5, "");
     seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单。不要低于计入时间，否则会清除掉");
     seal.ext.registerIntConfig(ext, "每n秒处理一次暂时白名单队列", 10, "该项修改并保存后请重载js");
@@ -799,10 +800,22 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
 
         const isAllMsg = seal.ext.getBoolConfig(ext, "是否计入全部消息");
         const msgTemplate = seal.ext.getTemplateConfig(ext, "计入消息模版");
+        const excludeTemplate = seal.ext.getTemplateConfig(ext, "排除消息模版");
         const time = seal.ext.getIntConfig(ext, "指令后n秒内计入");
         const raw_groupId = ctx.group.groupId.replace(/\D+/g, "")
 
-        if ((isAllMsg || msgTemplate.some(template => msg.message.match(template))) && whiteListMonitor[raw_groupId] && msg.time - whiteListMonitor[raw_groupId].time < time) {
+        let filteredMessage = msg.message;
+        if (excludeTemplate.length > 0) {
+            excludeTemplate.forEach(template => {
+                filteredMessage = filteredMessage.replace(new RegExp(template, 'g'), '');
+            });
+        }
+
+        if (!filteredMessage.trim()) {
+            return;
+        }
+
+        if ((isAllMsg || msgTemplate.some(template => filteredMessage.match(template))) && whiteListMonitor[raw_groupId] && msg.time - whiteListMonitor[raw_groupId].time < time) {
             const userId = ctx.player.userId
             const raw_userId = userId.replace(/\D+/g, "");
             if (whiteListDice.includes(raw_userId)) {
