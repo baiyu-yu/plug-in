@@ -5,9 +5,9 @@
 // @description  连接群聊私聊，只适配了QQ，原插件https://mirror.ghproxy.com/https://raw.githubusercontent.com/error2913/sealdice-js/main/link.js。使用 .chatroom 获取帮助，只为聊天室内群/私聊转发双引号内的消息。
 // @timestamp    1737605949
 // @license      MIT
-// @homepageURL  https://github.com/error2913/sealdice-js/
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/error2913/sealdice-js/main/link.js
-// @updateUrl    https://raw.githubusercontent.com/error2913/sealdice-js/main/link.js
+// @homepageURL  https://github.com/baiyu-yu/plug-in/
+// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E7%94%B5%E8%AF%9Dchatroom.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E7%94%B5%E8%AF%9Dchatroom.js
 // ==/UserScript==
 
 // 首先检查是否已经存在
