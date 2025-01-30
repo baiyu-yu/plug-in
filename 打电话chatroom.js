@@ -148,7 +148,6 @@ if (!ext) {
         let val2 = cmdArgs.getArgN(2);
         const id = ctx.isPrivate ? ctx.player.userId : ctx.group.groupId;
 
-        // 加载聊天室数据
         const chatRooms = loadChatRooms();
 
         switch (val) {
@@ -257,7 +256,6 @@ if (!ext) {
                     return seal.ext.newCmdExecuteResult(true);
                 }
 
-                // 确保 prefixes 字段存在
                 if (!targetRoom.prefixes) {
                     targetRoom.prefixes = {};
                 }
@@ -362,22 +360,21 @@ if (!ext) {
                     return seal.ext.newCmdExecuteResult(true);
                 }
             
-                const subCommand = val2; // 获取子命令
+                const subCommand = val2;
                 const chatRooms = loadChatRooms();
             
                 if (subCommand === 'list') {
                     // 获取所有聊天室列表和成员数，并按名称排序
                     const sortedRooms = Object.values(chatRooms).sort((a, b) => a.name.localeCompare(b.name));
                     const roomsInfo = [];
-                    let index = 1; // 排序编号
+                    let index = 1; 
             
                     for (const chatRoom of sortedRooms) {
                         roomsInfo.push(`${index}. 【${chatRoom.name}】 成员数：${chatRoom.members.length}`);
-                        chatRoom.index = index; // 为聊天室添加排序编号
+                        chatRoom.index = index; 
                         index++;
                     }
             
-                    // 如果没有聊天室，显示特殊提示
                     if (roomsInfo.length === 0) {
                         seal.replyToSender(ctx, msg, "当前没有任何聊天室。");
                         return seal.ext.newCmdExecuteResult(true);
@@ -406,7 +403,7 @@ if (!ext) {
                     seal.replyToSender(ctx, msg, finalMessage);
                     return seal.ext.newCmdExecuteResult(true);
                 } else if (subCommand === 'members') {
-                    const roomIdentifier = cmdArgs.getArgN(3); // 获取聊天室名称或编号
+                    const roomIdentifier = cmdArgs.getArgN(3);
                     if (!roomIdentifier) {
                         seal.replyToSender(ctx, msg, "请提供聊天室名称或编号");
                         return seal.ext.newCmdExecuteResult(true);
@@ -414,7 +411,6 @@ if (!ext) {
             
                     let targetRoom = null;
             
-                    // 尝试通过编号查找
                     if (!isNaN(roomIdentifier)) {
                         const roomIndex = parseInt(roomIdentifier);
                         const sortedRooms = Object.values(chatRooms).sort((a, b) => a.name.localeCompare(b.name));
