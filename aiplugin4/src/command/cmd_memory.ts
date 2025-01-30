@@ -1,4 +1,4 @@
-import { AIManager } from "../AI/AIManager";
+import { AIManager } from "../AI/AI";
 import { getMsg, getCtx } from "../utils/utils";
 import { Command, CommandManager } from "./commandManager";
 
@@ -31,7 +31,7 @@ export function registerCmdMemory() {
 
             //记忆相关处理
             const ai = AIManager.getAI(uid);
-            ai.context.addMemory(ctx.group.groupName, arg2);
+            ai.memory.addMemory(ctx.group.groupName, arg2);
             AIManager.saveAI(uid);
         } else {
             console.error(`添加记忆需要一个内容`);

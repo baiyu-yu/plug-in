@@ -1,4 +1,4 @@
-import { AIManager } from "./AI/AIManager";
+import { AIManager } from "./AI/AI";
 import { CommandManager } from "./command/commandManager";
 import { ConfigManager } from "./utils/configUtils";
 import { getCQTypes, getUrlsInCQCode } from "./utils/utils";
@@ -123,7 +123,7 @@ function main() {
           return ret;
         }
 
-        const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx, ai.context);
+        const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx, ai);
 
         seal.replyToSender(ctx, msg, systemMessages[0].content);
         return ret;
@@ -356,19 +356,19 @@ function main() {
               seal.replyToSender(ctx, msg, '记忆过长，请控制在20字以内');
               return ret;
             }
-            ai2.context.setSystemMemory(s);
+            ai2.memory.setSystemMemory(s);
             seal.replyToSender(ctx, msg, '记忆已添加');
             AIManager.saveAI(muid);
             return ret;
           }
           case 'clr': {
-            ai2.context.clearMemory();
+            ai2.memory.clearMemory();
             seal.replyToSender(ctx, msg, '记忆已清除');
             AIManager.saveAI(muid);
             return ret;
           }
           case 'show': {
-            const s = ai2.context.getPrivateMemoryPrompt();
+            const s = ai2.memory.getPrivateMemoryPrompt();
             seal.replyToSender(ctx, msg, s || '暂无记忆');
             return ret;
           }
@@ -453,13 +453,13 @@ function main() {
           case 'on': {
             ai.image.stealStatus = true;
             seal.replyToSender(ctx, msg, `图片偷取已开启,当前偷取数量:${ai.image.images.length}`);
-            ai.image.saveImage();
+            AIManager.saveAI(id);
             return ret;
           }
           case 'off': {
             ai.image.stealStatus = false;
             seal.replyToSender(ctx, msg, `图片偷取已关闭,当前偷取数量:${ai.image.images.length}`);
-            ai.image.saveImage();
+            AIManager.saveAI(id);
             return ret;
           }
           default: {
@@ -473,7 +473,7 @@ function main() {
       case 'forget': {
         ai.image.images = [];
         seal.replyToSender(ctx, msg, '图片已遗忘');
-        ai.image.saveImage();
+        AIManager.saveAI(id);
         return ret;
       }
       case 'itt': {
