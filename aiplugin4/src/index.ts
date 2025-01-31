@@ -1,18 +1,18 @@
 import { AIManager } from "./AI/AI";
-import { CommandManager } from "./command/commandManager";
+import { ToolManager } from "./tools/tool";
 import { ConfigManager } from "./utils/configUtils";
 import { getCQTypes, getUrlsInCQCode } from "./utils/utils";
 
 function main() {
   let ext = seal.ext.find('aiplugin4');
   if (!ext) {
-    ext = seal.ext.new('aiplugin4', 'baiyu&错误', '4.2.4');
+    ext = seal.ext.new('aiplugin4', 'baiyu&错误', '4.3.0');
     seal.ext.register(ext);
   }
 
   ConfigManager.ext = ext;
   ConfigManager.register();
-  CommandManager.init();
+  ToolManager.init();
 
   const CQTypesAllow = ["at", "image", "reply", "face"];
 
@@ -123,9 +123,9 @@ function main() {
           return ret;
         }
 
-        const { systemMessages } = ConfigManager.getSystemMessageConfig(ctx, ai);
+        const { messages } = ConfigManager.getProcessedMessagesConfig(ctx, ai);
 
-        seal.replyToSender(ctx, msg, systemMessages[0].content);
+        seal.replyToSender(ctx, msg, messages[0].content);
         return ret;
       }
       case 'pr': {
@@ -645,8 +645,8 @@ function main() {
 
   //接受的指令
   ext.onCommandReceived = async (ctx, msg, cmdArgs) => {
-    if (CommandManager.cmdArgs === null) {
-      CommandManager.cmdArgs = cmdArgs;
+    if (ToolManager.cmdArgs === null) {
+      ToolManager.cmdArgs = cmdArgs;
     }
 
     const { allcmd } = ConfigManager.getMonitorCommandConfig();
@@ -671,16 +671,22 @@ function main() {
 
   //骰子发送的消息
   ext.onMessageSend = async (ctx, msg) => {
+    const message = msg.message;
+
+    const uid = ctx.player.userId;
+    const gid = ctx.group.groupId;
+    const id = ctx.isPrivate ? uid : gid;
+
+    const ai = AIManager.getAI(id);
+
+    if (ai.listen.status) {
+      ai.listen.status = false;
+      ai.listen.content = message;
+      return;
+    }
+
     const { allmsg } = ConfigManager.getMonitorAllMessageConfig();
     if (allmsg) {
-      const uid = ctx.player.userId;
-      const gid = ctx.group.groupId;
-      const id = ctx.isPrivate ? uid : gid;
-
-      const ai = AIManager.getAI(id);
-
-      const message = msg.message;
-
       if (message === ai.context.lastReply) {
         ai.context.lastReply = '';
         return;

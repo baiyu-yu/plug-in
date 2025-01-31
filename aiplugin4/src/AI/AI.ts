@@ -1,10 +1,9 @@
 import { ImageManager } from "../image/imageManager";
-import { CommandManager } from "../command/commandManager";
 import { ConfigManager } from "../utils/configUtils";
-import { handleReply } from "../utils/handleReplyUtils";
+import { handleReply } from "../utils/utils";
 import { FetchData, sendRequest } from "../utils/requestUtils";
 import { parseBody } from "../utils/utils";
-import { Context, Message } from "./context";
+import { Context } from "./context";
 import { Memory } from "./memory";
 
 export interface Privilege {
@@ -22,6 +21,10 @@ export class AI {
     memory: Memory;
     image: ImageManager;
     privilege: Privilege;
+    listen: {
+        status: boolean,
+        content: string
+    }
     isChatting: boolean;
     isGettingAct: boolean;
 
@@ -37,6 +40,10 @@ export class AI {
             prob: -1,
             interrupt: -1,
             standby: false
+        };
+        this.listen = { // 监听调用函数发送的内容
+            status: false,
+            content: ''
         };
         this.isChatting = false;
         this.isGettingAct = false;
@@ -62,38 +69,20 @@ export class AI {
         this.context.interrupt.act = 0;
     }
 
-    async getReply(ctx: seal.MsgContext, msg: seal.Message, systemMessages: Message[], retry = 0): Promise<{ s: string, reply: string, commands: string[] }> {
-        const messages = [...systemMessages, ...this.context.messages];
-
+    async getReply(ctx: seal.MsgContext, msg: seal.Message, retry = 0): Promise<{ s: string, reply: string}> {
         // 处理messages
-        const { isPrefix, isMerge} = ConfigManager.getHandleMessagesConfig();
-        let processedMessages: { role: string, content: string }[] = [];
-        let last_role = '';
-        for (let i = 0; i < messages.length; i++) {
-            const message = messages[i];
-            const prefix = isPrefix ? `<|from:${message.name}|>`: '';
-
-            if (isMerge && message.role === last_role) {
-                processedMessages[processedMessages.length - 1].content += '\n' + prefix + message.content;
-            } else {
-                processedMessages.push({
-                    role: message.role,
-                    content: prefix + message.content
-                });
-                last_role = message.role;
-            }
-        }
+        const { messages } = ConfigManager.getProcessedMessagesConfig(ctx, this);
 
         //获取处理后的回复
-        const raw_reply = await sendRequest(processedMessages);
-        const { s, reply, commands, isRepeat } = handleReply(ctx, msg, raw_reply, this.context);
+        const raw_reply = await sendRequest(ctx, msg, this, messages, "auto");
+        const { s, reply, isRepeat } = handleReply(ctx, msg, raw_reply, this.context);
 
         //禁止AI复读
         if (isRepeat && reply !== '') {
             if (retry == 3) {
                 ConfigManager.printLog(`发现复读，已达到最大重试次数，清除AI上下文`);
-                this.context.messages = messages.filter(item => item.role != 'assistant');
-                return { s: '', reply: '', commands: [] };
+                this.context.messages = this.context.messages.filter(item => item.role !== 'assistant' && item.role !== 'tool');
+                return { s: '', reply: '' };
             }
 
             retry++;
@@ -101,10 +90,10 @@ export class AI {
 
             //等待一秒后进行重试
             await new Promise(resolve => setTimeout(resolve, 1000));
-            return await this.getReply(ctx, msg, systemMessages, retry);
+            return await this.getReply(ctx, msg, retry);
         }
 
-        return { s, reply, commands };
+        return { s, reply };
     }
 
     async chat(ctx: seal.MsgContext, msg: seal.Message): Promise<void> {
@@ -121,8 +110,7 @@ export class AI {
         //清空数据
         this.clearData();
 
-        const { systemMessages, isCmd } = ConfigManager.getSystemMessageConfig(ctx, this);
-        const { s, reply, commands } = await this.getReply(ctx, msg, systemMessages);
+        const { s, reply } = await this.getReply(ctx, msg);
 
         this.context.lastReply = reply;
         await this.context.iteration(ctx, s, 'assistant');
@@ -130,12 +118,7 @@ export class AI {
         // 发送回复
         seal.replyToSender(ctx, msg, reply);
 
-        // commands相关处理
-        if (isCmd && commands.length !== 0) {
-            CommandManager.handleCommands(ctx, msg, commands, this.context);
-        }
-
-        //发送图片
+        //发送偷来的图片
         const { p } = ConfigManager.getImageProbabilityConfig();
         if (Math.random() * 100 <= p) {
             const file = await this.image.drawImage();
@@ -189,7 +172,7 @@ export class AI {
         const messages = [systemMessage, message];
 
         try {
-            const bodyObject = parseBody(bodyTemplate, messages);
+            const bodyObject = parseBody(bodyTemplate, messages, null, null);
 
             const data = await FetchData(url, apiKey, bodyObject);
 
