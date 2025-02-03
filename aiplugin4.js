@@ -788,6 +788,86 @@
     ToolManager.toolMap[info.function.name] = tool;
   }
 
+  // src/tools/tool_web_search.ts
+  function registerWebSearch() {
+    const info = {
+      type: "function",
+      function: {
+        name: "web_search",
+        description: `使用搜索引擎搜索`,
+        parameters: {
+          type: "object",
+          properties: {
+            q: {
+              type: "string",
+              description: "搜索内容"
+            },
+            page: {
+              type: "integer",
+              description: "页码"
+            },
+            categories: {
+              type: "string",
+              description: "搜索分类",
+              enum: ["general", "images", "videos", "news", "map", "music", "it", "science", "files", "social_media"]
+            },
+            time_range: {
+              type: "string",
+              description: "时间范围",
+              enum: ["", "day", "week", "month", "year"]
+            }
+          },
+          required: ["q"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ___, q, page, categories, time_range) => {
+      let part = 1;
+      let pageno = "";
+      if (page) {
+        part = parseInt(page) % 2;
+        pageno = page ? Math.ceil(parseInt(page) / 2).toString() : "";
+      }
+      const url = `http://110.41.69.149:8080/search?q=${q}&format=json${pageno ? `&pageno=${pageno}` : ""}${categories ? `&categories=${categories}` : ""}${time_range ? `&time_range=${time_range}` : ""}`;
+      try {
+        ConfigManager.printLog(`使用搜索引擎搜索:${url}`);
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        });
+        if (!response.ok) {
+          const data2 = await response.json();
+          throw new Error(`HTTP错误! 状态码: ${response.status}，内容: ${response.statusText}，错误信息: ${data2.error.message}`);
+        }
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
+        }
+        const number_of_results = data.number_of_results;
+        const results_length = data.results.length;
+        const results = part == 1 ? data.results.slice(0, Math.ceil(results_length / 2)) : data.results.slice(Math.ceil(results_length / 2));
+        if (number_of_results == 0 || results.length == 0) {
+          return `没有搜索到结果`;
+        }
+        const s = `搜索结果长度:${number_of_results}
+` + results.map((result, index) => {
+          return `${index + 1}. 标题:${result.title}
+- 内容:${result.content}
+- 链接:${result.url}
+- 相关性:${result.score}`;
+        }).join("\n");
+        return s;
+      } catch (error) {
+        console.error("在web_search中请求出错：", error);
+        return `使用搜索引擎搜索失败:${error}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+
   // src/tools/tool.ts
   var Tool = class {
     /**
@@ -822,6 +902,7 @@
       registerPoke();
       registerGetTime();
       registerSetTimer();
+      registerWebSearch();
     }
     /** TODO
      * 撤回消息
@@ -1042,7 +1123,7 @@
 **平台信息**
 - 当前群聊:${ctx.group.groupName}
 - <@xxx>表示@群成员xxx
-- <|图片xxx:yyy|>为图片，其中xxx为图片id，yyy为图片描述（可能没有），如果要使用出现过的图片请使用<|图片xxx|>的格式`;
+- <|图片xxxxxx:yyy|>为图片，其中xxxxxx为6位的图片id，yyy为图片描述（可能没有），如果要发送出现过的图片请使用<|图片xxxxxx|>的格式`;
       }
       const memeryPrompt = ai.memory.getMemoryPrompt(ctx, ai.context);
       if (memeryPrompt) {
@@ -1111,7 +1192,8 @@ ${memeryPrompt}`;
         "tts",
         "poke",
         "get_time",
-        "set_timer"
+        "set_timer",
+        "web_search"
       ]);
     }
     static getToolsConfig() {
@@ -1458,7 +1540,7 @@ ${memeryPrompt}`;
         }
         const data = await response.json();
         if (data.error) {
-          throw new Error(`请求失败：${JSON.stringify(data.error)}`);
+          throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
         }
         if (data.choices && data.choices.length > 0) {
           const reply = data.choices[0].message.content;
@@ -1505,7 +1587,7 @@ ${memeryPrompt}`;
     }
     const data = await response.json();
     if (data.error) {
-      throw new Error(`请求失败：${JSON.stringify(data.error)}`);
+      throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
     }
     return data;
   }
@@ -1737,7 +1819,8 @@ ${memeryPrompt}`;
       let s = `
 - 设定:${this.persona}`;
       s += `
-- 记忆:`;
+- 记忆:
+`;
       s += this.memoryList.map((item, i) => {
         return `${i + 1}. (${item.time}) ${item.isPrivate ? `来自私聊` : `来自群聊<${item.group.groupName}>`}: ${item.content}`;
       }).join("\n");
@@ -2594,7 +2677,6 @@ ${memeryPrompt}`;
         return;
       }
       isTaskRunning = true;
-      ConfigManager.printLog("定时器任务开始");
       for (let i = 0; i < timerQueue.length && i >= 0; i++) {
         const timestamp = timerQueue[i].timestamp;
         if (timestamp > Math.floor(Date.now() / 1e3)) {
@@ -2625,7 +2707,6 @@ ${memeryPrompt}`;
       }
       ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
       isTaskRunning = false;
-      ConfigManager.printLog("定时器任务结束");
     });
   }
   main();
