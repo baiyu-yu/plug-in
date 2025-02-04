@@ -111,31 +111,7 @@
     if (segments.length === 0) {
       return { s: "", reply: "", isRepeat: false };
     }
-    const match = s.match(/<[\|｜]图片.+?[\|｜]?>/g);
-    if (match) {
-      for (let i = 0; i < match.length; i++) {
-        const id = match[i].match(/<[\|｜]图片(.+?)[\|｜]?>/)[1];
-        const image = context.findImage(id);
-        if (image) {
-          const file = image.file;
-          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(file)) {
-            s = s.replace(match[i], `[CQ:image,file=${file}]`);
-            continue;
-          }
-        }
-        s = s.replace(match[i], ``);
-      }
-    }
     s = segments[0].replace(/<br>/g, "\n").slice(0, maxChar);
-    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
-    const reply = prefix + s.replace(/<@(.+?)>/g, (_, p1) => {
-      const uid = context.findUid(p1);
-      if (uid !== null) {
-        return `[CQ:at,qq=${uid.replace(/\D+/g, "")}] `;
-      } else {
-        return ` @${p1} `;
-      }
-    }).replace(/<[\|｜].*?[\|｜]?>/g, "");
     let isRepeat = false;
     if (stopRepeat) {
       const messages = context.messages;
@@ -165,7 +141,32 @@
         }
       }
     }
-    return { s, reply, isRepeat };
+    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
+    let reply = prefix + s.replace(/<@(.+?)>/g, (_, p1) => {
+      const uid = context.findUid(p1);
+      if (uid !== null) {
+        return `[CQ:at,qq=${uid.replace(/\D+/g, "")}] `;
+      } else {
+        return ` @${p1} `;
+      }
+    });
+    const match = s.match(/<[\|｜]图片.+?[\|｜]?>/g);
+    if (match) {
+      for (let i = 0; i < match.length; i++) {
+        const id = match[i].match(/<[\|｜]图片(.+?)[\|｜]?>/)[1];
+        const image = context.findImage(id);
+        if (image) {
+          const file = image.file;
+          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(file)) {
+            reply = s.replace(match[i], `[CQ:image,file=${file}]`);
+            continue;
+          }
+        }
+        reply = s.replace(match[i], ``);
+      }
+    }
+    reply = reply.replace(/<[\|｜].*?[\|｜]?>/g, "");
+    return { s, isRepeat, reply };
   }
   function generateId() {
     const timestamp = Date.now().toString(36);
@@ -361,6 +362,47 @@
     const tool = new Tool(info);
     tool.solve = async (_, __, ___) => {
       return (/* @__PURE__ */ new Date()).toLocaleString();
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+
+  // src/tools/tool_image_to_text.ts
+  function registerImageToText() {
+    const info = {
+      type: "function",
+      function: {
+        name: "image_to_text",
+        description: `查看图片中的内容，可指定需要特别关注的内容`,
+        parameters: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              description: `图片的id，六位字符`
+            },
+            content: {
+              type: "string",
+              description: `需要特别关注的内容`
+            }
+          },
+          required: ["id"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ai, id, content) => {
+      const image = ai.context.findImage(id);
+      const text = `请帮我用简短的语言概括这张图片中出现的:${content}`;
+      if (image.isUrl) {
+        const reply = await ImageManager.imageToText(image.file, text);
+        if (reply) {
+          return reply;
+        } else {
+          return "图片识别失败";
+        }
+      } else {
+        return "本地图片暂时无法识别";
+      }
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -903,6 +945,7 @@
       registerGetTime();
       registerSetTimer();
       registerWebSearch();
+      registerImageToText();
     }
     /** TODO
      * 撤回消息
@@ -1193,7 +1236,8 @@ ${memeryPrompt}`;
         "poke",
         "get_time",
         "set_timer",
-        "web_search"
+        "web_search",
+        "image_to_text"
       ]);
     }
     static getToolsConfig() {
@@ -1369,7 +1413,7 @@ ${memeryPrompt}`;
       seal.ext.registerTemplateConfig(this.ext, "图片body", [
         `"messages":null`,
         `"model":"glm-4v"`,
-        `"max_tokens":100`,
+        `"max_tokens":20`,
         `"stop":null`,
         `"stream":false`
       ], "messages将会自动替换");
@@ -1390,6 +1434,75 @@ ${memeryPrompt}`;
       return { maxImageNum };
     }
   };
+
+  // src/utils/requestUtils.ts
+  async function fetchData(url, apiKey, bodyObject) {
+    const s = JSON.stringify(bodyObject.messages, (key, value) => {
+      if (key === "" && Array.isArray(value)) {
+        return value.filter((item) => {
+          return item.role !== "system";
+        });
+      }
+      return value;
+    });
+    ConfigManager.printLog(`请求发送前的上下文:
+`, s);
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      body: JSON.stringify(bodyObject)
+    });
+    if (!response.ok) {
+      const data2 = await response.json();
+      throw new Error(`HTTP错误! 状态码: ${response.status}，内容: ${response.statusText}，错误信息: ${data2.error.message}`);
+    }
+    const text = await response.text();
+    if (!text) {
+      throw new Error(`响应体为空!`);
+    }
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
+    }
+    return data;
+  }
+  async function sendRequest(ctx, msg, ai, messages, tool_choice) {
+    const { url, apiKey, bodyTemplate } = ConfigManager.getRequestConfig();
+    const { tools } = ConfigManager.getToolsConfig();
+    try {
+      const bodyObject = parseBody(bodyTemplate, messages, tools, tool_choice);
+      const time = Date.now();
+      const data = await fetchData(url, apiKey, bodyObject);
+      if (data.choices && data.choices.length > 0) {
+        const message = data.choices[0].message;
+        const reply = message.content;
+        if (message.hasOwnProperty("reasoning_content")) {
+          ConfigManager.printLog(`思维链内容:`, message.reasoning_content);
+        }
+        ConfigManager.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
+        if (message.hasOwnProperty("tool_calls")) {
+          ConfigManager.printLog(`触发工具调用`);
+          ai.context.toolCallsIteration(message.tool_calls);
+          const tool_choice2 = await ToolManager.handleTools(ctx, msg, ai, message.tool_calls);
+          if (reply) {
+            return reply;
+          }
+          const { messages: messages2 } = ConfigManager.getProcessedMessagesConfig(ctx, ai);
+          return await sendRequest(ctx, msg, ai, messages2, tool_choice2);
+        }
+        return reply;
+      } else {
+        throw new Error("服务器响应中没有choices或choices为空");
+      }
+    } catch (error) {
+      console.error("在sendRequest中出错：", error);
+      return "";
+    }
+  }
 
   // src/AI/image.ts
   var Image = class {
@@ -1470,10 +1583,14 @@ ${memeryPrompt}`;
             const image = new Image(file);
             message = message.replace(`[CQ:image,file=${file}]`, `<|图片${image.id}|>`);
             if (image.isUrl) {
-              const reply = await _ImageManager.imageToText(ctx, file);
-              if (reply) {
-                image.content = reply;
-                message = message.replace(`<|图片${image.id}|>`, `<|图片${image.id}:${reply}|>`);
+              const { condition } = ConfigManager.getImageConditionConfig();
+              const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
+              if (fmtCondition === 1) {
+                const reply = await _ImageManager.imageToText(file);
+                if (reply) {
+                  image.content = reply;
+                  message = message.replace(`<|图片${image.id}|>`, `<|图片${image.id}:${reply}|>`);
+                }
               }
             }
             images.push(image);
@@ -1491,25 +1608,25 @@ ${memeryPrompt}`;
         if (response.ok) {
           const contentType = response.headers.get("Content-Type");
           if (contentType && contentType.startsWith("image")) {
-            console.log("URL is valid and not expired.");
+            ConfigManager.printLog("URL有效且未过期");
             isValid = true;
           } else {
-            console.log(`URL is valid but does not return an image. Content-Type: ${contentType}`);
+            ConfigManager.printLog(`URL有效但未返回图片 Content-Type: ${contentType}`);
           }
         } else {
-          console.log(`URL is expired or invalid. Status: ${response.status}`);
+          if (response.status === 500) {
+            ConfigManager.printLog(`URL不知道有没有效 状态码: ${response.status}`);
+            isValid = true;
+          } else {
+            ConfigManager.printLog(`URL无效或过期 状态码: ${response.status}`);
+          }
         }
       } catch (error) {
         console.error("Error checking URL:", error);
       }
       return isValid;
     }
-    static async imageToText(ctx, imageUrl, text = "") {
-      const { condition } = ConfigManager.getImageConditionConfig();
-      const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
-      if (fmtCondition == 0) {
-        return "";
-      }
+    static async imageToText(imageUrl, text = "") {
       const messages = [{
         role: "user",
         content: [
@@ -1519,32 +1636,19 @@ ${memeryPrompt}`;
           },
           {
             "type": "text",
-            "text": text ? text : "请帮我分析这张图片，简短地输出文字描述。"
+            "text": text ? text : "请帮我用简短的语言概括这张图片的特征，包括图片类型、场景、主题等信息"
           }
         ]
       }];
       const { url, apiKey, maxChars, bodyTemplate } = ConfigManager.getImageRequestConfig();
       try {
         const bodyObject = parseBody(bodyTemplate, messages, null, null);
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-          },
-          body: JSON.stringify(bodyObject)
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
-        }
+        const time = Date.now();
+        const data = await fetchData(url, apiKey, bodyObject);
         if (data.choices && data.choices.length > 0) {
-          const reply = data.choices[0].message.content;
-          console.log("AI返回图片内容：", reply);
+          const message = data.choices[0].message;
+          const reply = message.content;
+          ConfigManager.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
           return reply.slice(0, maxChars);
         } else {
           throw new Error("服务器响应中没有choices或choices为空");
@@ -1555,75 +1659,6 @@ ${memeryPrompt}`;
       }
     }
   };
-
-  // src/utils/requestUtils.ts
-  async function FetchData(url, apiKey, bodyObject) {
-    const s = JSON.stringify(bodyObject.messages, (key, value) => {
-      if (key === "" && Array.isArray(value)) {
-        return value.filter((item) => {
-          return item.role !== "system";
-        });
-      }
-      return value;
-    });
-    ConfigManager.printLog(`请求发送前的上下文:
-`, s);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      },
-      body: JSON.stringify(bodyObject)
-    });
-    if (!response.ok) {
-      const data2 = await response.json();
-      throw new Error(`HTTP错误! 状态码: ${response.status}，内容: ${response.statusText}，错误信息: ${data2.error.message}`);
-    }
-    const text = await response.text();
-    if (!text) {
-      throw new Error(`响应体为空!`);
-    }
-    const data = await response.json();
-    if (data.error) {
-      throw new Error(`请求失败：${JSON.stringify(data.error.message)}`);
-    }
-    return data;
-  }
-  async function sendRequest(ctx, msg, ai, messages, tool_choice) {
-    const { url, apiKey, bodyTemplate } = ConfigManager.getRequestConfig();
-    const { tools } = ConfigManager.getToolsConfig();
-    try {
-      const bodyObject = parseBody(bodyTemplate, messages, tools, tool_choice);
-      const time = Date.now();
-      const data = await FetchData(url, apiKey, bodyObject);
-      if (data.choices && data.choices.length > 0) {
-        const message = data.choices[0].message;
-        const reply = message.content;
-        if (message.hasOwnProperty("reasoning_content")) {
-          ConfigManager.printLog(`思维链内容:`, message.reasoning_content);
-        }
-        ConfigManager.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
-        if (message.hasOwnProperty("tool_calls")) {
-          ConfigManager.printLog(`触发工具调用`);
-          ai.context.toolCallsIteration(message.tool_calls);
-          const tool_choice2 = await ToolManager.handleTools(ctx, msg, ai, message.tool_calls);
-          if (reply) {
-            return reply;
-          }
-          const { messages: messages2 } = ConfigManager.getProcessedMessagesConfig(ctx, ai);
-          return await sendRequest(ctx, msg, ai, messages2, tool_choice2);
-        }
-        return reply;
-      } else {
-        throw new Error("服务器响应中没有choices或choices为空");
-      }
-    } catch (error) {
-      console.error("在sendRequest中出错：", error);
-      return "";
-    }
-  }
 
   // src/AI/context.ts
   var Context = class _Context {
@@ -1895,7 +1930,7 @@ ${memeryPrompt}`;
     async getReply(ctx, msg, retry = 0) {
       const { messages } = ConfigManager.getProcessedMessagesConfig(ctx, this);
       const raw_reply = await sendRequest(ctx, msg, this, messages, "auto");
-      const { s, reply, isRepeat } = await handleReply(ctx, msg, raw_reply, this.context);
+      const { s, isRepeat, reply } = await handleReply(ctx, msg, raw_reply, this.context);
       if (isRepeat && reply !== "") {
         if (retry == 3) {
           ConfigManager.printLog(`发现复读，已达到最大重试次数，清除AI上下文`);
@@ -1965,7 +2000,7 @@ ${memeryPrompt}`;
       const messages = [systemMessage, message];
       try {
         const bodyObject = parseBody(bodyTemplate, messages, null, null);
-        const data = await FetchData(url, apiKey, bodyObject);
+        const data = await fetchData(url, apiKey, bodyObject);
         if (data.choices && data.choices.length > 0) {
           const reply = data.choices[0].message.content;
           ConfigManager.printLog(`返回活跃度:`, reply);
@@ -2506,7 +2541,7 @@ ${memeryPrompt}`;
             url = match[1];
           }
           const text = cmdArgs.getRestArgsFrom(3);
-          const s = await ImageManager.imageToText(ctx, url, text);
+          const s = await ImageManager.imageToText(url, text);
           seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
 ` + s);
           return ret;
@@ -2559,14 +2594,13 @@ ${memeryPrompt}`;
         ai.context.timer = null;
         if (trigger) {
           const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
-          if (fmtCondition == 0) {
+          if (fmtCondition === 1) {
+            await ai.context.iteration(ctx, message, images, "user");
+            ConfigManager.printLog("非指令触发回复");
+            await ai.chat(ctx, msg);
+            AIManager.saveAI(id);
             return;
           }
-          await ai.context.iteration(ctx, message, images, "user");
-          ConfigManager.printLog("非指令触发回复");
-          await ai.chat(ctx, msg);
-          AIManager.saveAI(id);
-          return;
         } else {
           const pr = ai.privilege;
           if (pr.standby) {
