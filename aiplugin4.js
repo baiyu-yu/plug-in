@@ -218,6 +218,102 @@
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
+  function registerAttrGet() {
+    const info = {
+      type: "function",
+      function: {
+        name: "attr_get",
+        description: "获取指定玩家的指定属性",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "玩家名称"
+            },
+            attr: {
+              type: "string",
+              description: "属性名称"
+            }
+          },
+          required: ["name", "attr"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, ai, name, attr) => {
+      const uid = ai.context.findUid(name);
+      if (uid === null) {
+        console.log(`未找到<${name}>`);
+        return `未找到<${name}>`;
+      }
+      msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+      ctx = getCtx(ctx.endPoint.userId, msg);
+      if (uid === ctx.endPoint.userId) {
+        ctx.player.name = name;
+      }
+      const value = seal.vars.intGet(ctx, attr)[0];
+      return `${attr}: ${value}`;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerAttrSet() {
+    const info = {
+      type: "function",
+      function: {
+        name: "attr_set",
+        description: "修改指定玩家的指定属性",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "玩家名称"
+            },
+            expression: {
+              type: "string",
+              description: "修改表达式，例如`hp=hp+1d6`就是将hp的值修改为hp+1d6"
+            }
+          },
+          required: ["name", "expression"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, ai, name, expression) => {
+      const uid = ai.context.findUid(name);
+      if (uid === null) {
+        console.log(`未找到<${name}>`);
+        return `未找到<${name}>`;
+      }
+      msg = getMsg(msg.messageType, uid, ctx.group.groupId);
+      ctx = getCtx(ctx.endPoint.userId, msg);
+      if (uid === ctx.endPoint.userId) {
+        ctx.player.name = name;
+      }
+      const [attr, expr] = expression.split("=");
+      if (expr === void 0) {
+        return `修改失败，表达式 ${expression} 格式错误`;
+      }
+      const value = seal.vars.intGet(ctx, attr)[0];
+      const attrs = expr.split(/[\s\dDd+\-*/=]+/).filter((item) => item !== "");
+      const values = attrs.map((item) => seal.vars.intGet(ctx, item)[0]);
+      let s = expr;
+      for (let i = 0; i < attrs.length; i++) {
+        s = s.replace(attrs[i], values[i].toString());
+      }
+      const result = parseInt(seal.format(ctx, `{${s}}`));
+      if (isNaN(result)) {
+        return `修改失败，表达式 ${expression} 格式化错误`;
+      }
+      seal.vars.intSet(ctx, attr, result);
+      seal.replyToSender(ctx, msg, `进行了 ${expression} 修改
+${attr}: ${value}=>${result}`);
+      return `进行了 ${expression} 修改
+${attr}: ${value}=>${result}`;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
 
   // src/tools/tool_ban.ts
   function registerBan() {
@@ -392,7 +488,7 @@
     const tool = new Tool(info);
     tool.solve = async (_, __, ai, id, content) => {
       const image = ai.context.findImage(id);
-      const text = `请帮我用简短的语言概括这张图片中出现的:${content}`;
+      const text = content ? `请帮我用简短的语言概括这张图片中出现的:${content}` : ``;
       if (image.isUrl) {
         const reply = await ImageManager.imageToText(image.file, text);
         if (reply) {
@@ -760,7 +856,7 @@
         content
       });
       ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
-      return `设置定时器成功，将在${time}分钟后触发`;
+      return `设置定时器成功，请等待`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -939,6 +1035,8 @@
       registerRollCheck();
       registerRename();
       registerAttrShow();
+      registerAttrGet();
+      registerAttrSet();
       registerBan();
       registerTTS();
       registerPoke();
@@ -1231,6 +1329,8 @@ ${memeryPrompt}`;
         "roll_check",
         "rename",
         "attr_show",
+        "attr_get",
+        "attr_set",
         "ban",
         "tts",
         "poke",
