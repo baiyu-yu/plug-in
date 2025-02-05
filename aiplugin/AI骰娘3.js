@@ -6,7 +6,7 @@
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/aiplugin/AI%e9%aa%b0%e5%a8%983.js
+// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/aiplugin/AI%e9%aa%b0%e5%a8%983.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/aiplugin/AI%e9%aa%b0%e5%a8%983.js
 // ==/UserScript==
 

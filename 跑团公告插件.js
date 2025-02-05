@@ -6,7 +6,7 @@
 // @timestamp    1719299266
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6.js
+// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E8%B7%91%E5%9B%A2%E5%85%AC%E5%91%8A%E6%8F%92%E4%BB%B6.js
 
 if (!seal.ext.find('跑团公告插件')) {

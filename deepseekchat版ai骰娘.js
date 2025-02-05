@@ -6,7 +6,7 @@
 // @timestamp    1721822416
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
+// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/deepseekchat%E7%89%88ai%E9%AA%B0%E5%A8%98.js
 // @sealVersion  1.4.5
 // ==/UserScript==
