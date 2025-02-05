@@ -6,7 +6,7 @@
 // @timestamp    1737605949
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
-// @updateUrl    https://mirror.ghproxy.com/https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E7%94%B5%E8%AF%9Dchatroom.js
+// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E7%94%B5%E8%AF%9Dchatroom.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/%E6%89%93%E7%94%B5%E8%AF%9Dchatroom.js
 // ==/UserScript==
 
