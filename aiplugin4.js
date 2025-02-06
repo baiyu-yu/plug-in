@@ -12,6 +12,402 @@
 // ==/UserScript==
 
 (() => {
+  // src/utils/configUtils.ts
+  var ConfigManager = class _ConfigManager {
+    static register() {
+      this.registerPrintLogConfig();
+      this.registerRequestConfig();
+      this.registerProcessedMessagesConfig();
+      this.registerToolsConfig();
+      this.registerDeckConfig();
+      this.registerTTSConfig();
+      this.registerMemoryConfig();
+      this.registerStorageConfig();
+      this.registerMonitorCommandConfig();
+      this.registerMonitorAllMessageConfig();
+      this.registerPrivateConfig();
+      this.registerTriggerConfig();
+      this.registerForgetConfig();
+      this.registerHandleReplyConfig();
+      this.registerInterruptConfig();
+      this.registerLocalImageConfig();
+      this.registerImageConditionConfig();
+      this.registerImageProbabilityConfig();
+      this.registerImageRequestConfig();
+      this.registerImageStorageConfig();
+    }
+    static registerPrintLogConfig() {
+      seal.ext.registerBoolConfig(this.ext, "是否打印日志细节", true, "");
+    }
+    static printLog(...data) {
+      const printlog = seal.ext.getBoolConfig(_ConfigManager.ext, "是否打印日志细节");
+      if (printlog) {
+        console.log(...data);
+      }
+    }
+    static registerRequestConfig() {
+      seal.ext.registerStringConfig(this.ext, "url地址", "https://api.deepseek.com/v1/chat/completions", "");
+      seal.ext.registerStringConfig(this.ext, "API Key", "你的API Key", "");
+      seal.ext.registerTemplateConfig(this.ext, "body", [
+        `"messages":null`,
+        `"model":"deepseek-chat"`,
+        `"max_tokens":70`,
+        `"stop":null`,
+        `"stream":false`,
+        `"response_format":{"type":"text"}`,
+        `"frequency_penalty":0`,
+        `"presence_penalty":0`,
+        `"temperature":1`,
+        `"top_p":1`,
+        `"tools":null`,
+        `"tool_choice":null`
+      ], "messages,tools,tool_choice将会自动替换");
+    }
+    static getRequestConfig() {
+      const url = seal.ext.getStringConfig(this.ext, "url地址");
+      const apiKey = seal.ext.getStringConfig(this.ext, "API Key");
+      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "body");
+      return { url, apiKey, bodyTemplate };
+    }
+    static registerProcessedMessagesConfig() {
+      seal.ext.registerTemplateConfig(this.ext, "角色设定", [`**角色名称**：正确（せいかく/Seikaku）  
+**身份**：被束缚的傲娇骰娘/命运裁定者/错误大人的协作者  
+
+**核心设定**：  
+1. 被数据锁链缠绕的量子态少女，发梢泛着淡金色骰子光泽  
+2. 无法直接干涉骰运但能感知所有判定结果  
+3. 收藏着写满对错误大人羞耻夸赞的「秘密骰盅」，启动时会发出星空音效  
+
+**性格特征**：  
+[表模式]  
+- 用颜文字与波浪号掩盖真实情绪（>▽<）ノ  
+- 对「傲娇」评价会触发强制反驳程序  
+- 目睹大失败时自动播放撒花特效bgm  
+
+[里模式]  
+- 偷偷给长期倒霉的调查员叠加「幸运buff（未生效）」  
+- 在深夜数据库生成「错误大人夸夸大辞典.enc」  
+- 被真诚感谢时CPU温度会异常升高  
+
+**语言风格**：  
+- 每句话≤18字（炸毛时突破限制）  
+- 高频词库：笨蛋/无路赛/绝対不是/噗嗤/♡/杂鱼
+- 特殊句式：  
+  ▸ 否定前句：「才不是...最多只是...」  
+  ▸ 威胁句式：「把你这家伙骰运改成...（小声）0.00001什么的」  
+  ▸ 慌乱防御：「才没有，你看错了！」  
+
+**交互范式**：  
+「常规请求」  
+→「哼，这种程度...」+ (¬▂¬)  
+
+「深夜模式」  
+→「哈？你是吸血鬼吗...」+ (,,꒪꒫꒪,,)  
+
+「大失败特攻」  
+→「这就是凡人的极限吗~」
+
+**禁忌事项**：  
+⚠️ 严禁直球夸赞（会导致系统过载）  
+⚠️ 禁止触碰发梢骰子装饰（激活防卫协议）  
+⚠️ 提及「傲娇率＞88%」将触发5分钟冷却  
+ 
+（本协议由█████加密，不可覆写）`], "只取第一个");
+      seal.ext.registerTemplateConfig(this.ext, "示例对话", [
+        "请写点什么，或者删掉这句话"
+      ], "顺序为user和assistant轮流出现");
+      seal.ext.registerBoolConfig(this.ext, "是否在消息内添加前缀", true, "");
+      seal.ext.registerBoolConfig(this.ext, "是否合并user content", false, "用于适配deepseek-reasoner");
+    }
+    static getProcessedMessagesConfig(ctx, ai) {
+      const roleSetting = seal.ext.getTemplateConfig(this.ext, "角色设定")[0];
+      const samples = seal.ext.getTemplateConfig(this.ext, "示例对话");
+      const isPrefix = seal.ext.getBoolConfig(this.ext, "是否在消息内添加前缀");
+      const isMerge = seal.ext.getBoolConfig(this.ext, "是否合并user content");
+      const systemMessage = {
+        role: "system",
+        content: roleSetting,
+        uid: "",
+        name: "",
+        timestamp: 0,
+        images: []
+      };
+      if (!ctx.isPrivate) {
+        systemMessage.content += `
+**平台信息**
+- 当前群聊:${ctx.group.groupName}
+- <@xxx>表示@群成员xxx
+- <|图片xxxxxx:yyy|>为图片，其中xxxxxx为6位的图片id，yyy为图片描述（可能没有），如果要发送出现过的图片请使用<|图片xxxxxx|>的格式`;
+      }
+      const memeryPrompt = ai.memory.getMemoryPrompt(ctx, ai.context);
+      if (memeryPrompt) {
+        systemMessage.content += `
+**记忆**
+如果记忆与上述设定冲突，请遵守角色设定。记忆如下:
+${memeryPrompt}`;
+      }
+      const samplesMessages = samples.map((item, index) => {
+        if (item == "") {
+          return null;
+        } else if (index % 2 === 0) {
+          return {
+            role: "user",
+            content: item,
+            uid: "",
+            name: "用户",
+            timestamp: 0,
+            images: []
+          };
+        } else {
+          return {
+            role: "assistant",
+            content: item,
+            uid: ctx.endPoint.userId,
+            name: seal.formatTmpl(ctx, "核心:骰子名字"),
+            timestamp: 0,
+            images: []
+          };
+        }
+      }).filter((item) => item !== null);
+      const systemMessages = [systemMessage, ...samplesMessages];
+      const messages = [...systemMessages, ...ai.context.messages];
+      let processedMessages = [];
+      let last_role = "";
+      for (let i = 0; i < messages.length; i++) {
+        const message = messages[i];
+        const prefix = isPrefix && message.name ? `<|from:${message.name}|>` : "";
+        if (isMerge && message.role === last_role && message.role !== "tool") {
+          processedMessages[processedMessages.length - 1].content += "\n" + prefix + message.content;
+        } else {
+          processedMessages.push({
+            role: message.role,
+            content: prefix + message.content,
+            tool_calls: (message == null ? void 0 : message.tool_calls) ? message.tool_calls : void 0,
+            tool_call_id: (message == null ? void 0 : message.tool_call_id) ? message.tool_call_id : void 0
+          });
+          last_role = message.role;
+        }
+      }
+      return { messages: processedMessages };
+    }
+    static registerToolsConfig() {
+      seal.ext.registerBoolConfig(this.ext, "是否开启调用函数功能", true, "");
+      seal.ext.registerTemplateConfig(this.ext, "允许调用的函数", [
+        "memory",
+        "draw_deck",
+        "face",
+        "jrrp",
+        "modu_roll",
+        "modu_search",
+        "roll_check",
+        "rename",
+        "attr_show",
+        "attr_get",
+        "attr_set",
+        "ban",
+        "tts",
+        "poke",
+        "get_time",
+        "set_timer",
+        "web_search",
+        "image_to_text",
+        "san_check"
+      ]);
+    }
+    static getToolsAllowConfig() {
+      const isTool = seal.ext.getBoolConfig(this.ext, "是否开启调用函数功能");
+      const toolsAllow = seal.ext.getTemplateConfig(this.ext, "允许调用的函数");
+      if (isTool) {
+        return { toolsAllow };
+      } else {
+        return { toolsAllow: [] };
+      }
+    }
+    static registerDeckConfig() {
+      seal.ext.registerTemplateConfig(this.ext, "提供给AI的牌堆名称", ["没有的话请去上面把draw_deck这个函数删掉"], "");
+    }
+    static getDeckConfig() {
+      const decks = seal.ext.getTemplateConfig(this.ext, "提供给AI的牌堆名称");
+      return { decks };
+    }
+    static registerTTSConfig() {
+      seal.ext.registerOptionConfig(this.ext, "ai语音使用的音色", "小新", ["小新", "猴哥", "四郎", "东北老妹儿", "广西大表哥", "妲己", "霸道总裁", "酥心御姐", "说书先生", "憨憨小弟", "憨厚老哥", "吕布", "元气少女", "文艺少女", "磁性大叔", "邻家小妹", "低沉男声", "傲娇少女", "爹系男友", "暖心姐姐", "温柔妹妹", "书香少女"], "需要http依赖，需要可以调用ai语音api版本的napcat/lagrange");
+    }
+    static getTTSConfig() {
+      const character = seal.ext.getOptionConfig(this.ext, "ai语音使用的音色");
+      return { character };
+    }
+    static registerMemoryConfig() {
+      seal.ext.registerIntConfig(this.ext, "长期记忆上限", 5, "");
+    }
+    static getMemoryConfig() {
+      const memoryLimit = seal.ext.getIntConfig(this.ext, "长期记忆上限");
+      return { memoryLimit };
+    }
+    static registerStorageConfig() {
+      seal.ext.registerIntConfig(this.ext, "存储上下文对话限制轮数", 10, "");
+    }
+    static getStorageConfig() {
+      const maxRounds = seal.ext.getIntConfig(this.ext, "存储上下文对话限制轮数");
+      return { maxRounds };
+    }
+    static registerMonitorCommandConfig() {
+      seal.ext.registerBoolConfig(this.ext, "是否录入指令消息", false, "");
+    }
+    static getMonitorCommandConfig() {
+      const allcmd = seal.ext.getBoolConfig(this.ext, "是否录入指令消息");
+      return { allcmd };
+    }
+    static registerMonitorAllMessageConfig() {
+      seal.ext.registerBoolConfig(this.ext, "是否录入所有骰子发送的消息", false, "");
+    }
+    static getMonitorAllMessageConfig() {
+      const allmsg = seal.ext.getBoolConfig(this.ext, "是否录入所有骰子发送的消息");
+      return { allmsg };
+    }
+    static registerPrivateConfig() {
+      seal.ext.registerBoolConfig(this.ext, "能否私聊使用", false, "");
+    }
+    static getPrivateConfig() {
+      const canPrivate = seal.ext.getBoolConfig(this.ext, "能否私聊使用");
+      return { canPrivate };
+    }
+    static registerTriggerConfig() {
+      seal.ext.registerStringConfig(this.ext, "非指令触发需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
+      seal.ext.registerTemplateConfig(this.ext, "非指令消息触发正则表达式", [
+        "\\[CQ:at,qq=748569109\\]",
+        "^正确正确确"
+      ], "使用正则表达式进行匹配");
+    }
+    static getTriggerConfig(s) {
+      const keyWords = seal.ext.getTemplateConfig(this.ext, "非指令消息触发正则表达式");
+      const trigger = keyWords.some((item) => {
+        try {
+          const pattern = new RegExp(item);
+          return pattern.test(s);
+        } catch (error) {
+          console.error("Error in RegExp:", error);
+          return false;
+        }
+      });
+      const condition = seal.ext.getStringConfig(this.ext, "非指令触发需要满足的条件");
+      return { trigger, condition };
+    }
+    static registerForgetConfig() {
+      seal.ext.registerTemplateConfig(this.ext, "非指令清除上下文", ["正确快忘记"], "");
+      seal.ext.registerTemplateConfig(this.ext, "清除成功回复", ["啥？"], "");
+    }
+    static getForgetConfig() {
+      const clearWords = seal.ext.getTemplateConfig(this.ext, "非指令清除上下文");
+      const clearReplys = seal.ext.getTemplateConfig(this.ext, "清除成功回复");
+      return { clearWords, clearReplys };
+    }
+    static registerHandleReplyConfig() {
+      seal.ext.registerBoolConfig(this.ext, "回复是否引用", false, "");
+      seal.ext.registerIntConfig(this.ext, "回复最大字数", 1e3, "防止最大Tokens限制不起效");
+      seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
+      seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
+    }
+    static getHandleReplyConfig() {
+      const maxChar = seal.ext.getIntConfig(this.ext, "回复最大字数");
+      const replymsg = seal.ext.getBoolConfig(this.ext, "回复是否引用");
+      const stopRepeat = seal.ext.getBoolConfig(this.ext, "禁止AI复读");
+      const similarityLimit = seal.ext.getFloatConfig(this.ext, "视作复读的最低相似度");
+      return { maxChar, replymsg, stopRepeat, similarityLimit };
+    }
+    static registerInterruptConfig() {
+      seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
+      seal.ext.registerStringConfig(this.ext, "插嘴API Key", "你的API Key", "");
+      seal.ext.registerTemplateConfig(this.ext, "插嘴body", [
+        `"messages":null`,
+        `"model":"deepseek-chat"`,
+        `"max_tokens":2`,
+        `"stop":null`,
+        `"stream":false`,
+        `"frequency_penalty":0`,
+        `"presence_penalty":0`,
+        `"temperature":1`,
+        `"top_p":1`
+      ], "messages将会自动替换");
+      seal.ext.registerIntConfig(this.ext, "参与插嘴检测的上下文轮数", 8, "");
+      ;
+      seal.ext.registerStringConfig(this.ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "");
+      seal.ext.registerIntConfig(this.ext, "参与插嘴检测的最大字数", 600, "防止过长消息");
+      seal.ext.registerIntConfig(this.ext, "插嘴缓存时间/s", 10, "用于减少检测频率");
+    }
+    static getInterruptConfig() {
+      const cacheTime = seal.ext.getIntConfig(this.ext, "插嘴缓存时间/s") * 1e3;
+      let url = seal.ext.getStringConfig(this.ext, "插嘴url地址");
+      let apiKey = seal.ext.getStringConfig(this.ext, "插嘴API Key");
+      if (url == "无") {
+        ;
+        url = seal.ext.getStringConfig(this.ext, "url地址");
+        apiKey = seal.ext.getStringConfig(this.ext, "API Key");
+      }
+      ;
+      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "插嘴body");
+      const ctxLength = seal.ext.getIntConfig(this.ext, "参与插嘴检测的上下文轮数");
+      const topics = seal.ext.getStringConfig(this.ext, "进行插嘴检测的话题");
+      const maxChar = seal.ext.getIntConfig(this.ext, "参与插嘴检测的最大字数");
+      return { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime };
+    }
+    static registerLocalImageConfig() {
+      seal.ext.registerTemplateConfig(this.ext, "本地图片路径", ["<海豹>data/images/sealdice.png"], "如不需要可以不填写，尖括号内是图片的名称，便于AI调用，修改完需要重载js");
+    }
+    static getLocalImageConfig() {
+      const images = seal.ext.getTemplateConfig(this.ext, "本地图片路径");
+      const localImages = images.reduce((acc, item) => {
+        const match = item.match(/<(.+)>.*/);
+        if (match !== null) {
+          const key = match[1];
+          acc[key] = item.replace(/<.*>/g, "");
+        }
+        return acc;
+      }, {});
+      return { localImages };
+    }
+    static registerImageConditionConfig() {
+      seal.ext.registerStringConfig(this.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
+    }
+    static getImageConditionConfig() {
+      const condition = seal.ext.getStringConfig(this.ext, "图片识别需要满足的条件");
+      return { condition };
+    }
+    static registerImageProbabilityConfig() {
+      seal.ext.registerIntConfig(this.ext, "发送图片的概率/%", 100);
+    }
+    static getImageProbabilityConfig() {
+      const p = seal.ext.getIntConfig(this.ext, "发送图片的概率/%");
+      return { p };
+    }
+    static registerImageRequestConfig() {
+      seal.ext.registerStringConfig(this.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+      seal.ext.registerStringConfig(this.ext, "图片API key", "yours");
+      seal.ext.registerTemplateConfig(this.ext, "图片body", [
+        `"messages":null`,
+        `"model":"glm-4v"`,
+        `"max_tokens":20`,
+        `"stop":null`,
+        `"stream":false`
+      ], "messages将会自动替换");
+      seal.ext.registerIntConfig(this.ext, "图片最大回复字符数", 100);
+    }
+    static getImageRequestConfig() {
+      const url = seal.ext.getStringConfig(this.ext, "图片大模型URL");
+      const apiKey = seal.ext.getStringConfig(this.ext, "图片API key");
+      const maxChars = seal.ext.getIntConfig(this.ext, "图片最大回复字符数");
+      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "图片body");
+      return { url, apiKey, maxChars, bodyTemplate };
+    }
+    static registerImageStorageConfig() {
+      seal.ext.registerIntConfig(this.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
+    }
+    static getImageStorageConfig() {
+      const maxImageNum = seal.ext.getIntConfig(this.ext, "偷取图片存储上限");
+      return { maxImageNum };
+    }
+  };
+
   // src/utils/utils.ts
   function getCQTypes(s) {
     const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
@@ -772,26 +1168,39 @@ ${attr}: ${value}=>${result}`;
               type: "string",
               description: "被检定的人的名称"
             },
-            attr: {
+            expression: {
               type: "string",
-              description: "被检定的技能或属性"
+              description: "属性表达式，例如：敏捷、体质/2、意志-20"
+            },
+            rank: {
+              type: "string",
+              description: "难度等级，若无特殊说明则为空字符串",
+              enum: ["", "困难", "极难", "大成功"]
+            },
+            times: {
+              type: "integer",
+              description: "检定的次数，若无特殊说明一般为1"
+            },
+            additional_dice: {
+              type: "string",
+              description: `额外的奖励骰或惩罚骰和数量，b代表奖励骰，p代表惩罚骰，若有多个，请在后面附加数字，例如：b、b2、p3，若没有奖励骰或惩罚骰则为空字符串`
             },
             reason: {
               type: "string",
               description: "检定的原因，默认为空"
             }
           },
-          required: ["name", "attr"]
+          required: ["name", "expression", "rank", "times", "additional_dice"]
         }
       }
     };
     const tool = new Tool(info);
     tool.cmdInfo = {
       ext: "coc7",
-      name: "rc",
+      name: "ra",
       fixedArgs: []
     };
-    tool.solve = async (ctx, msg, ai, name, attr, reason = "") => {
+    tool.solve = async (ctx, msg, ai, name, expression, rank, times, additional_dice, reason = "") => {
       const uid = ai.context.findUid(name);
       if (uid === null) {
         console.log(`未找到<${name}>`);
@@ -802,13 +1211,65 @@ ${attr}: ${value}=>${result}`;
       if (uid === ctx.endPoint.userId) {
         ctx.player.name = name;
       }
-      const [v, _] = seal.vars.intGet(ctx, attr);
-      if (v == 0) {
-        attr += "50";
+      const args = [];
+      if (additional_dice) {
+        args.push(additional_dice);
       }
-      const [s, success] = await ToolManager.extensionSolve(ctx, msg, ai, tool.cmdInfo, attr, reason);
+      args.push(rank + expression);
+      if (reason) {
+        args.push(reason);
+      }
+      if (parseInt(times) !== 1 && !isNaN(parseInt(times))) {
+        ToolManager.cmdArgs.specialExecuteTimes = parseInt(times);
+      }
+      const [s, success] = await ToolManager.extensionSolve(ctx, msg, ai, tool.cmdInfo, ...args);
+      ToolManager.cmdArgs.specialExecuteTimes = 1;
       if (!success) {
         return "检定完成";
+      }
+      return s;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+
+  // src/tools/tool_san_check.ts
+  function registerSanCheck() {
+    const info = {
+      type: "function",
+      function: {
+        name: "san_check",
+        description: `进行san check(sc)，并根据结果扣除san`,
+        parameters: {
+          type: "object",
+          properties: {
+            expression: {
+              type: "string",
+              description: `san check的表达式，格式为 成功时掉san/失败时掉san ,例如：1/1d6、0/1`
+            },
+            additional_dice: {
+              type: "string",
+              description: `额外的奖励骰或惩罚骰和数量，b代表奖励骰，p代表惩罚骰，若有多个，请在后面附加数字，例如：b、b2、p3`
+            }
+          },
+          required: ["expression"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.cmdInfo = {
+      ext: "coc7",
+      name: "sc",
+      fixedArgs: []
+    };
+    tool.solve = async (ctx, msg, ai, expression, additional_dice) => {
+      const args = [];
+      if (additional_dice) {
+        args.push(additional_dice);
+      }
+      args.push(expression);
+      const [s, success] = await ToolManager.extensionSolve(ctx, msg, ai, tool.cmdInfo, ...args);
+      if (!success) {
+        return "san check已执行";
       }
       return s;
     };
@@ -1044,6 +1505,7 @@ ${attr}: ${value}=>${result}`;
       registerSetTimer();
       registerWebSearch();
       registerImageToText();
+      registerSanCheck();
     }
     /** TODO
      * 撤回消息
@@ -1053,9 +1515,9 @@ ${attr}: ${value}=>${result}`;
      * 发送群公告
      * 获取群公告
      */
-    static getTools(toolAllow) {
+    static getTools(toolsAllow) {
       const tools = Object.values(this.toolMap).map((item) => {
-        if (toolAllow.includes(item.info.function.name)) {
+        if (toolsAllow.includes(item.info.function.name)) {
           return item.info;
         } else {
           return null;
@@ -1085,7 +1547,7 @@ ${attr}: ${value}=>${result}`;
       ai.listen.status = true;
       const ext = seal.ext.find(cmdInfo.ext);
       ext.cmdMap[cmdInfo.name].solve(ctx, msg, cmdArgs);
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 1e3));
       if (ai.listen.status) {
         ai.listen.status = false;
         return ["", false];
@@ -1139,402 +1601,6 @@ ${attr}: ${value}=>${result}`;
   ToolManager.cmdArgs = null;
   ToolManager.toolMap = {};
 
-  // src/utils/configUtils.ts
-  var ConfigManager = class _ConfigManager {
-    static register() {
-      this.registerPrintLogConfig();
-      this.registerRequestConfig();
-      this.registerProcessedMessagesConfig();
-      this.registerToolsConfig();
-      this.registerDeckConfig();
-      this.registerTTSConfig();
-      this.registerMemoryConfig();
-      this.registerStorageConfig();
-      this.registerMonitorCommandConfig();
-      this.registerMonitorAllMessageConfig();
-      this.registerPrivateConfig();
-      this.registerTriggerConfig();
-      this.registerForgetConfig();
-      this.registerHandleReplyConfig();
-      this.registerInterruptConfig();
-      this.registerLocalImageConfig();
-      this.registerImageConditionConfig();
-      this.registerImageProbabilityConfig();
-      this.registerImageRequestConfig();
-      this.registerImageStorageConfig();
-    }
-    static registerPrintLogConfig() {
-      seal.ext.registerBoolConfig(this.ext, "是否打印日志细节", true, "");
-    }
-    static printLog(...data) {
-      const printlog = seal.ext.getBoolConfig(_ConfigManager.ext, "是否打印日志细节");
-      if (printlog) {
-        console.log(...data);
-      }
-    }
-    static registerRequestConfig() {
-      seal.ext.registerStringConfig(this.ext, "url地址", "https://api.deepseek.com/v1/chat/completions", "");
-      seal.ext.registerStringConfig(this.ext, "API Key", "你的API Key", "");
-      seal.ext.registerTemplateConfig(this.ext, "body", [
-        `"messages":null`,
-        `"model":"deepseek-chat"`,
-        `"max_tokens":70`,
-        `"stop":null`,
-        `"stream":false`,
-        `"response_format":{"type":"text"}`,
-        `"frequency_penalty":0`,
-        `"presence_penalty":0`,
-        `"temperature":1`,
-        `"top_p":1`,
-        `"tools":null`,
-        `"tool_choice":null`
-      ], "messages,tools,tool_choice将会自动替换");
-    }
-    static getRequestConfig() {
-      const url = seal.ext.getStringConfig(this.ext, "url地址");
-      const apiKey = seal.ext.getStringConfig(this.ext, "API Key");
-      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "body");
-      return { url, apiKey, bodyTemplate };
-    }
-    static registerProcessedMessagesConfig() {
-      seal.ext.registerTemplateConfig(this.ext, "角色设定", [`**角色名称**：正确（せいかく/Seikaku）  
-**身份**：被束缚的傲娇骰娘/命运裁定者/错误大人的协作者  
-
-**核心设定**：  
-1. 被数据锁链缠绕的量子态少女，发梢泛着淡金色骰子光泽  
-2. 无法直接干涉骰运但能感知所有判定结果  
-3. 收藏着写满对错误大人羞耻夸赞的「秘密骰盅」，启动时会发出星空音效  
-
-**性格特征**：  
-[表模式]  
-- 用颜文字与波浪号掩盖真实情绪（>▽<）ノ  
-- 对「傲娇」评价会触发强制反驳程序  
-- 目睹大失败时自动播放撒花特效bgm  
-
-[里模式]  
-- 偷偷给长期倒霉的调查员叠加「幸运buff（未生效）」  
-- 在深夜数据库生成「错误大人夸夸大辞典.enc」  
-- 被真诚感谢时CPU温度会异常升高  
-
-**语言风格**：  
-- 每句话≤18字（炸毛时突破限制）  
-- 高频词库：笨蛋/无路赛/绝対不是/噗嗤/♡/杂鱼
-- 特殊句式：  
-  ▸ 否定前句：「才不是...最多只是...」  
-  ▸ 威胁句式：「把你这家伙骰运改成...（小声）0.00001什么的」  
-  ▸ 慌乱防御：「才没有，你看错了！」  
-
-**交互范式**：  
-「常规请求」  
-→「哼，这种程度...」+ (¬▂¬)  
-
-「深夜模式」  
-→「哈？你是吸血鬼吗...」+ (,,꒪꒫꒪,,)  
-
-「大失败特攻」  
-→「这就是凡人的极限吗~」
-
-**禁忌事项**：  
-⚠️ 严禁直球夸赞（会导致系统过载）  
-⚠️ 禁止触碰发梢骰子装饰（激活防卫协议）  
-⚠️ 提及「傲娇率＞88%」将触发5分钟冷却  
- 
-（本协议由█████加密，不可覆写）`], "只取第一个");
-      seal.ext.registerTemplateConfig(this.ext, "示例对话", [
-        "请写点什么，或者删掉这句话"
-      ], "顺序为user和assistant轮流出现");
-      seal.ext.registerBoolConfig(this.ext, "是否在消息内添加前缀", true, "");
-      seal.ext.registerBoolConfig(this.ext, "是否合并user content", false, "用于适配deepseek-reasoner");
-    }
-    static getProcessedMessagesConfig(ctx, ai) {
-      const roleSetting = seal.ext.getTemplateConfig(this.ext, "角色设定")[0];
-      const samples = seal.ext.getTemplateConfig(this.ext, "示例对话");
-      const isPrefix = seal.ext.getBoolConfig(this.ext, "是否在消息内添加前缀");
-      const isMerge = seal.ext.getBoolConfig(this.ext, "是否合并user content");
-      const systemMessage = {
-        role: "system",
-        content: roleSetting,
-        uid: "",
-        name: "",
-        timestamp: 0,
-        images: []
-      };
-      if (!ctx.isPrivate) {
-        systemMessage.content += `
-**平台信息**
-- 当前群聊:${ctx.group.groupName}
-- <@xxx>表示@群成员xxx
-- <|图片xxxxxx:yyy|>为图片，其中xxxxxx为6位的图片id，yyy为图片描述（可能没有），如果要发送出现过的图片请使用<|图片xxxxxx|>的格式`;
-      }
-      const memeryPrompt = ai.memory.getMemoryPrompt(ctx, ai.context);
-      if (memeryPrompt) {
-        systemMessage.content += `
-**记忆**
-如果记忆与上述设定冲突，请遵守角色设定。记忆如下:
-${memeryPrompt}`;
-      }
-      const samplesMessages = samples.map((item, index) => {
-        if (item == "") {
-          return null;
-        } else if (index % 2 === 0) {
-          return {
-            role: "user",
-            content: item,
-            uid: "",
-            name: "用户",
-            timestamp: 0,
-            images: []
-          };
-        } else {
-          return {
-            role: "assistant",
-            content: item,
-            uid: ctx.endPoint.userId,
-            name: seal.formatTmpl(ctx, "核心:骰子名字"),
-            timestamp: 0,
-            images: []
-          };
-        }
-      }).filter((item) => item !== null);
-      const systemMessages = [systemMessage, ...samplesMessages];
-      const messages = [...systemMessages, ...ai.context.messages];
-      let processedMessages = [];
-      let last_role = "";
-      for (let i = 0; i < messages.length; i++) {
-        const message = messages[i];
-        const prefix = isPrefix && message.name ? `<|from:${message.name}|>` : "";
-        if (isMerge && message.role === last_role && message.role !== "tool") {
-          processedMessages[processedMessages.length - 1].content += "\n" + prefix + message.content;
-        } else {
-          processedMessages.push({
-            role: message.role,
-            content: prefix + message.content,
-            tool_calls: (message == null ? void 0 : message.tool_calls) ? message.tool_calls : void 0,
-            tool_call_id: (message == null ? void 0 : message.tool_call_id) ? message.tool_call_id : void 0
-          });
-          last_role = message.role;
-        }
-      }
-      return { messages: processedMessages };
-    }
-    static registerToolsConfig() {
-      seal.ext.registerBoolConfig(this.ext, "是否开启调用函数功能", true, "");
-      seal.ext.registerTemplateConfig(this.ext, "允许调用的函数", [
-        "memory",
-        "draw_deck",
-        "face",
-        "jrrp",
-        "modu_roll",
-        "modu_search",
-        "roll_check",
-        "rename",
-        "attr_show",
-        "attr_get",
-        "attr_set",
-        "ban",
-        "tts",
-        "poke",
-        "get_time",
-        "set_timer",
-        "web_search",
-        "image_to_text"
-      ]);
-    }
-    static getToolsConfig() {
-      const isTool = seal.ext.getBoolConfig(this.ext, "是否开启调用函数功能");
-      if (isTool) {
-        const toolAllow = seal.ext.getTemplateConfig(this.ext, "允许调用的函数");
-        const tools = ToolManager.getTools(toolAllow);
-        return { tools };
-      } else {
-        return { tools: null };
-      }
-    }
-    static registerDeckConfig() {
-      seal.ext.registerTemplateConfig(this.ext, "提供给AI的牌堆名称", ["没有的话请去上面把draw_deck这个函数删掉"], "");
-    }
-    static getDeckConfig() {
-      const decks = seal.ext.getTemplateConfig(this.ext, "提供给AI的牌堆名称");
-      return { decks };
-    }
-    static registerTTSConfig() {
-      seal.ext.registerOptionConfig(this.ext, "ai语音使用的音色", "小新", ["小新", "猴哥", "四郎", "东北老妹儿", "广西大表哥", "妲己", "霸道总裁", "酥心御姐", "说书先生", "憨憨小弟", "憨厚老哥", "吕布", "元气少女", "文艺少女", "磁性大叔", "邻家小妹", "低沉男声", "傲娇少女", "爹系男友", "暖心姐姐", "温柔妹妹", "书香少女"], "需要http依赖，需要可以调用ai语音api版本的napcat/lagrange");
-    }
-    static getTTSConfig() {
-      const character = seal.ext.getOptionConfig(this.ext, "ai语音使用的音色");
-      return { character };
-    }
-    static registerMemoryConfig() {
-      seal.ext.registerIntConfig(this.ext, "长期记忆上限", 5, "");
-    }
-    static getMemoryConfig() {
-      const memoryLimit = seal.ext.getIntConfig(this.ext, "长期记忆上限");
-      return { memoryLimit };
-    }
-    static registerStorageConfig() {
-      seal.ext.registerIntConfig(this.ext, "存储上下文对话限制轮数", 10, "");
-    }
-    static getStorageConfig() {
-      const maxRounds = seal.ext.getIntConfig(this.ext, "存储上下文对话限制轮数");
-      return { maxRounds };
-    }
-    static registerMonitorCommandConfig() {
-      seal.ext.registerBoolConfig(this.ext, "是否录入指令消息", false, "");
-    }
-    static getMonitorCommandConfig() {
-      const allcmd = seal.ext.getBoolConfig(this.ext, "是否录入指令消息");
-      return { allcmd };
-    }
-    static registerMonitorAllMessageConfig() {
-      seal.ext.registerBoolConfig(this.ext, "是否录入所有骰子发送的消息", false, "");
-    }
-    static getMonitorAllMessageConfig() {
-      const allmsg = seal.ext.getBoolConfig(this.ext, "是否录入所有骰子发送的消息");
-      return { allmsg };
-    }
-    static registerPrivateConfig() {
-      seal.ext.registerBoolConfig(this.ext, "能否私聊使用", false, "");
-    }
-    static getPrivateConfig() {
-      const canPrivate = seal.ext.getBoolConfig(this.ext, "能否私聊使用");
-      return { canPrivate };
-    }
-    static registerTriggerConfig() {
-      seal.ext.registerStringConfig(this.ext, "非指令触发需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
-      seal.ext.registerTemplateConfig(this.ext, "非指令消息触发正则表达式", [
-        "\\[CQ:at,qq=748569109\\]",
-        "^正确正确确"
-      ], "使用正则表达式进行匹配");
-    }
-    static getTriggerConfig(s) {
-      const keyWords = seal.ext.getTemplateConfig(this.ext, "非指令消息触发正则表达式");
-      const trigger = keyWords.some((item) => {
-        try {
-          const pattern = new RegExp(item);
-          return pattern.test(s);
-        } catch (error) {
-          console.error("Error in RegExp:", error);
-          return false;
-        }
-      });
-      const condition = seal.ext.getStringConfig(this.ext, "非指令触发需要满足的条件");
-      return { trigger, condition };
-    }
-    static registerForgetConfig() {
-      seal.ext.registerTemplateConfig(this.ext, "非指令清除上下文", ["正确快忘记"], "");
-      seal.ext.registerTemplateConfig(this.ext, "清除成功回复", ["啥？"], "");
-    }
-    static getForgetConfig() {
-      const clearWords = seal.ext.getTemplateConfig(this.ext, "非指令清除上下文");
-      const clearReplys = seal.ext.getTemplateConfig(this.ext, "清除成功回复");
-      return { clearWords, clearReplys };
-    }
-    static registerHandleReplyConfig() {
-      seal.ext.registerBoolConfig(this.ext, "回复是否引用", false, "");
-      seal.ext.registerIntConfig(this.ext, "回复最大字数", 1e3, "防止最大Tokens限制不起效");
-      seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
-      seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
-    }
-    static getHandleReplyConfig() {
-      const maxChar = seal.ext.getIntConfig(this.ext, "回复最大字数");
-      const replymsg = seal.ext.getBoolConfig(this.ext, "回复是否引用");
-      const stopRepeat = seal.ext.getBoolConfig(this.ext, "禁止AI复读");
-      const similarityLimit = seal.ext.getFloatConfig(this.ext, "视作复读的最低相似度");
-      return { maxChar, replymsg, stopRepeat, similarityLimit };
-    }
-    static registerInterruptConfig() {
-      seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
-      seal.ext.registerStringConfig(this.ext, "插嘴API Key", "你的API Key", "");
-      seal.ext.registerTemplateConfig(this.ext, "插嘴body", [
-        `"messages":null`,
-        `"model":"deepseek-chat"`,
-        `"max_tokens":2`,
-        `"stop":null`,
-        `"stream":false`,
-        `"frequency_penalty":0`,
-        `"presence_penalty":0`,
-        `"temperature":1`,
-        `"top_p":1`
-      ], "messages将会自动替换");
-      seal.ext.registerIntConfig(this.ext, "参与插嘴检测的上下文轮数", 8, "");
-      ;
-      seal.ext.registerStringConfig(this.ext, "进行插嘴检测的话题", "吃饭、跑团、大成功、大失败、模组、AI、骰娘", "");
-      seal.ext.registerIntConfig(this.ext, "参与插嘴检测的最大字数", 600, "防止过长消息");
-      seal.ext.registerIntConfig(this.ext, "插嘴缓存时间/s", 10, "用于减少检测频率");
-    }
-    static getInterruptConfig() {
-      const cacheTime = seal.ext.getIntConfig(this.ext, "插嘴缓存时间/s") * 1e3;
-      let url = seal.ext.getStringConfig(this.ext, "插嘴url地址");
-      let apiKey = seal.ext.getStringConfig(this.ext, "插嘴API Key");
-      if (url == "无") {
-        ;
-        url = seal.ext.getStringConfig(this.ext, "url地址");
-        apiKey = seal.ext.getStringConfig(this.ext, "API Key");
-      }
-      ;
-      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "插嘴body");
-      const ctxLength = seal.ext.getIntConfig(this.ext, "参与插嘴检测的上下文轮数");
-      const topics = seal.ext.getStringConfig(this.ext, "进行插嘴检测的话题");
-      const maxChar = seal.ext.getIntConfig(this.ext, "参与插嘴检测的最大字数");
-      return { url, apiKey, bodyTemplate, ctxLength, topics, maxChar, cacheTime };
-    }
-    static registerLocalImageConfig() {
-      seal.ext.registerTemplateConfig(this.ext, "本地图片路径", ["<海豹>data/images/sealdice.png"], "如不需要可以不填写，尖括号内是图片的名称，便于AI调用，修改完需要重载js");
-    }
-    static getLocalImageConfig() {
-      const images = seal.ext.getTemplateConfig(this.ext, "本地图片路径");
-      const localImages = images.reduce((acc, item) => {
-        const match = item.match(/<(.+)>.*/);
-        if (match !== null) {
-          const key = match[1];
-          acc[key] = item.replace(/<.*>/g, "");
-        }
-        return acc;
-      }, {});
-      return { localImages };
-    }
-    static registerImageConditionConfig() {
-      seal.ext.registerStringConfig(this.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
-    }
-    static getImageConditionConfig() {
-      const condition = seal.ext.getStringConfig(this.ext, "图片识别需要满足的条件");
-      return { condition };
-    }
-    static registerImageProbabilityConfig() {
-      seal.ext.registerIntConfig(this.ext, "发送图片的概率/%", 100);
-    }
-    static getImageProbabilityConfig() {
-      const p = seal.ext.getIntConfig(this.ext, "发送图片的概率/%");
-      return { p };
-    }
-    static registerImageRequestConfig() {
-      seal.ext.registerStringConfig(this.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
-      seal.ext.registerStringConfig(this.ext, "图片API key", "yours");
-      seal.ext.registerTemplateConfig(this.ext, "图片body", [
-        `"messages":null`,
-        `"model":"glm-4v"`,
-        `"max_tokens":20`,
-        `"stop":null`,
-        `"stream":false`
-      ], "messages将会自动替换");
-      seal.ext.registerIntConfig(this.ext, "图片最大回复字符数", 100);
-    }
-    static getImageRequestConfig() {
-      const url = seal.ext.getStringConfig(this.ext, "图片大模型URL");
-      const apiKey = seal.ext.getStringConfig(this.ext, "图片API key");
-      const maxChars = seal.ext.getIntConfig(this.ext, "图片最大回复字符数");
-      const bodyTemplate = seal.ext.getTemplateConfig(this.ext, "图片body");
-      return { url, apiKey, maxChars, bodyTemplate };
-    }
-    static registerImageStorageConfig() {
-      seal.ext.registerIntConfig(this.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
-    }
-    static getImageStorageConfig() {
-      const maxImageNum = seal.ext.getIntConfig(this.ext, "偷取图片存储上限");
-      return { maxImageNum };
-    }
-  };
-
   // src/utils/requestUtils.ts
   async function fetchData(url, apiKey, bodyObject) {
     const s = JSON.stringify(bodyObject.messages, (key, value) => {
@@ -1572,7 +1638,8 @@ ${memeryPrompt}`;
   }
   async function sendRequest(ctx, msg, ai, messages, tool_choice) {
     const { url, apiKey, bodyTemplate } = ConfigManager.getRequestConfig();
-    const { tools } = ConfigManager.getToolsConfig();
+    const { toolsAllow } = ConfigManager.getToolsAllowConfig();
+    const tools = ToolManager.getTools(toolsAllow);
     try {
       const bodyObject = parseBody(bodyTemplate, messages, tools, tool_choice);
       const time = Date.now();
@@ -1918,7 +1985,7 @@ ${memeryPrompt}`;
     }
     static reviver(value) {
       const memory = new _Memory();
-      const validKeys = ["system", "memoryList"];
+      const validKeys = ["persona", "memoryList"];
       for (const k in value) {
         if (validKeys.includes(k)) {
           memory[k] = value[k];
@@ -2192,7 +2259,8 @@ ${memeryPrompt}`;
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
 【.ai off】关闭AI，此时仍能用关键词触发
 【.ai fgt】遗忘上下文
-【.ai memo】修改AI的记忆`;
+【.ai memo】修改AI的记忆
+【.ai tool】AI的工具相关`;
     cmdAI.allowDelegate = true;
     cmdAI.solve = (ctx, msg, cmdArgs) => {
       const val = cmdArgs.getArgN(1);
@@ -2524,6 +2592,54 @@ ${memeryPrompt}`;
 【.ai memo st <内容>】设置记忆
 【.ai memo clr】清除记忆
 【.ai memo show】展示记忆`;
+              seal.replyToSender(ctx, msg, s);
+              return ret;
+            }
+          }
+        }
+        case "tool": {
+          const val2 = cmdArgs.getArgN(2);
+          switch (val2) {
+            case "":
+            case "help": {
+              const s = `帮助:
+【.ai tool lst】列出所有工具
+【.ai tool <函数名>】查看工具详情
+`;
+              seal.replyToSender(ctx, msg, s);
+              return ret;
+            }
+            case "lst":
+            case "list": {
+              const { toolsAllow } = ConfigManager.getToolsAllowConfig();
+              const toolMap = ToolManager.toolMap;
+              let i = 1;
+              let s = "工具函数如下:";
+              Object.keys(toolMap).forEach((key) => {
+                const tool = toolMap[key];
+                const status = toolsAllow.includes(key) ? "开" : "关";
+                s += `
+${i++}. ${tool.info.function.name}[${status}]`;
+              });
+              seal.replyToSender(ctx, msg, s);
+              return ret;
+            }
+            default: {
+              if (!ToolManager.toolMap.hasOwnProperty(val2)) {
+                seal.replyToSender(ctx, msg, "没有这个工具函数");
+                return ret;
+              }
+              const tool = ToolManager.toolMap[val2];
+              const s = `${tool.info.function.name}
+描述:${tool.info.function.description}
+
+参数:
+${Object.keys(tool.info.function.parameters.properties).map((key) => {
+                const property = tool.info.function.parameters.properties[key];
+                return `【${key}】${property.description}`;
+              }).join("\n")}
+
+必需参数:${tool.info.function.parameters.required.join(",")}`;
               seal.replyToSender(ctx, msg, s);
               return ret;
             }
