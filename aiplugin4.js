@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.3.2
+// @version      4.3.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，原有的基于解析返回文本的AI命令已经被完全替换。选用模型是否支持该功能请查看相应接口文档。
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -307,13 +307,37 @@ ${memeryPrompt}`;
       seal.ext.registerIntConfig(this.ext, "回复最大字数", 1e3, "防止最大Tokens限制不起效");
       seal.ext.registerBoolConfig(this.ext, "禁止AI复读", false, "");
       seal.ext.registerFloatConfig(this.ext, "视作复读的最低相似度", 0.8, "");
+      seal.ext.registerTemplateConfig(this.ext, "过滤上下文正则表达式", [
+        "<[\\|｜].*?[\\|｜]?>",
+        "^<think>.*?</think>"
+      ], "回复加入上下文时，将符合正则表达式的内容删掉");
+      seal.ext.registerTemplateConfig(this.ext, "过滤回复正则表达式", [
+        "<[\\|｜].*?[\\|｜]?>",
+        "^<think>.*?</think>"
+      ], "回复时，将符合正则表达式的内容删掉");
     }
     static getHandleReplyConfig() {
       const maxChar = seal.ext.getIntConfig(this.ext, "回复最大字数");
       const replymsg = seal.ext.getBoolConfig(this.ext, "回复是否引用");
       const stopRepeat = seal.ext.getBoolConfig(this.ext, "禁止AI复读");
       const similarityLimit = seal.ext.getFloatConfig(this.ext, "视作复读的最低相似度");
-      return { maxChar, replymsg, stopRepeat, similarityLimit };
+      const filterContextRegexes = seal.ext.getTemplateConfig(this.ext, "过滤上下文正则表达式").map((item) => {
+        try {
+          return new RegExp(item, "g");
+        } catch (error) {
+          console.error("Error in RegExp:", error);
+          return null;
+        }
+      }).filter((item) => item !== null);
+      const filterReplyRegexes = seal.ext.getTemplateConfig(this.ext, "过滤回复正则表达式").map((item) => {
+        try {
+          return new RegExp(item, "g");
+        } catch (error) {
+          console.error("Error in RegExp:", error);
+          return null;
+        }
+      }).filter((item) => item !== null);
+      return { maxChar, replymsg, stopRepeat, similarityLimit, filterContextRegexes, filterReplyRegexes };
     }
     static registerInterruptConfig() {
       seal.ext.registerStringConfig(this.ext, "插嘴url地址", "无", "为“无”的时候自动使用前面填写的url地址和API Key");
@@ -502,12 +526,17 @@ ${memeryPrompt}`;
     return 1 - distance / maxLength;
   }
   async function handleReply(ctx, msg, s, context) {
-    const { maxChar, replymsg, stopRepeat, similarityLimit } = ConfigManager.getHandleReplyConfig();
+    const { maxChar, replymsg, stopRepeat, similarityLimit, filterContextRegexes, filterReplyRegexes } = ConfigManager.getHandleReplyConfig();
     const segments = s.split(/<[\|｜]from.*?[\|｜]?>/).filter((item) => item.trim() !== "");
     if (segments.length === 0) {
       return { s: "", reply: "", isRepeat: false };
     }
-    s = segments[0].replace(/<br>/g, "\n").slice(0, maxChar);
+    s = segments[0].replace(/<br>/g, "\n").slice(0, maxChar).trim();
+    let reply = s;
+    for (let i = 0; i < filterContextRegexes.length; i++) {
+      const regex = filterContextRegexes[i];
+      s = s.replace(regex, "");
+    }
     let isRepeat = false;
     if (stopRepeat) {
       const messages = context.messages;
@@ -515,8 +544,7 @@ ${memeryPrompt}`;
         const message = messages[i];
         if (message.role === "assistant" && !(message == null ? void 0 : message.tool_calls)) {
           const content = message.content;
-          const clearText = content.replace(/<[\|｜].*?[\|｜]>/g, "");
-          const similarity = calculateSimilarity(clearText.trim(), s.trim());
+          const similarity = calculateSimilarity(content.trim(), s.trim());
           ConfigManager.printLog(`复读相似度：${similarity}`);
           if (similarity > similarityLimit) {
             isRepeat = true;
@@ -537,8 +565,7 @@ ${memeryPrompt}`;
         }
       }
     }
-    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
-    let reply = prefix + s.replace(/<@(.+?)>/g, (_, p1) => {
+    reply = reply.replace(/<@(.+?)>/g, (_, p1) => {
       const uid = context.findUid(p1);
       if (uid !== null) {
         return `[CQ:at,qq=${uid.replace(/\D+/g, "")}] `;
@@ -561,7 +588,12 @@ ${memeryPrompt}`;
         reply = s.replace(match[i], ``);
       }
     }
-    reply = reply.replace(/<[\|｜].*?[\|｜]?>/g, "");
+    for (let i = 0; i < filterReplyRegexes.length; i++) {
+      const regex = filterReplyRegexes[i];
+      reply = reply.replace(regex, "");
+    }
+    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
+    reply = prefix + reply.trim();
     return { s, isRepeat, reply };
   }
   function generateId() {
@@ -1651,7 +1683,7 @@ ${attr}: ${value}=>${result}`;
           ConfigManager.printLog(`思维链内容:`, message.reasoning_content);
         }
         ConfigManager.printLog(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
-        if (message.hasOwnProperty("tool_calls")) {
+        if (message.hasOwnProperty("tool_calls") && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
           ConfigManager.printLog(`触发工具调用`);
           ai.context.toolCallsIteration(message.tool_calls);
           const tool_choice2 = await ToolManager.handleTools(ctx, msg, ai, message.tool_calls);
@@ -1856,9 +1888,6 @@ ${attr}: ${value}=>${result}`;
         return;
       }
       const { maxRounds } = ConfigManager.getStorageConfig();
-      if (role === "assistant") {
-        s = s.replace(/\[图:.*?\]/g, "").replace(/\[语音:.*?\]/g, "").replace(/\[视频:.*?\]/g, "");
-      }
       s = s.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, "").replace(/\[CQ:at,qq=(\d+)\]/g, (_, p1) => {
         const epId = ctx.endPoint.userId;
         const gid = ctx.group.groupId;
@@ -2233,7 +2262,7 @@ ${attr}: ${value}=>${result}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.3.2");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.3.3");
       seal.ext.register(ext);
     }
     try {
