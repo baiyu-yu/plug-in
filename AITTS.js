@@ -71,99 +71,161 @@ if (!seal.ext.find('AITTS')) {
               return null;
           }
       }
-
-      // 解析并拼接百度请求体参数
-      parseBaiduParams(text) {
-          const params = seal.ext.getTemplateConfig(ext, '百度请求体参数');
-          let body = { tex: text };
-
-          params.forEach(param => {
-              try {
-                  const [key, value] = param.split(':');
-                  const cleanKey = key.trim().replace(/"/g, ''); // 去除键的引号
-                  const cleanValue = value.trim().replace(/"/g, ''); // 去除值的引号
-                  body[cleanKey] = isNaN(cleanValue) ? cleanValue : Number(cleanValue); // 自动转换数字
-              } catch (error) {
-                  console.error(`解析百度请求体参数失败: ${param}`, error);
-              }
-          });
-
-          return body;
-      }
-
       // 解析并拼接自定义请求头
       parseCustomHeaders() {
-          const headers = seal.ext.getTemplateConfig(ext, '自定义_请求头');
-          let headerObj = {};
+        const headers = seal.ext.getTemplateConfig(ext, '自定义_请求头');
+        let headerObj = {};
 
-          headers.forEach(header => {
-              try {
-                  const [key, value] = header.split(':');
-                  const cleanKey = key.trim().replace(/"/g, ''); // 去除键的引号
-                  const cleanValue = value.trim().replace(/"/g, ''); // 去除值的引号
-                  headerObj[cleanKey] = cleanValue;
-              } catch (error) {
-                  console.error(`解析自定义请求头失败: ${header}`, error);
-              }
-          });
+        headers.forEach(header => {
+            try {
+                const [key, value] = header.split(':');
+                const cleanKey = key.trim().replace(/"/g, '');
+                const cleanValue = value.trim().replace(/"/g, '');
+                headerObj[cleanKey] = cleanValue;
+            } catch (error) {
+                console.error(`解析自定义请求头失败: ${header}`, error);
+            }
+        });
 
-          return headerObj;
-      }
+        return headerObj;
+    }
 
-      // 解析并拼接自定义请求体，替换 {input} 占位符
-      parseCustomBody(text) {
-          const bodyParams = seal.ext.getTemplateConfig(ext, '自定义_请求体');
-          let body = {};
+      // 根据Content-Type格式化请求体
+      formatRequestBody(params, contentType, text) {
+        if (!contentType) return JSON.stringify(params);
 
-          bodyParams.forEach(param => {
-              try {
-                  const [key, value] = param.split(':');
-                  const cleanKey = key.trim().replace(/"/g, ''); // 去除键的引号
-                  let cleanValue = value.trim().replace(/"/g, ''); // 去除值的引号
+        // URL编码格式
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+            let urlParams = `tex=${text}`;
+            params.forEach(param => {
+                try {
+                    const [key, value] = param.split(':');
+                    const cleanKey = key.trim().replace(/"/g, '');
+                    const cleanValue = value.trim().replace(/"/g, '');
+                    urlParams = urlParams + `&${cleanKey}=${cleanValue}`;
+                } catch (error) {
+                    console.error(`解析参数失败: ${param}`, error);
+                }
+            });
+            return urlParams;
+        }
 
-                  // 替换 {input} 占位符为实际文本
-                  if (cleanValue === '{input}') {
-                      cleanValue = text;
-                  }
+        // JSON格式
+        if (contentType.includes('application/json')) {
+            let jsonBody = {};
+            params.forEach(param => {
+                try {
+                    const [key, value] = param.split(':');
+                    const cleanKey = key.trim().replace(/"/g, '');
+                    let cleanValue = value.trim().replace(/"/g, '');
+                    if (cleanValue === '{input}') {
+                        cleanValue = text;
+                    }
+                    jsonBody[cleanKey] = isNaN(cleanValue) ? cleanValue : Number(cleanValue);
+                } catch (error) {
+                    console.error(`解析参数失败: ${param}`, error);
+                }
+            });
+            return JSON.stringify(jsonBody);
+        }
 
-                  body[cleanKey] = isNaN(cleanValue) ? cleanValue : Number(cleanValue); // 自动转换数字
-              } catch (error) {
-                  console.error(`解析自定义请求体失败: ${param}`, error);
-              }
-          });
+        // 纯文本格式
+        if (contentType.includes('text/plain')) {
+            return text;
+        }
 
-          return body;
-      }
+        // XML格式
+        if (contentType.includes('application/xml') || contentType.includes('text/xml')) {
+            let xmlBody = '<?xml version="1.0" encoding="UTF-8"?>\n<request>\n';
+            params.forEach(param => {
+                try {
+                    const [key, value] = param.split(':');
+                    const cleanKey = key.trim().replace(/"/g, '');
+                    let cleanValue = value.trim().replace(/"/g, '');
+                    if (cleanValue === '{input}') {
+                        cleanValue = text;
+                    }
+                    xmlBody += `  <${cleanKey}>${cleanValue}</${cleanKey}>\n`;
+                } catch (error) {
+                    console.error(`解析参数失败: ${param}`, error);
+                }
+            });
+            xmlBody += '</request>';
+            return xmlBody;
+        }
 
-      async generateSpeech(text, ctx, msg) {
-          try {
-              const model = seal.ext.getOptionConfig(ext, '语音合成模型');
-              let response;
+        // multipart/form-data格式
+        if (contentType.includes('multipart/form-data')) {
+            const formData = new FormData();
+            params.forEach(param => {
+                try {
+                    const [key, value] = param.split(':');
+                    const cleanKey = key.trim().replace(/"/g, '');
+                    let cleanValue = value.trim().replace(/"/g, '');
+                    if (cleanValue === '{input}') {
+                        cleanValue = text;
+                    }
+                    formData.append(cleanKey, cleanValue);
+                } catch (error) {
+                    console.error(`解析参数失败: ${param}`, error);
+                }
+            });
+            return formData;
+        }
 
-              if (model === '百度大模型语音合成') {
-                  const token = await this.getAccessToken();
-                  if (!token) throw new Error("无法获取Access Token");
+        // YAML格式
+        if (contentType.includes('application/yaml') || contentType.includes('application/x-yaml')) {
+            let yamlBody = '';
+            params.forEach(param => {
+                try {
+                    const [key, value] = param.split(':');
+                    const cleanKey = key.trim().replace(/"/g, '');
+                    let cleanValue = value.trim().replace(/"/g, '');
+                    if (cleanValue === '{input}') {
+                        cleanValue = text;
+                    }
+                    yamlBody += `${cleanKey}: ${cleanValue}\n`;
+                } catch (error) {
+                    console.error(`解析参数失败: ${param}`, error);
+                }
+            });
+            return yamlBody;
+        }
 
-                  const url = "https://tsn.baidu.com/text2audio";
-                  const body = this.parseBaiduParams(text);
-                  body.tok = token;
+        // 默认返回JSON格式
+        return JSON.stringify(params);
+    }
 
-                  response = await fetch(url, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(body)
-                  });
-              } else if (model === '自定义') {
-                  const endpoint = seal.ext.getTemplateConfig(ext, '自定义_API端点')[0];
-                  const headers = this.parseCustomHeaders();
-                  const body = this.parseCustomBody(text);
+    async generateSpeech(text, ctx, msg) {
+        try {
+            const model = seal.ext.getOptionConfig(ext, '语音合成模型');
+            let response;
 
-                  response = await fetch(endpoint, {
-                      method: 'POST',
-                      headers: headers,
-                      body: JSON.stringify(body)
-                  });
-              } else {
+            if (model === '百度大模型语音合成') {
+                const token = await this.getAccessToken();
+                if (!token) throw new Error("无法获取Access Token");
+
+                const url = "https://tsn.baidu.com/text2audio";
+                const params = seal.ext.getTemplateConfig(ext, '百度请求体参数');
+                const body = this.formatRequestBody(params, 'application/x-www-form-urlencoded', text) + `&tok=${token}`;
+
+                response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: body
+                });
+            } else if (model === '自定义') {
+                const endpoint = seal.ext.getTemplateConfig(ext, '自定义_API端点')[0];
+                const headers = this.parseCustomHeaders();
+                const params = seal.ext.getTemplateConfig(ext, '自定义_请求体');
+                const body = this.formatRequestBody(params, headers['Content-Type'], text);
+
+                response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: headers,
+                    body: body
+                });
+            }else {
                   throw new Error("未知的语音合成模型");
               }
 
