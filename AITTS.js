@@ -240,7 +240,6 @@ if (!seal.ext.find('AITTS')) {
 
           } catch (error) {
               console.error("语音生成失败:", error);
-              seal.replyToSender(ctx, msg, "语音生成失败，请检查日志");
           }
       }
   }
