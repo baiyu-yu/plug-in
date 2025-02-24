@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.4.1
+// @version      4.5.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，原有的基于解析返回文本的AI命令已经被完全替换。选用模型是否支持该功能请查看相应接口文档。
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -105,10 +105,10 @@
       seal.ext.registerTemplateConfig(ConfigManager.ext, "示例对话", [
         "请写点什么，或者删掉这句话"
       ], "role顺序为user和assistant轮流出现");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否在消息内添加前缀", true, "");
+      seal.ext.registerBoolConfig(ConfigManager.ext, "是否在消息内添加前缀", true, "可用于辨别不同用户");
       seal.ext.registerBoolConfig(ConfigManager.ext, "是否给AI展示QQ号", false, "");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否合并user content", false, "用于适配deepseek-reasoner");
-      seal.ext.registerIntConfig(ConfigManager.ext, "存储上下文对话限制轮数", 10, "");
+      seal.ext.registerBoolConfig(ConfigManager.ext, "是否合并user content", false, "在不支持连续多个role为user的情况下开启，可用于适配deepseek-reasoner");
+      seal.ext.registerIntConfig(ConfigManager.ext, "存储上下文对话限制轮数", 10, "出现一次user视作一轮");
     }
     static get() {
       return {
@@ -148,17 +148,18 @@
   // src/config/config_reply.ts
   var ReplyConfig = class {
     static register() {
-      seal.ext.registerBoolConfig(ConfigManager.ext, "回复是否引用", false, "");
-      seal.ext.registerIntConfig(ConfigManager.ext, "回复最大字数", 1e3, "防止最大Tokens限制不起效");
+      seal.ext.registerBoolConfig(ConfigManager.ext, "回复是否引用", false, "开启将会引用触发该条回复的消息");
+      seal.ext.registerIntConfig(ConfigManager.ext, "回复最大字数", 1e3, "防止最大tokens限制不起效");
       seal.ext.registerBoolConfig(ConfigManager.ext, "禁止AI复读", false, "");
       seal.ext.registerFloatConfig(ConfigManager.ext, "视作复读的最低相似度", 0.8, "");
       seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤上下文正则表达式", [
         "<[\\|｜]from.*?[\\|｜]?>",
-        "^<think>.*?</think>"
+        "^<think>[\\s\\S]*?</think>"
       ], "回复加入上下文时，将符合正则表达式的内容删掉");
       seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤回复正则表达式", [
         "<[\\|｜].*?[\\|｜]?>",
-        "^<think>.*?</think>"
+        "^<think>[\\s\\S]*?</think>",
+        "<function_call>[\\s\\S]*?</function_call>"
       ], "发送回复时，将符合正则表达式的内容删掉");
     }
     static get() {
@@ -191,7 +192,7 @@
         `"top_p":1`,
         `"tools":null`,
         `"tool_choice":null`
-      ], "messages,tools,tool_choice为null时，将会自动替换");
+      ], "messages,tools,tool_choice为null时，将会自动替换。具体参数请参考你所使用模型的接口文档");
     }
     static get() {
       return {
@@ -206,6 +207,7 @@
   var ToolConfig = class {
     static register() {
       seal.ext.registerBoolConfig(ConfigManager.ext, "是否开启调用函数功能", true, "");
+      seal.ext.registerBoolConfig(ConfigManager.ext, "是否切换为提示词工程", false, "API在不支持function calling功能的时候开启");
       seal.ext.registerTemplateConfig(ConfigManager.ext, "不允许调用的函数", [
         "填写不允许调用的函数名称，例如：get_time"
       ], "修改后保存并重载js");
@@ -237,12 +239,14 @@
         "爹系男友",
         "暖心姐姐",
         "温柔妹妹",
-        "书香少女"
-      ], "需要http依赖，需要可以调用ai语音api版本的napcat/lagrange");
+        "书香少女",
+        "自定义"
+      ], "该功能在选择预设音色时，需要安装http依赖插件，且需要可以调用ai语音api版本的napcat/lagrange等。选择自定义音色时，则需要aitts依赖插件和ffmpeg");
     }
     static get() {
       return {
         isTool: seal.ext.getBoolConfig(ConfigManager.ext, "是否开启调用函数功能"),
+        usePromptEngineering: seal.ext.getBoolConfig(ConfigManager.ext, "是否切换为提示词工程"),
         toolsNotAllow: seal.ext.getTemplateConfig(ConfigManager.ext, "不允许调用的函数"),
         toolsDefaultClosed: seal.ext.getTemplateConfig(ConfigManager.ext, "默认关闭的函数"),
         memoryLimit: seal.ext.getIntConfig(ConfigManager.ext, "长期记忆上限"),
@@ -595,7 +599,7 @@ ${attr}: ${value}=>${result}`;
       type: "function",
       function: {
         name: "face",
-        description: `发送表情包，表情名称有:${Object.keys(localImages).length === 0 ? "暂无表情" : Object.keys(localImages).join("、")}`,
+        description: `发送表情包，${Object.keys(localImages).length === 0 ? "目前暂无可使用表情" : `表情名称有:${Object.keys(localImages).join("、")}`}`,
         parameters: {
           type: "object",
           properties: {
@@ -787,11 +791,11 @@ ${attr}: ${value}=>${result}`;
   }
 
   // src/tools/tool_memory.ts
-  function registerMemory() {
+  function registerAddMemory() {
     const info = {
       type: "function",
       function: {
-        name: "memory",
+        name: "add_memory",
         description: "添加记忆或者留下对别人印象，尽量不要重复",
         parameters: {
           type: "object",
@@ -812,11 +816,6 @@ ${attr}: ${value}=>${result}`;
     const tool = new Tool(info);
     tool.solve = async (ctx, msg, ai, args) => {
       const { name, content } = args;
-      const ext = seal.ext.find("HTTP依赖");
-      if (!ext) {
-        console.error(`未找到HTTP依赖`);
-        return `未找到HTTP依赖，请提示用户安装HTTP依赖`;
-      }
       const uid = ai.context.findUid(name);
       if (uid === null) {
         console.log(`未找到<${name}>`);
@@ -833,6 +832,44 @@ ${attr}: ${value}=>${result}`;
       ai.memory.addMemory(ctx.group.groupId, ctx.group.groupName, content);
       AIManager.saveAI(uid);
       return `添加记忆成功`;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerShowMemory() {
+    if (!ConfigManager.message.showQQ) {
+      return;
+    }
+    const info = {
+      type: "function",
+      function: {
+        name: "show_memory",
+        description: "查看记忆",
+        parameters: {
+          type: "object",
+          properties: {
+            user_id: {
+              type: "string",
+              description: "纯数字QQ号"
+            }
+          },
+          required: ["user_id"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, _, ai, args) => {
+      const { user_id } = args;
+      if (isNaN(parseInt(user_id))) {
+        console.error(`<${user_id}>不是一个合法的QQ号`);
+        return `<${user_id}>不是一个合法的QQ号`;
+      }
+      const uid = `QQ:${user_id}`;
+      if (uid === ctx.endPoint.userId) {
+        console.error("不能添加自己的记忆");
+        return `不能添加自己的记忆`;
+      }
+      ai = AIManager.getAI(uid);
+      return ai.memory.getPlayerMemoryPrompt();
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -1138,7 +1175,7 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tools/tool_set_timer.ts
+  // src/tools/tool_timer.ts
   var timerQueue = [];
   function registerSetTimer() {
     const info = {
@@ -1149,23 +1186,31 @@ ${attr}: ${value}=>${result}`;
         parameters: {
           type: "object",
           properties: {
-            time: {
+            days: {
               type: "integer",
-              description: "时间，单位为分钟"
+              description: "天数"
+            },
+            hours: {
+              type: "integer",
+              description: "小时数"
+            },
+            minutes: {
+              type: "integer",
+              description: "分钟数"
             },
             content: {
               type: "string",
               description: "触发时给自己的的提示词"
             }
           },
-          required: ["time", "content"]
+          required: ["minutes", "content"]
         }
       }
     };
     const tool = new Tool(info);
     tool.solve = async (ctx, msg, ai, args) => {
-      const { time, content } = args;
-      const t = parseInt(time);
+      const { days = 0, hours = 0, minutes, content } = args;
+      const t = parseInt(days) * 24 * 60 + parseInt(hours) * 60 + parseInt(minutes);
       if (isNaN(t)) {
         return "时间应为数字";
       }
@@ -1181,6 +1226,79 @@ ${attr}: ${value}=>${result}`;
       });
       ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
       return `设置定时器成功，请等待`;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerShowTimerList() {
+    const info = {
+      type: "function",
+      function: {
+        name: "show_timer_list",
+        description: "查看当前聊天的所有定时器",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ai, ___) => {
+      const timers = timerQueue.filter((t) => t.id === ai.id);
+      if (timers.length === 0) {
+        return "当前对话没有定时器";
+      }
+      const s = timers.map((t, i) => {
+        return `${i + 1}. 触发内容：${t.content}
+${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
+      }).join("\n");
+      return s;
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerCancelTimer() {
+    const info = {
+      type: "function",
+      function: {
+        name: "cancel_timer",
+        description: "取消当前聊天的指定定时器",
+        parameters: {
+          type: "object",
+          properties: {
+            index_list: {
+              type: "array",
+              items: {
+                type: "integer"
+              },
+              description: "要取消的定时器序号列表，序号从1开始"
+            }
+          },
+          required: ["index_list"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ai, args) => {
+      const { index_list } = args;
+      const timers = timerQueue.filter((t) => t.id === ai.id);
+      if (timers.length === 0) {
+        return "当前对话没有定时器";
+      }
+      if (index_list.length === 0) {
+        return "请输入要取消的定时器序号";
+      }
+      for (const index of index_list) {
+        if (index < 1 || index > timers.length) {
+          return `序号${index}超出范围`;
+        }
+        const i = timerQueue.indexOf(timers[index - 1]);
+        if (i === -1) {
+          return `出错了:找不到序号${index}的定时器`;
+        }
+        timerQueue.splice(i, 1);
+      }
+      ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
+      return "定时器取消成功";
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -1229,19 +1347,28 @@ ${attr}: ${value}=>${result}`;
       }
     };
     const tool = new Tool(info);
-    tool.solve = async (ctx, _, __, args) => {
+    tool.solve = async (ctx, msg, _, args) => {
       const { text } = args;
-      const ext = seal.ext.find("HTTP依赖");
-      if (!ext) {
-        console.error(`未找到HTTP依赖`);
-        return `未找到HTTP依赖，请提示用户安装HTTP依赖`;
-      }
       try {
         const { character } = ConfigManager.tool;
-        const characterId = characterMap[character];
-        const epId = ctx.endPoint.userId;
-        const group_id = ctx.group.groupId.replace(/\D+/g, "");
-        globalThis.http.getData(epId, `send_group_ai_record?character=${characterId}&group_id=${group_id}&text=${text}`);
+        if (character === "自定义") {
+          const aittsExt = seal.ext.find("AITTS");
+          if (!aittsExt) {
+            console.error(`未找到AITTS依赖`);
+            return `未找到AITTS依赖，请提示用户安装AITTS依赖`;
+          }
+          await globalThis.ttsHandler.generateSpeech(text, ctx, msg);
+        } else {
+          const ext = seal.ext.find("HTTP依赖");
+          if (!ext) {
+            console.error(`未找到HTTP依赖`);
+            return `未找到HTTP依赖，请提示用户安装HTTP依赖`;
+          }
+          const characterId = characterMap[character];
+          const epId = ctx.endPoint.userId;
+          const group_id = ctx.group.groupId.replace(/\D+/g, "");
+          globalThis.http.getData(epId, `send_group_ai_record?character=${characterId}&group_id=${group_id}&text=${text}`);
+        }
         return `发送语音成功`;
       } catch (e) {
         console.error(e);
@@ -1385,7 +1512,8 @@ ${attr}: ${value}=>${result}`;
       }
     }
     static registerTool() {
-      registerMemory();
+      registerAddMemory();
+      registerShowMemory();
       registerDrawDeck();
       registerFace();
       registerJrrp();
@@ -1401,6 +1529,8 @@ ${attr}: ${value}=>${result}`;
       registerPoke();
       registerGetTime();
       registerSetTimer();
+      registerShowTimerList();
+      registerCancelTimer();
       registerWebSearch();
       registerImageToText();
       registerCheckAvatar();
@@ -1463,7 +1593,14 @@ ${attr}: ${value}=>${result}`;
           }
           const args = JSON.parse(tool_calls[i].function.arguments);
           if (args !== null && typeof args !== "object") {
-            throw new Error(`arguement不是一个object`);
+            log(`调用函数失败:arguement不是一个object`);
+            ai.context.toolIteration(tool_calls[i].id, `调用函数失败:arguement不是一个object`);
+            continue;
+          }
+          if (tool.info.function.parameters.required.some((key) => !args.hasOwnProperty(key))) {
+            log(`调用函数失败:缺少必需参数`);
+            ai.context.toolIteration(tool_calls[i].id, `调用函数失败:缺少必需参数`);
+            continue;
           }
           const s = await tool.solve(ctx, msg, ai, args);
           ai.context.toolIteration(tool_calls[i].id, s);
@@ -1475,6 +1612,38 @@ ${attr}: ${value}=>${result}`;
       }
       return tool_choice;
     }
+    static async handlePromptTool(ctx, msg, ai, tool_call) {
+      if (!tool_call.hasOwnProperty("name") || !tool_call.hasOwnProperty("arguments")) {
+        log(`调用函数失败:缺少name或arguments`);
+        ai.context.systemUserIteration("_调用函数返回", `调用函数失败:缺少name或arguments`);
+      }
+      const name = tool_call.name;
+      try {
+        if (this.cmdArgs == null) {
+          log(`暂时无法调用函数，请先使用任意指令`);
+          ai.context.systemUserIteration("_调用函数返回", `暂时无法调用函数，请先提示用户使用任意指令`);
+          return;
+        }
+        const tool = this.toolMap[name];
+        const args = tool_call.arguments;
+        if (args !== null && typeof args !== "object") {
+          log(`调用函数失败:arguement不是一个object`);
+          ai.context.systemUserIteration("_调用函数返回", `调用函数失败:arguement不是一个object`);
+          return;
+        }
+        if (tool.info.function.parameters.required.some((key) => !args.hasOwnProperty(key))) {
+          log(`调用函数失败:缺少必需参数`);
+          ai.context.systemUserIteration("_调用函数返回", `调用函数失败:缺少必需参数`);
+          return;
+        }
+        const s = await tool.solve(ctx, msg, ai, args);
+        ai.context.systemUserIteration("_调用函数返回", s);
+      } catch (e) {
+        const s = `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`;
+        console.error(s);
+        ai.context.systemUserIteration("_调用函数返回", s);
+      }
+    }
   };
   _ToolManager.cmdArgs = null;
   _ToolManager.toolMap = {};
@@ -1483,6 +1652,7 @@ ${attr}: ${value}=>${result}`;
   // src/utils/utils_message.ts
   function buildSystemMessage(ctx, ai) {
     const { roleSetting, showQQ } = ConfigManager.message;
+    const { isTool, usePromptEngineering } = ConfigManager.tool;
     let content = roleSetting;
     if (!ctx.isPrivate) {
       content += `
@@ -1498,6 +1668,32 @@ ${attr}: ${value}=>${result}`;
 **记忆**
 如果记忆与上述设定冲突，请遵守角色设定。记忆如下:
 ${memeryPrompt}`;
+    }
+    if (isTool && usePromptEngineering) {
+      const tools = ai.tool.getToolsInfo();
+      const toolsPrompt = tools.map((item, index) => {
+        return `${index + 1}. 名称:${item.function.name}
+- 描述:${item.function.description}
+- 参数信息:${JSON.stringify(item.function.parameters.properties, null, 2)}
+- 必需参数:${item.function.parameters.required.join("\n")}`;
+      });
+      content += `
+**调用函数**
+当需要调用函数功能时，请严格使用以下格式：
+\`\`\`
+<function_call>
+{
+    "name": "函数名",
+    "arguments": {
+        "参数1": "值1",
+        "参数2": "值2"
+    }
+}
+</function_call>
+\`\`\`
+不要附带其他文本，且只能调用一次函数
+
+可用函数列表: ${toolsPrompt}`;
     }
     const systemMessage = {
       role: "system",
@@ -1564,6 +1760,7 @@ ${memeryPrompt}`;
   // src/AI/service.ts
   async function sendChatRequest(ctx, msg, ai, messages, tool_choice) {
     const { url, apiKey, bodyTemplate } = ConfigManager.request;
+    const { isTool, usePromptEngineering } = ConfigManager.tool;
     const tools = ai.tool.getToolsInfo();
     try {
       const bodyObject = parseBody(bodyTemplate, messages, tools, tool_choice);
@@ -1576,15 +1773,31 @@ ${memeryPrompt}`;
           log(`思维链内容:`, message.reasoning_content);
         }
         log(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
-        if (message.hasOwnProperty("tool_calls") && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-          log(`触发工具调用`);
-          ai.context.toolCallsIteration(message.tool_calls);
-          const tool_choice2 = await ToolManager.handleTools(ctx, msg, ai, message.tool_calls);
-          if (reply) {
-            return reply;
+        if (isTool) {
+          if (usePromptEngineering) {
+            const match = reply.match(/<function_call>([\s\S]*?)<\/function_call>/);
+            if (match) {
+              try {
+                ai.context.iteration(ctx, match[0], [], "assistant");
+                const tool_call = JSON.parse(match[1]);
+                await ToolManager.handlePromptTool(ctx, msg, ai, tool_call);
+                const messages2 = handleMessages(ctx, ai);
+                return await sendChatRequest(ctx, msg, ai, messages2, tool_choice);
+              } catch (error) {
+              }
+            }
+          } else {
+            if (message.hasOwnProperty("tool_calls") && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+              log(`触发工具调用`);
+              ai.context.toolCallsIteration(message.tool_calls);
+              const tool_choice2 = await ToolManager.handleTools(ctx, msg, ai, message.tool_calls);
+              if (reply) {
+                return reply;
+              }
+              const messages2 = handleMessages(ctx, ai);
+              return await sendChatRequest(ctx, msg, ai, messages2, tool_choice2);
+            }
           }
-          const messages2 = handleMessages(ctx, ai);
-          return await sendChatRequest(ctx, msg, ai, messages2, tool_choice2);
         }
         return reply;
       } else {
@@ -1649,20 +1862,26 @@ ${memeryPrompt}`;
     return data;
   }
   function parseBody(template, messages, tools, tool_choice) {
+    const { isTool, usePromptEngineering } = ConfigManager.tool;
     try {
       const bodyObject = JSON.parse(`{${template.join(",")}}`);
-      if (bodyObject.messages === null) {
+      if ((bodyObject == null ? void 0 : bodyObject.messages) === null) {
         bodyObject.messages = messages;
       }
-      if (bodyObject.stream !== false) {
+      if ((bodyObject == null ? void 0 : bodyObject.stream) !== false) {
         console.error(`不支持流式传输，请将stream设置为false`);
         bodyObject.stream = false;
       }
-      if (bodyObject.tools === null) {
-        bodyObject.tools = tools;
-      }
-      if (bodyObject.tool_choice === null) {
-        bodyObject.tool_choice = tool_choice;
+      if (isTool && !usePromptEngineering) {
+        if ((bodyObject == null ? void 0 : bodyObject.tools) === null) {
+          bodyObject.tools = tools;
+        }
+        if ((bodyObject == null ? void 0 : bodyObject.tool_choice) === null) {
+          bodyObject.tool_choice = tool_choice;
+        }
+      } else {
+        bodyObject == null ? true : delete bodyObject.tools;
+        bodyObject == null ? true : delete bodyObject.tool_choice;
       }
       return bodyObject;
     } catch (err) {
@@ -2326,7 +2545,7 @@ ${memeryPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.4.1");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.0");
       seal.ext.register(ext);
     }
     try {
