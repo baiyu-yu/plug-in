@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.5.11
+// @version      4.5.12
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -156,12 +156,12 @@
       seal.ext.registerFloatConfig(ConfigManager.ext, "视作复读的最低相似度", 0.8, "");
       seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤上下文正则表达式", [
         "<[\\|｜]from.*?[\\|｜]?>",
-        "^<think>[\\s\\S]*?</think>"
+        "^<think>[\\s\\S]*?<\\/think>"
       ], "回复加入上下文时，将符合正则表达式的内容删掉");
       seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤回复正则表达式", [
         "<[\\|｜].*?[\\|｜]?>",
-        "^<think>[\\s\\S]*?</think>",
-        "<function_call>[\\s\\S]*?</function_call>"
+        "^<think>[\\s\\S]*?<\\/think>",
+        "<function_call>[\\s\\S]*?<\\/function_call>"
       ], "发送回复时，将符合正则表达式的内容删掉");
     }
     static get() {
@@ -1640,8 +1640,6 @@ QQ等级: ${data.qqLevel}
 星座: ${constellations[data.constellation - 1]}
 生肖: ${shengXiao[data.shengXiao - 1]}`;
         }
-        if (data.homeTown && data.homeTown !== "0-0-0") s += `
-故乡: ${data.homeTown}`;
         if (data.pos && data.pos !== "") s += `
 位置: ${data.pos}`;
         if (data.country && data.country !== "") s += `
@@ -1763,7 +1761,7 @@ QQ等级: ${data.qqLevel}
     if (segments.length === 0) {
       return { s: "", reply: "", isRepeat: false, images: [] };
     }
-    s = segments[0].replace(/<br>/g, "\n").slice(0, maxChar).trim();
+    s = segments[0];
     let reply = s;
     filterContextTemplate.forEach((item) => {
       try {
@@ -1773,6 +1771,7 @@ QQ等级: ${data.qqLevel}
         console.error("Error in RegExp:", error);
       }
     });
+    s = s.slice(0, maxChar).trim();
     const isRepeat = checkRepeat(context, s);
     reply = await replaceMentions(ctx, context, reply);
     const { result, images } = await replaceImages(context, reply);
@@ -1786,7 +1785,21 @@ QQ等级: ${data.qqLevel}
       }
     });
     const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
-    reply = prefix + reply.trim();
+    const segments2 = reply.split(/(\[CQ:.+?\])/);
+    let nonCQLength = 0;
+    let finalReply = prefix;
+    for (const segment of segments2) {
+      if (segment.startsWith("[CQ:") && segment.endsWith("]")) {
+        finalReply += segment;
+      } else {
+        const remaining = maxChar - nonCQLength;
+        if (remaining > 0) {
+          finalReply += segment.slice(0, remaining);
+          nonCQLength += Math.min(segment.length, remaining);
+        }
+      }
+    }
+    reply = finalReply;
     return { s, isRepeat, reply, images };
   }
   function checkRepeat(context, s) {
@@ -2766,12 +2779,15 @@ ${memeryPrompt}`;
       const time = Date.now();
       const data = await fetchData(url, apiKey, bodyObject);
       if (data.choices && data.choices.length > 0) {
+        const model = data.model;
+        const usage = data.usage;
+        AIManager.updateUsage(model, usage);
         const message = data.choices[0].message;
         const finish_reason = data.choices[0].finish_reason;
-        const reply = message.content;
         if (message.hasOwnProperty("reasoning_content")) {
           log(`思维链内容:`, message.reasoning_content);
         }
+        const reply = message.content;
         log(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
         if (isTool) {
           if (usePromptEngineering) {
@@ -2809,6 +2825,9 @@ ${memeryPrompt}`;
       const time = Date.now();
       const data = await fetchData(url, apiKey, bodyObject);
       if (data.choices && data.choices.length > 0) {
+        const model = data.model;
+        const usage = data.usage;
+        AIManager.updateUsage(model, usage);
         const message = data.choices[0].message;
         const reply = message.content;
         log(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
@@ -2878,30 +2897,39 @@ ${memeryPrompt}`;
   }
   function parseBody(template, messages, tools, tool_choice) {
     const { isTool, usePromptEngineering } = ConfigManager.tool;
-    try {
-      const bodyObject = JSON.parse(`{${template.join(",")}}`);
-      if ((bodyObject == null ? void 0 : bodyObject.messages) === null) {
-        bodyObject.messages = messages;
+    const bodyObject = {};
+    for (let i = 0; i < template.length; i++) {
+      const s = template[i];
+      if (s.trim() === "") {
+        continue;
       }
-      if ((bodyObject == null ? void 0 : bodyObject.stream) !== false) {
-        console.error(`不支持流式传输，请将stream设置为false`);
-        bodyObject.stream = false;
+      try {
+        const obj = JSON.parse(`{${s}}`);
+        const key = Object.keys(obj)[0];
+        bodyObject[key] = obj[key];
+      } catch (err) {
+        throw new Error(`解析body的【${s}】时出现错误:${err}`);
       }
-      if (isTool && !usePromptEngineering) {
-        if ((bodyObject == null ? void 0 : bodyObject.tools) === null) {
-          bodyObject.tools = tools;
-        }
-        if ((bodyObject == null ? void 0 : bodyObject.tool_choice) === null) {
-          bodyObject.tool_choice = tool_choice;
-        }
-      } else {
-        bodyObject == null ? true : delete bodyObject.tools;
-        bodyObject == null ? true : delete bodyObject.tool_choice;
-      }
-      return bodyObject;
-    } catch (err) {
-      throw new Error(`解析body时出现错误:${err}`);
     }
+    if ((bodyObject == null ? void 0 : bodyObject.messages) === null) {
+      bodyObject.messages = messages;
+    }
+    if ((bodyObject == null ? void 0 : bodyObject.stream) !== false) {
+      console.error(`不支持流式传输，请将stream设置为false`);
+      bodyObject.stream = false;
+    }
+    if (isTool && !usePromptEngineering) {
+      if ((bodyObject == null ? void 0 : bodyObject.tools) === null) {
+        bodyObject.tools = tools;
+      }
+      if ((bodyObject == null ? void 0 : bodyObject.tool_choice) === null) {
+        bodyObject.tool_choice = tool_choice;
+      }
+    } else {
+      bodyObject == null ? true : delete bodyObject.tools;
+      bodyObject == null ? true : delete bodyObject.tool_choice;
+    }
+    return bodyObject;
   }
 
   // src/AI/image.ts
@@ -3469,7 +3497,7 @@ ${memeryPrompt}`;
   };
 
   // src/AI/AI.ts
-  var AI = class _AI {
+  var AI2 = class _AI {
     constructor(id) {
       this.id = id;
       this.context = new Context();
@@ -3555,11 +3583,11 @@ ${memeryPrompt}`;
     }
     static getAI(id) {
       if (!this.cache.hasOwnProperty(id)) {
-        let data = new AI(id);
+        let data = new AI2(id);
         try {
           data = JSON.parse(ConfigManager.ext.storageGet(`AI_${id}`) || "{}", (key, value) => {
             if (key === "") {
-              return AI.reviver(value, id);
+              return AI2.reviver(value, id);
             }
             if (key === "context") {
               return Context.reviver(value);
@@ -3587,14 +3615,144 @@ ${memeryPrompt}`;
         ConfigManager.ext.storageSet(`AI_${id}`, JSON.stringify(this.cache[id]));
       }
     }
+    static clearUsageMap() {
+      this.usageMap = {};
+    }
+    static clearExpiredUsage(model) {
+      const now = /* @__PURE__ */ new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      const currentDay = now.getDate();
+      const currentYM = currentYear * 12 + currentMonth;
+      const currentYMD = currentYear * 12 * 31 + currentMonth * 31 + currentDay;
+      if (!this.usageMap.hasOwnProperty(model)) {
+        return;
+      }
+      for (const key in this.usageMap[model]) {
+        const [year, month, day] = key.split("-").map(Number);
+        const ym = year * 12 + month;
+        const ymd = year * 12 * 31 + month * 31 + day;
+        let newKey = "";
+        if (ymd < currentYMD - 30) {
+          newKey = `${year}-${month}-0`;
+        }
+        if (ym < currentYM - 11) {
+          newKey = `0-0-0`;
+        }
+        if (newKey) {
+          if (!this.usageMap[model].hasOwnProperty(newKey)) {
+            this.usageMap[model][newKey] = {
+              prompt_tokens: 0,
+              completion_tokens: 0
+            };
+          }
+          this.usageMap[model][newKey].prompt_tokens += this.usageMap[model][key].prompt_tokens;
+          this.usageMap[model][newKey].completion_tokens += this.usageMap[model][key].completion_tokens;
+          delete this.usageMap[model][key];
+        }
+      }
+    }
+    static getUsageMap() {
+      try {
+        const usage = JSON.parse(ConfigManager.ext.storageGet("usageMap") || "{}");
+        this.usageMap = usage;
+      } catch (error) {
+        console.error(`从数据库中获取usageMap失败:`, error);
+      }
+    }
+    static saveUsageMap() {
+      ConfigManager.ext.storageSet("usageMap", JSON.stringify(this.usageMap));
+    }
+    static updateUsage(model, usage) {
+      const now = /* @__PURE__ */ new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const key = `${year}-${month}-${day}`;
+      if (!this.usageMap.hasOwnProperty(model)) {
+        this.usageMap[model] = {};
+      }
+      if (!this.usageMap[model].hasOwnProperty(key)) {
+        this.usageMap[model][key] = {
+          prompt_tokens: 0,
+          completion_tokens: 0
+        };
+        this.clearExpiredUsage(model);
+      }
+      this.usageMap[model][key].prompt_tokens += usage.prompt_tokens || 0;
+      this.usageMap[model][key].completion_tokens += usage.completion_tokens || 0;
+      this.saveUsageMap();
+    }
+    static getMonthUsage(model, year, month) {
+      const prefix = `${year}-${month}-`;
+      if (!this.usageMap.hasOwnProperty(model)) {
+        return {
+          prompt_tokens: 0,
+          completion_tokens: 0
+        };
+      }
+      const usage = {
+        prompt_tokens: 0,
+        completion_tokens: 0
+      };
+      for (const key in this.usageMap[model]) {
+        if (!key.startsWith(prefix)) {
+          continue;
+        }
+        usage.prompt_tokens += this.usageMap[model][key].prompt_tokens;
+        usage.completion_tokens += this.usageMap[model][key].completion_tokens;
+      }
+      return usage;
+    }
+    static getYearUsage(model, year) {
+      const prefix = `${year}-`;
+      if (!this.usageMap.hasOwnProperty(model)) {
+        return {
+          prompt_tokens: 0,
+          completion_tokens: 0
+        };
+      }
+      const usage = {
+        prompt_tokens: 0,
+        completion_tokens: 0
+      };
+      for (const key in this.usageMap[model]) {
+        if (!key.startsWith(prefix)) {
+          continue;
+        }
+        const month = parseInt(key.split("-")[1]);
+        const monthUsage = this.getMonthUsage(model, year, month);
+        usage.prompt_tokens += monthUsage.prompt_tokens;
+        usage.completion_tokens += monthUsage.completion_tokens;
+      }
+      return usage;
+    }
+    static getModelUsage(model) {
+      if (!this.usageMap.hasOwnProperty(model)) {
+        return {
+          prompt_tokens: 0,
+          completion_tokens: 0
+        };
+      }
+      const usage = {
+        prompt_tokens: 0,
+        completion_tokens: 0
+      };
+      for (const key in this.usageMap[model]) {
+        usage.prompt_tokens += this.usageMap[model][key].prompt_tokens;
+        usage.completion_tokens += this.usageMap[model][key].completion_tokens;
+      }
+      return usage;
+    }
   };
   AIManager.cache = {};
+  AIManager.usageMap = {};
 
   // src/index.ts
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.11");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.12");
       seal.ext.register(ext);
     }
     try {
@@ -3606,6 +3764,7 @@ ${memeryPrompt}`;
     }
     ConfigManager.ext = ext;
     ConfigManager.registerConfig();
+    AIManager.getUsageMap();
     ToolManager.registerTool();
     const CQTypesAllow = ["at", "image", "reply", "face"];
     const cmdAI = seal.ext.newCmdItemInfo();
@@ -3620,10 +3779,11 @@ ${memeryPrompt}`;
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
 【.ai off】关闭AI，此时仍能用关键词触发
 【.ai fgt】遗忘上下文
-【.ai memo】修改AI的记忆
-【.ai tool】AI的工具相关`;
+【.ai memo】AI的记忆相关
+【.ai tool】AI的工具相关
+【.ai tk】AI的token相关`;
     cmdAI.allowDelegate = true;
-    cmdAI.solve = async (ctx, msg, cmdArgs) => {
+    cmdAI.solve = (ctx, msg, cmdArgs) => {
       const val = cmdArgs.getArgN(1);
       const uid = ctx.player.userId;
       const gid = ctx.group.groupId;
@@ -4078,8 +4238,9 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
                     return ret;
                   }
                 }
-                const s = await tool.solve(ctx, msg, ai, args);
-                seal.replyToSender(ctx, msg, s);
+                tool.solve(ctx, msg, ai, args).then((s) => {
+                  seal.replyToSender(ctx, msg, s);
+                });
                 return ret;
               } catch (e) {
                 const s = `调用函数 (${val2}) 失败:${e.message}`;
@@ -4089,9 +4250,299 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
             }
           }
         }
+        case "tk": {
+          if (ctx.privilegeLevel < 100) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return ret;
+          }
+          const val2 = cmdArgs.getArgN(2);
+          switch (val2) {
+            case "lst": {
+              const s = Object.keys(AIManager.usageMap).join("\n");
+              seal.replyToSender(ctx, msg, `有使用记录的模型:
+${s}`);
+              return ret;
+            }
+            case "sum": {
+              const usage = {
+                prompt_tokens: 0,
+                completion_tokens: 0
+              };
+              for (const model in AIManager.usageMap) {
+                const modelUsage = AIManager.getModelUsage(model);
+                usage.prompt_tokens += modelUsage.prompt_tokens;
+                usage.completion_tokens += modelUsage.completion_tokens;
+              }
+              if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                seal.replyToSender(ctx, msg, `没有使用记录`);
+                return ret;
+              }
+              const s = `输入token:${usage.prompt_tokens}
+输出token:${usage.completion_tokens}
+总token:${usage.prompt_tokens + usage.completion_tokens}`;
+              seal.replyToSender(ctx, msg, s);
+              return ret;
+            }
+            case "all": {
+              const s = Object.keys(AIManager.usageMap).map((model, index) => {
+                const usage = AIManager.getModelUsage(model);
+                if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                  return `${index + 1}. ${model}: 没有使用记录`;
+                }
+                return `${index + 1}. ${model}:
+  输入token:${usage.prompt_tokens}
+  输出token:${usage.completion_tokens}
+  总token:${usage.prompt_tokens + usage.completion_tokens}`;
+              }).join("\n");
+              if (!s) {
+                seal.replyToSender(ctx, msg, `没有使用记录`);
+                return ret;
+              }
+              seal.replyToSender(ctx, msg, `全部使用记录如下:
+${s}`);
+              return ret;
+            }
+            case "y": {
+              const obj = {};
+              const now = /* @__PURE__ */ new Date();
+              const currentYear = now.getFullYear();
+              const currentMonth = now.getMonth() + 1;
+              const currentYM = currentYear * 12 + currentMonth;
+              for (const model in AIManager.usageMap) {
+                const modelUsage = AIManager.usageMap[model];
+                for (const key in modelUsage) {
+                  const usage = modelUsage[key];
+                  const [year, month, _] = key.split("-").map((v) => parseInt(v));
+                  const ym = year * 12 + month;
+                  if (ym >= currentYM - 11 && ym <= currentYM) {
+                    const key2 = `${year}-${month}`;
+                    if (!obj.hasOwnProperty(key2)) {
+                      obj[key2] = {
+                        prompt_tokens: 0,
+                        completion_tokens: 0
+                      };
+                    }
+                    obj[key2].prompt_tokens += usage.prompt_tokens;
+                    obj[key2].completion_tokens += usage.completion_tokens;
+                  }
+                }
+              }
+              const keys = Object.keys(obj).sort((a, b) => {
+                const [yearA, monthA] = a.split("-").map((v) => parseInt(v));
+                const [yearB, monthB] = b.split("-").map((v) => parseInt(v));
+                return yearA * 12 + monthA - (yearB * 12 + monthB);
+              });
+              const s = keys.map((key) => {
+                const usage = obj[key];
+                if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                  return ``;
+                }
+                return `${key}:
+  输入token:${usage.prompt_tokens}
+  输出token:${usage.completion_tokens}
+  总token:${usage.prompt_tokens + usage.completion_tokens}`;
+              }).join("\n");
+              if (!s) {
+                seal.replyToSender(ctx, msg, `没有使用记录`);
+                return ret;
+              }
+              seal.replyToSender(ctx, msg, `最近12个月使用记录如下:
+${s}`);
+              return ret;
+            }
+            case "m": {
+              const obj = {};
+              const now = /* @__PURE__ */ new Date();
+              const currentYear = now.getFullYear();
+              const currentMonth = now.getMonth() + 1;
+              const currentDay = now.getDate();
+              const currentYMD = currentYear * 12 * 31 + currentMonth * 31 + currentDay;
+              for (const model in AIManager.usageMap) {
+                const modelUsage = AIManager.usageMap[model];
+                for (const key in modelUsage) {
+                  const usage = modelUsage[key];
+                  const [year, month, day] = key.split("-").map((v) => parseInt(v));
+                  const ymd = year * 12 * 31 + month * 31 + day;
+                  if (ymd >= currentYMD - 30 && ymd <= currentYMD) {
+                    const key2 = `${year}-${month}-${day}`;
+                    if (!obj.hasOwnProperty(key2)) {
+                      obj[key2] = {
+                        prompt_tokens: 0,
+                        completion_tokens: 0
+                      };
+                    }
+                    obj[key2].prompt_tokens += usage.prompt_tokens;
+                    obj[key2].completion_tokens += usage.completion_tokens;
+                  }
+                }
+              }
+              const days = Object.keys(obj).sort((a, b) => {
+                const [yearA, monthA, dayA] = a.split("-").map((v) => parseInt(v));
+                const [yearB, monthB, dayB] = b.split("-").map((v) => parseInt(v));
+                return yearA * 12 * 31 + monthA * 31 + dayA - (yearB * 12 * 31 + monthB * 31 + dayB);
+              });
+              const s = days.map((key) => {
+                const usage = obj[key];
+                if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                  return ``;
+                }
+                return `${key}:
+  输入token:${usage.prompt_tokens}
+  输出token:${usage.completion_tokens}
+  总token:${usage.prompt_tokens + usage.completion_tokens}`;
+              }).join("\n");
+              seal.replyToSender(ctx, msg, `最近31天使用记录如下:
+${s}`);
+              return ret;
+            }
+            case "clr": {
+              const val3 = cmdArgs.getArgN(3);
+              if (!val3) {
+                AIManager.clearUsageMap();
+                seal.replyToSender(ctx, msg, "已清除token使用记录");
+                AIManager.saveUsageMap();
+                return ret;
+              }
+              if (!AIManager.usageMap.hasOwnProperty(val3)) {
+                seal.replyToSender(ctx, msg, "没有这个模型，请使用【.ai tk lst】查看所有模型");
+                return ret;
+              }
+              delete AIManager.usageMap[val3];
+              seal.replyToSender(ctx, msg, `已清除 ${val3} 的token使用记录`);
+              AIManager.saveUsageMap();
+              return ret;
+            }
+            case "":
+            case "help": {
+              const s = `帮助:
+【.ai tk lst】查看所有模型
+【.ai tk sum】查看所有模型的token使用记录总和
+【.ai tk all】查看所有模型的token使用记录
+【.ai tk [y/m]】查看所有模型今年/这个月的token使用记录
+【.ai tk <模型名称>】查看模型的token使用记录
+【.ai tk <模型名称> [y/m]】查看模型今年/这个月的token使用记录
+【.ai tk clr】清除token使用记录
+【.ai tk clr <模型名称>】清除token使用记录`;
+              seal.replyToSender(ctx, msg, s);
+              return ret;
+            }
+            default: {
+              if (!AIManager.usageMap.hasOwnProperty(val2)) {
+                seal.replyToSender(ctx, msg, "没有这个模型，请使用【.ai tk lst】查看所有模型");
+                return ret;
+              }
+              const val3 = cmdArgs.getArgN(3);
+              switch (val3) {
+                case "y": {
+                  const obj = {};
+                  const now = /* @__PURE__ */ new Date();
+                  const currentYear = now.getFullYear();
+                  const currentMonth = now.getMonth() + 1;
+                  const currentYM = currentYear * 12 + currentMonth;
+                  const model = val2;
+                  const modelUsage = AIManager.usageMap[model];
+                  for (const key in modelUsage) {
+                    const usage = modelUsage[key];
+                    const [year, month, _] = key.split("-").map((v) => parseInt(v));
+                    const ym = year * 12 + month;
+                    if (ym >= currentYM - 11 && ym <= currentYM) {
+                      const key2 = `${year}-${month}`;
+                      if (!obj.hasOwnProperty(key2)) {
+                        obj[key2] = {
+                          prompt_tokens: 0,
+                          completion_tokens: 0
+                        };
+                      }
+                      obj[key2].prompt_tokens += usage.prompt_tokens;
+                      obj[key2].completion_tokens += usage.completion_tokens;
+                    }
+                  }
+                  const keys = Object.keys(obj).sort((a, b) => {
+                    const [yearA, monthA] = a.split("-").map((v) => parseInt(v));
+                    const [yearB, monthB] = b.split("-").map((v) => parseInt(v));
+                    return yearA * 12 + monthA - (yearB * 12 + monthB);
+                  });
+                  const s = keys.map((key) => {
+                    const usage = obj[key];
+                    if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                      return ``;
+                    }
+                    return `${key}:
+      输入token:${usage.prompt_tokens}
+      输出token:${usage.completion_tokens}
+      总token:${usage.prompt_tokens + usage.completion_tokens}`;
+                  }).join("\n");
+                  if (!s) {
+                    seal.replyToSender(ctx, msg, `没有使用记录`);
+                    return ret;
+                  }
+                  seal.replyToSender(ctx, msg, `最近12个月使用记录如下:
+${s}`);
+                  return ret;
+                }
+                case "m": {
+                  const obj = {};
+                  const now = /* @__PURE__ */ new Date();
+                  const currentYear = now.getFullYear();
+                  const currentMonth = now.getMonth() + 1;
+                  const currentDay = now.getDate();
+                  const currentYMD = currentYear * 12 * 31 + currentMonth * 31 + currentDay;
+                  const model = val2;
+                  const modelUsage = AIManager.usageMap[model];
+                  for (const key in modelUsage) {
+                    const usage = modelUsage[key];
+                    const [year, month, day] = key.split("-").map((v) => parseInt(v));
+                    const ymd = year * 12 * 31 + month * 31 + day;
+                    if (ymd >= currentYMD - 30 && ymd <= currentYMD) {
+                      const key2 = `${year}-${month}-${day}`;
+                      if (!obj.hasOwnProperty(key2)) {
+                        obj[key2] = {
+                          prompt_tokens: 0,
+                          completion_tokens: 0
+                        };
+                      }
+                      obj[key2].prompt_tokens += usage.prompt_tokens;
+                      obj[key2].completion_tokens += usage.completion_tokens;
+                    }
+                  }
+                  const days = Object.keys(obj).sort((a, b) => {
+                    const [yearA, monthA, dayA] = a.split("-").map((v) => parseInt(v));
+                    const [yearB, monthB, dayB] = b.split("-").map((v) => parseInt(v));
+                    return yearA * 12 * 31 + monthA * 31 + dayA - (yearB * 12 * 31 + monthB * 31 + dayB);
+                  });
+                  const s = days.map((key) => {
+                    const usage = obj[key];
+                    if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                      return ``;
+                    }
+                    return `${key}:
+      输入token:${usage.prompt_tokens}
+      输出token:${usage.completion_tokens}
+      总token:${usage.prompt_tokens + usage.completion_tokens}`;
+                  }).join("\n");
+                  seal.replyToSender(ctx, msg, `最近31天使用记录如下:
+${s}`);
+                  return ret;
+                }
+                default: {
+                  const usage = AIManager.getModelUsage(val2);
+                  if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
+                    seal.replyToSender(ctx, msg, `没有使用记录`);
+                    return ret;
+                  }
+                  const s = `输入token:${usage.prompt_tokens}
+输出token:${usage.completion_tokens}
+总token:${usage.prompt_tokens + usage.completion_tokens}`;
+                  seal.replyToSender(ctx, msg, s);
+                  return ret;
+                }
+              }
+            }
+          }
+        }
         case "help":
         default: {
-          seal.replyToSender(ctx, msg, cmdAI.help);
+          ret.showHelp = true;
           return ret;
         }
       }
@@ -4103,7 +4554,7 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
 【img stl (on/off)】偷图 开启/关闭
 【img f】遗忘
 【img itt [图片/ran] (附加提示词)】图片转文字`;
-    cmdImage.solve = async (ctx, msg, cmdArgs) => {
+    cmdImage.solve = (ctx, msg, cmdArgs) => {
       const val = cmdArgs.getArgN(1);
       const uid = ctx.player.userId;
       const gid = ctx.group.groupId;
@@ -4126,25 +4577,27 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
             }
             case "stl":
             case "stolen": {
-              const image = await ai.image.drawStolenImageFile();
-              if (!image) {
-                seal.replyToSender(ctx, msg, "暂无偷取图片");
-                return ret;
-              }
-              seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+              ai.image.drawStolenImageFile().then((image) => {
+                if (!image) {
+                  seal.replyToSender(ctx, msg, "暂无偷取图片");
+                } else {
+                  seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+                }
+              });
               return ret;
             }
             case "all": {
-              const image = await ai.image.drawImageFile();
-              if (!image) {
-                seal.replyToSender(ctx, msg, "暂无图片");
-                return ret;
-              }
-              seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+              ai.image.drawImageFile().then((image) => {
+                if (!image) {
+                  seal.replyToSender(ctx, msg, "暂无图片");
+                } else {
+                  seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+                }
+              });
               return ret;
             }
             default: {
-              seal.replyToSender(ctx, msg, cmdImage.help);
+              ret.showHelp = true;
               return ret;
             }
           }
@@ -4185,29 +4638,35 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
             seal.replyToSender(ctx, msg, "【img itt [图片/ran] (附加提示词)】图片转文字");
             return ret;
           }
-          let url = "";
           if (val2 == "ran") {
-            url = await ai.image.drawStolenImageFile();
-            if (!url) {
-              seal.replyToSender(ctx, msg, "图片偷取为空");
-              return ret;
-            }
+            ai.image.drawStolenImageFile().then((url) => {
+              if (!url) {
+                seal.replyToSender(ctx, msg, "图片偷取为空");
+              } else {
+                const text = cmdArgs.getRestArgsFrom(3);
+                ImageManager.imageToText(url, text).then((s) => {
+                  seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
+` + s);
+                });
+              }
+            });
           } else {
             const match = val2.match(/\[CQ:image,file=(.*?)\]/);
             if (!match) {
               seal.replyToSender(ctx, msg, "请附带图片");
               return ret;
             }
-            url = match[1];
-          }
-          const text = cmdArgs.getRestArgsFrom(3);
-          const s = await ImageManager.imageToText(url, text);
-          seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
+            const url = match[1];
+            const text = cmdArgs.getRestArgsFrom(3);
+            ImageManager.imageToText(url, text).then((s) => {
+              seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
 ` + s);
+            });
+          }
           return ret;
         }
         default: {
-          seal.replyToSender(ctx, msg, cmdImage.help);
+          ret.showHelp = true;
           return ret;
         }
       }
