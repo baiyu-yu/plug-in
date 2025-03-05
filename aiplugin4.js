@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.5.12
+// @version      4.5.13
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -2193,7 +2193,7 @@ QQ等级: ${data.qqLevel}
         }
         const s = `群成员数量: ${data.length}
 ` + data.slice(0, 50).map((item, index) => {
-          return `${index + 1}. ${item.nickname}(${item.user_id}) ${item.card && item.card !== item.nickname ? `群名片: ${item.card}` : ""} ${item.role === "owner" ? "【群主】" : item.role === "admin" ? "【管理员】" : item.is_robot ? "【机器人】" : ""}`;
+          return `${index + 1}. ${item.nickname}(${item.user_id}) ${item.card && item.card !== item.nickname ? `群名片: ${item.card}` : ""} ${item.title ? `头衔: ${item.title}` : ""} ${item.role === "owner" ? "【群主】" : item.role === "admin" ? "【管理员】" : item.is_robot ? "【机器人】" : ""}`;
         }).join("\n");
         return s;
       } catch (e) {
@@ -3708,7 +3708,7 @@ ${memeryPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.12");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.13");
       seal.ext.register(ext);
     }
     try {
@@ -4283,6 +4283,17 @@ ${s}`);
                   }
                 }
               }
+              const val3 = cmdArgs.getArgN(3);
+              if (val3 === "chart") {
+                get_chart_url("year", obj).then((url) => {
+                  if (!url) {
+                    seal.replyToSender(ctx, msg, `图表生成失败`);
+                    return;
+                  }
+                  seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
+                });
+                return ret;
+              }
               const keys = Object.keys(obj).sort((a, b) => {
                 const [yearA, monthA] = a.split("-").map((v) => parseInt(v));
                 const [yearB, monthB] = b.split("-").map((v) => parseInt(v));
@@ -4332,12 +4343,23 @@ ${s}`);
                   }
                 }
               }
-              const days = Object.keys(obj).sort((a, b) => {
+              const val3 = cmdArgs.getArgN(3);
+              if (val3 === "chart") {
+                get_chart_url("month", obj).then((url) => {
+                  if (!url) {
+                    seal.replyToSender(ctx, msg, `图表生成失败`);
+                    return;
+                  }
+                  seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
+                });
+                return ret;
+              }
+              const keys = Object.keys(obj).sort((a, b) => {
                 const [yearA, monthA, dayA] = a.split("-").map((v) => parseInt(v));
                 const [yearB, monthB, dayB] = b.split("-").map((v) => parseInt(v));
                 return yearA * 12 * 31 + monthA * 31 + dayA - (yearB * 12 * 31 + monthB * 31 + dayB);
               });
-              const s = days.map((key) => {
+              const s = keys.map((key) => {
                 const usage = obj[key];
                 if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
                   return ``;
@@ -4374,9 +4396,9 @@ ${s}`);
 【.ai tk lst】查看所有模型
 【.ai tk sum】查看所有模型的token使用记录总和
 【.ai tk all】查看所有模型的token使用记录
-【.ai tk [y/m]】查看所有模型今年/这个月的token使用记录
+【.ai tk [y/m] (chart)】查看所有模型今年/这个月的token使用记录
 【.ai tk <模型名称>】查看模型的token使用记录
-【.ai tk <模型名称> [y/m]】查看模型今年/这个月的token使用记录
+【.ai tk <模型名称> [y/m] (chart)】查看模型今年/这个月的token使用记录
 【.ai tk clr】清除token使用记录
 【.ai tk clr <模型名称>】清除token使用记录`;
               seal.replyToSender(ctx, msg, s);
@@ -4412,6 +4434,17 @@ ${s}`);
                       obj[key2].prompt_tokens += usage.prompt_tokens;
                       obj[key2].completion_tokens += usage.completion_tokens;
                     }
+                  }
+                  const val4 = cmdArgs.getArgN(4);
+                  if (val4 === "chart") {
+                    get_chart_url("year", obj).then((url) => {
+                      if (!url) {
+                        seal.replyToSender(ctx, msg, `图表生成失败`);
+                        return;
+                      }
+                      seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
+                    });
+                    return ret;
                   }
                   const keys = Object.keys(obj).sort((a, b) => {
                     const [yearA, monthA] = a.split("-").map((v) => parseInt(v));
@@ -4461,12 +4494,23 @@ ${s}`);
                       obj[key2].completion_tokens += usage.completion_tokens;
                     }
                   }
-                  const days = Object.keys(obj).sort((a, b) => {
+                  const val4 = cmdArgs.getArgN(4);
+                  if (val4 === "chart") {
+                    get_chart_url("month", obj).then((url) => {
+                      if (!url) {
+                        seal.replyToSender(ctx, msg, `图表生成失败`);
+                        return;
+                      }
+                      seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
+                    });
+                    return ret;
+                  }
+                  const keys = Object.keys(obj).sort((a, b) => {
                     const [yearA, monthA, dayA] = a.split("-").map((v) => parseInt(v));
                     const [yearB, monthB, dayB] = b.split("-").map((v) => parseInt(v));
                     return yearA * 12 * 31 + monthA * 31 + dayA - (yearB * 12 * 31 + monthB * 31 + dayB);
                   });
-                  const s = days.map((key) => {
+                  const s = keys.map((key) => {
                     const usage = obj[key];
                     if (usage.prompt_tokens === 0 && usage.completion_tokens === 0) {
                       return ``;
@@ -4788,6 +4832,7 @@ ${s}`);
         return;
       }
       isTaskRunning = true;
+      let changed = false;
       for (let i = 0; i < timerQueue.length && i >= 0; i++) {
         const timestamp = timerQueue[i].timestamp;
         if (timestamp > Math.floor(Date.now() / 1e3)) {
@@ -4814,11 +4859,45 @@ ${s}`);
         AIManager.saveAI(id);
         timerQueue.splice(i, 1);
         i--;
+        changed = true;
         await new Promise((resolve) => setTimeout(resolve, 2e3));
       }
-      ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
+      if (changed) {
+        ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
+      }
       isTaskRunning = false;
     });
+  }
+  async function get_chart_url(chart_type, data) {
+    try {
+      const chart_url = "http://42.193.236.17:3009/chart";
+      const response = await fetch(chart_url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          chart_type,
+          data
+        })
+      });
+      const data2 = await response.json();
+      if (!response.ok) {
+        let s = `请求失败! 状态码: ${response.status}`;
+        if (data2.error) {
+          s += `
+错误信息: ${data2.error.message}`;
+        }
+        s += `
+响应体: ${JSON.stringify(data, null, 2)}`;
+        throw new Error(s);
+      }
+      return data2.image_url;
+    } catch (error) {
+      console.error("在get_chart_url中请求出错：", error);
+      return "";
+    }
   }
   main();
 })();
