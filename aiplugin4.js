@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.5.13
+// @version      4.5.14
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -13,55 +13,58 @@
 
 (() => {
   // src/config/config_image.ts
-  var ImageConfig = class {
+  var ImageConfig = class _ImageConfig {
     static register() {
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "本地图片路径", ["<海豹>data/images/sealdice.png"], "如不需要可以不填写，尖括号内是图片的名称，便于AI调用，修改完需要重载js");
-      seal.ext.registerStringConfig(ConfigManager.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
-      seal.ext.registerIntConfig(ConfigManager.ext, "发送图片的概率/%", 100);
-      seal.ext.registerStringConfig(ConfigManager.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
-      seal.ext.registerStringConfig(ConfigManager.ext, "图片API key", "yours");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "图片body", [
+      _ImageConfig.ext = ConfigManager.getExt("aiplugin4_5:图片");
+      seal.ext.registerTemplateConfig(_ImageConfig.ext, "本地图片路径", ["<海豹>data/images/sealdice.png"], "如不需要可以不填写，尖括号内是图片的名称，便于AI调用，修改完需要重载js");
+      seal.ext.registerStringConfig(_ImageConfig.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
+      seal.ext.registerIntConfig(_ImageConfig.ext, "发送图片的概率/%", 100);
+      seal.ext.registerStringConfig(_ImageConfig.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+      seal.ext.registerStringConfig(_ImageConfig.ext, "图片API key", "yours");
+      seal.ext.registerTemplateConfig(_ImageConfig.ext, "图片body", [
         `"messages":null`,
         `"model":"glm-4v"`,
         `"max_tokens":20`,
         `"stop":null`,
         `"stream":false`
       ], "messages将会自动替换");
-      seal.ext.registerOptionConfig(ConfigManager.ext, "识别图片时将url转换为base64", "永不", ["永不", "自动", "总是"], "解决大模型无法正常获取QQ图床图片的问题");
-      seal.ext.registerIntConfig(ConfigManager.ext, "图片最大回复字符数", 100);
-      seal.ext.registerIntConfig(ConfigManager.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
+      seal.ext.registerOptionConfig(_ImageConfig.ext, "识别图片时将url转换为base64", "永不", ["永不", "自动", "总是"], "解决大模型无法正常获取QQ图床图片的问题");
+      seal.ext.registerIntConfig(_ImageConfig.ext, "图片最大回复字符数", 100);
+      seal.ext.registerIntConfig(_ImageConfig.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
     }
     static get() {
       return {
-        localImagesTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "本地图片路径"),
-        condition: seal.ext.getStringConfig(ConfigManager.ext, "图片识别需要满足的条件"),
-        p: seal.ext.getIntConfig(ConfigManager.ext, "发送图片的概率/%"),
-        url: seal.ext.getStringConfig(ConfigManager.ext, "图片大模型URL"),
-        apiKey: seal.ext.getStringConfig(ConfigManager.ext, "图片API key"),
-        bodyTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "图片body"),
-        urlToBase64: seal.ext.getOptionConfig(ConfigManager.ext, "识别图片时将url转换为base64"),
-        maxChars: seal.ext.getIntConfig(ConfigManager.ext, "图片最大回复字符数"),
-        maxImageNum: seal.ext.getIntConfig(ConfigManager.ext, "偷取图片存储上限")
+        localImagesTemplate: seal.ext.getTemplateConfig(_ImageConfig.ext, "本地图片路径"),
+        condition: seal.ext.getStringConfig(_ImageConfig.ext, "图片识别需要满足的条件"),
+        p: seal.ext.getIntConfig(_ImageConfig.ext, "发送图片的概率/%"),
+        url: seal.ext.getStringConfig(_ImageConfig.ext, "图片大模型URL"),
+        apiKey: seal.ext.getStringConfig(_ImageConfig.ext, "图片API key"),
+        bodyTemplate: seal.ext.getTemplateConfig(_ImageConfig.ext, "图片body"),
+        urlToBase64: seal.ext.getOptionConfig(_ImageConfig.ext, "识别图片时将url转换为base64"),
+        maxChars: seal.ext.getIntConfig(_ImageConfig.ext, "图片最大回复字符数"),
+        maxImageNum: seal.ext.getIntConfig(_ImageConfig.ext, "偷取图片存储上限")
       };
     }
   };
 
   // src/config/config_log.ts
-  var LogConfig = class {
+  var LogConfig = class _LogConfig {
     static register() {
-      seal.ext.registerOptionConfig(ConfigManager.ext, "日志打印方式", "简短", ["永不", "简短", "详细"]);
+      _LogConfig.ext = ConfigManager.getExt("aiplugin4");
+      seal.ext.registerOptionConfig(_LogConfig.ext, "日志打印方式", "简短", ["永不", "简短", "详细"]);
     }
     static get() {
       return {
-        logLevel: seal.ext.getOptionConfig(ConfigManager.ext, "日志打印方式")
+        logLevel: seal.ext.getOptionConfig(_LogConfig.ext, "日志打印方式")
       };
     }
   };
 
   // src/config/config_message.ts
-  var MessageConfig = class {
+  var MessageConfig = class _MessageConfig {
     static register() {
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "角色设定", [`**角色名称**：正确（せいかく/Seikaku）  
+      _MessageConfig.ext = ConfigManager.getExt("aiplugin4_1:对话");
+      seal.ext.registerTemplateConfig(_MessageConfig.ext, "角色设定", [`**角色名称**：正确（せいかく/Seikaku）  
 **身份**：被束缚的傲娇骰娘/命运裁定者/错误大人的协作者  
 
 **核心设定**：  
@@ -103,62 +106,64 @@
 ⚠️ 禁止触碰发梢骰子装饰（激活防卫协议）  
 ⚠️ 提及「傲娇率＞88%」将触发5分钟冷却  
     
-（本协议由█████加密，不可覆写）`], "只取第一个");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "示例对话", [
+（本协议由█████加密，不可覆写）`, `你是一个复读机`, `你要毁灭一切，杀杀杀`], "按照豹语变量`$g人工智能插件专用角色设定序号`进行选择，序号从0开始");
+      seal.ext.registerTemplateConfig(_MessageConfig.ext, "示例对话", [
         "请写点什么，或者删掉这句话"
       ], "role顺序为user和assistant轮流出现");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否在消息内添加前缀", true, "可用于辨别不同用户");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否给AI展示数字号码", false, "例如QQ号和群号，能力较弱模型可能会出现幻觉");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否合并user content", false, "在不支持连续多个role为user的情况下开启，可用于适配deepseek-reasoner");
-      seal.ext.registerIntConfig(ConfigManager.ext, "存储上下文对话限制轮数", 10, "出现一次user视作一轮");
+      seal.ext.registerBoolConfig(_MessageConfig.ext, "是否在消息内添加前缀", true, "可用于辨别不同用户");
+      seal.ext.registerBoolConfig(_MessageConfig.ext, "是否给AI展示数字号码", false, "例如QQ号和群号，能力较弱模型可能会出现幻觉");
+      seal.ext.registerBoolConfig(_MessageConfig.ext, "是否合并user content", false, "在不支持连续多个role为user的情况下开启，可用于适配deepseek-reasoner");
+      seal.ext.registerIntConfig(_MessageConfig.ext, "存储上下文对话限制轮数", 10, "出现一次user视作一轮");
     }
     static get() {
       return {
-        roleSetting: seal.ext.getTemplateConfig(ConfigManager.ext, "角色设定")[0],
-        samples: seal.ext.getTemplateConfig(ConfigManager.ext, "示例对话"),
-        isPrefix: seal.ext.getBoolConfig(ConfigManager.ext, "是否在消息内添加前缀"),
-        showNumber: seal.ext.getBoolConfig(ConfigManager.ext, "是否给AI展示数字号码"),
-        isMerge: seal.ext.getBoolConfig(ConfigManager.ext, "是否合并user content"),
-        maxRounds: seal.ext.getIntConfig(ConfigManager.ext, "存储上下文对话限制轮数")
+        roleSettingTemplate: seal.ext.getTemplateConfig(_MessageConfig.ext, "角色设定"),
+        samples: seal.ext.getTemplateConfig(_MessageConfig.ext, "示例对话"),
+        isPrefix: seal.ext.getBoolConfig(_MessageConfig.ext, "是否在消息内添加前缀"),
+        showNumber: seal.ext.getBoolConfig(_MessageConfig.ext, "是否给AI展示数字号码"),
+        isMerge: seal.ext.getBoolConfig(_MessageConfig.ext, "是否合并user content"),
+        maxRounds: seal.ext.getIntConfig(_MessageConfig.ext, "存储上下文对话限制轮数")
       };
     }
   };
 
   // src/config/config_received.ts
-  var ReceivedConfig = class {
+  var ReceivedConfig = class _ReceivedConfig {
     static register() {
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否录入指令消息", false, "");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否录入所有骰子发送的消息", false, "");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "私聊内不可用", false, "");
-      seal.ext.registerStringConfig(ConfigManager.ext, "非指令触发需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "非指令消息触发正则表达式", [
+      _ReceivedConfig.ext = ConfigManager.getExt("aiplugin4_3:消息接收与触发");
+      seal.ext.registerBoolConfig(_ReceivedConfig.ext, "是否录入指令消息", false, "");
+      seal.ext.registerBoolConfig(_ReceivedConfig.ext, "是否录入所有骰子发送的消息", false, "");
+      seal.ext.registerBoolConfig(_ReceivedConfig.ext, "私聊内不可用", false, "");
+      seal.ext.registerStringConfig(_ReceivedConfig.ext, "非指令触发需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
+      seal.ext.registerTemplateConfig(_ReceivedConfig.ext, "非指令消息触发正则表达式", [
         "\\[CQ:at,qq=748569109\\]",
         "^正确正确确"
       ], "使用正则表达式进行匹配");
     }
     static get() {
       return {
-        allcmd: seal.ext.getBoolConfig(ConfigManager.ext, "是否录入指令消息"),
-        allmsg: seal.ext.getBoolConfig(ConfigManager.ext, "是否录入所有骰子发送的消息"),
-        disabledInPrivate: seal.ext.getBoolConfig(ConfigManager.ext, "私聊内不可用"),
-        keyWords: seal.ext.getTemplateConfig(ConfigManager.ext, "非指令消息触发正则表达式"),
-        condition: seal.ext.getStringConfig(ConfigManager.ext, "非指令触发需要满足的条件")
+        allcmd: seal.ext.getBoolConfig(_ReceivedConfig.ext, "是否录入指令消息"),
+        allmsg: seal.ext.getBoolConfig(_ReceivedConfig.ext, "是否录入所有骰子发送的消息"),
+        disabledInPrivate: seal.ext.getBoolConfig(_ReceivedConfig.ext, "私聊内不可用"),
+        keyWords: seal.ext.getTemplateConfig(_ReceivedConfig.ext, "非指令消息触发正则表达式"),
+        condition: seal.ext.getStringConfig(_ReceivedConfig.ext, "非指令触发需要满足的条件")
       };
     }
   };
 
   // src/config/config_reply.ts
-  var ReplyConfig = class {
+  var ReplyConfig = class _ReplyConfig {
     static register() {
-      seal.ext.registerBoolConfig(ConfigManager.ext, "回复是否引用", false, "开启将会引用触发该条回复的消息");
-      seal.ext.registerIntConfig(ConfigManager.ext, "回复最大字数", 1e3, "防止最大tokens限制不起效");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "禁止AI复读", false, "");
-      seal.ext.registerFloatConfig(ConfigManager.ext, "视作复读的最低相似度", 0.8, "");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤上下文正则表达式", [
-        "<[\\|｜]from.*?[\\|｜]?>",
+      _ReplyConfig.ext = ConfigManager.getExt("aiplugin4_4:回复");
+      seal.ext.registerBoolConfig(_ReplyConfig.ext, "回复是否引用", false, "开启将会引用触发该条回复的消息");
+      seal.ext.registerIntConfig(_ReplyConfig.ext, "回复最大字数", 1e3, "防止最大tokens限制不起效");
+      seal.ext.registerBoolConfig(_ReplyConfig.ext, "禁止AI复读", false, "");
+      seal.ext.registerFloatConfig(_ReplyConfig.ext, "视作复读的最低相似度", 0.8, "");
+      seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤上下文正则表达式", [
+        "<[\\|｜]from:?.*?[\\|｜]?>",
         "^<think>[\\s\\S]*?<\\/think>"
       ], "回复加入上下文时，将符合正则表达式的内容删掉");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "过滤回复正则表达式", [
+      seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤回复正则表达式", [
         "<[\\|｜].*?[\\|｜]?>",
         "^<think>[\\s\\S]*?<\\/think>",
         "<function_call>[\\s\\S]*?<\\/function_call>"
@@ -166,22 +171,23 @@
     }
     static get() {
       return {
-        maxChar: seal.ext.getIntConfig(ConfigManager.ext, "回复最大字数"),
-        replymsg: seal.ext.getBoolConfig(ConfigManager.ext, "回复是否引用"),
-        stopRepeat: seal.ext.getBoolConfig(ConfigManager.ext, "禁止AI复读"),
-        similarityLimit: seal.ext.getFloatConfig(ConfigManager.ext, "视作复读的最低相似度"),
-        filterContextTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "过滤上下文正则表达式"),
-        filterReplyTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "过滤回复正则表达式")
+        maxChar: seal.ext.getIntConfig(_ReplyConfig.ext, "回复最大字数"),
+        replymsg: seal.ext.getBoolConfig(_ReplyConfig.ext, "回复是否引用"),
+        stopRepeat: seal.ext.getBoolConfig(_ReplyConfig.ext, "禁止AI复读"),
+        similarityLimit: seal.ext.getFloatConfig(_ReplyConfig.ext, "视作复读的最低相似度"),
+        filterContextTemplate: seal.ext.getTemplateConfig(_ReplyConfig.ext, "过滤上下文正则表达式"),
+        filterReplyTemplate: seal.ext.getTemplateConfig(_ReplyConfig.ext, "过滤回复正则表达式")
       };
     }
   };
 
   // src/config/config_request.ts
-  var RequestConfig = class {
+  var RequestConfig = class _RequestConfig {
     static register() {
-      seal.ext.registerStringConfig(ConfigManager.ext, "url地址", "https://api.deepseek.com/v1/chat/completions", "");
-      seal.ext.registerStringConfig(ConfigManager.ext, "API Key", "你的API Key", "");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "body", [
+      _RequestConfig.ext = ConfigManager.getExt("aiplugin4");
+      seal.ext.registerStringConfig(_RequestConfig.ext, "url地址", "https://api.deepseek.com/v1/chat/completions", "");
+      seal.ext.registerStringConfig(_RequestConfig.ext, "API Key", "你的API Key", "");
+      seal.ext.registerTemplateConfig(_RequestConfig.ext, "body", [
         `"messages":null`,
         `"model":"deepseek-chat"`,
         `"max_tokens":70`,
@@ -198,30 +204,31 @@
     }
     static get() {
       return {
-        url: seal.ext.getStringConfig(ConfigManager.ext, "url地址"),
-        apiKey: seal.ext.getStringConfig(ConfigManager.ext, "API Key"),
-        bodyTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "body")
+        url: seal.ext.getStringConfig(_RequestConfig.ext, "url地址"),
+        apiKey: seal.ext.getStringConfig(_RequestConfig.ext, "API Key"),
+        bodyTemplate: seal.ext.getTemplateConfig(_RequestConfig.ext, "body")
       };
     }
   };
 
   // src/config/config_tool.ts
-  var ToolConfig = class {
+  var ToolConfig = class _ToolConfig {
     static register() {
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否开启调用函数功能", true, "");
-      seal.ext.registerBoolConfig(ConfigManager.ext, "是否切换为提示词工程", false, "API在不支持function calling功能的时候开启");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "不允许调用的函数", [
+      _ToolConfig.ext = ConfigManager.getExt("aiplugin4_2:函数调用");
+      seal.ext.registerBoolConfig(_ToolConfig.ext, "是否开启调用函数功能", true, "");
+      seal.ext.registerBoolConfig(_ToolConfig.ext, "是否切换为提示词工程", false, "API在不支持function calling功能的时候开启");
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "不允许调用的函数", [
         "在这里填写你不允许AI调用的函数名称"
       ], "修改后保存并重载js");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "默认关闭的函数", [
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "默认关闭的函数", [
         "ban",
         "rename",
         "web_search",
         "check_list"
       ], "");
-      seal.ext.registerIntConfig(ConfigManager.ext, "长期记忆上限", 5, "");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "提供给AI的牌堆名称", ["没有的话请去上面把draw_deck这个函数删掉"], "");
-      seal.ext.registerOptionConfig(ConfigManager.ext, "ai语音使用的音色", "小新", [
+      seal.ext.registerIntConfig(_ToolConfig.ext, "长期记忆上限", 5, "");
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "提供给AI的牌堆名称", ["没有的话请去上面把draw_deck这个函数删掉"], "");
+      seal.ext.registerOptionConfig(_ToolConfig.ext, "ai语音使用的音色", "小新", [
         "小新",
         "猴哥",
         "四郎",
@@ -246,24 +253,24 @@
         "书香少女",
         "自定义"
       ], "该功能在选择预设音色时，需要安装http依赖插件，且需要可以调用ai语音api版本的napcat/lagrange等。选择自定义音色时，则需要aitts依赖插件和ffmpeg");
-      seal.ext.registerTemplateConfig(ConfigManager.ext, "本地语音路径", ["<钢管落地>data/records/钢管落地.mp3"], "如不需要可以不填写，尖括号内是语音的名称，便于AI调用，修改完需要重载js。发送语音需要配置ffmpeg到环境变量中");
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "本地语音路径", ["<钢管落地>data/records/钢管落地.mp3"], "如不需要可以不填写，尖括号内是语音的名称，便于AI调用，修改完需要重载js。发送语音需要配置ffmpeg到环境变量中");
     }
     static get() {
       return {
-        isTool: seal.ext.getBoolConfig(ConfigManager.ext, "是否开启调用函数功能"),
-        usePromptEngineering: seal.ext.getBoolConfig(ConfigManager.ext, "是否切换为提示词工程"),
-        toolsNotAllow: seal.ext.getTemplateConfig(ConfigManager.ext, "不允许调用的函数"),
-        toolsDefaultClosed: seal.ext.getTemplateConfig(ConfigManager.ext, "默认关闭的函数"),
-        memoryLimit: seal.ext.getIntConfig(ConfigManager.ext, "长期记忆上限"),
-        decks: seal.ext.getTemplateConfig(ConfigManager.ext, "提供给AI的牌堆名称"),
-        character: seal.ext.getOptionConfig(ConfigManager.ext, "ai语音使用的音色"),
-        recordsTemplate: seal.ext.getTemplateConfig(ConfigManager.ext, "本地语音路径")
+        isTool: seal.ext.getBoolConfig(_ToolConfig.ext, "是否开启调用函数功能"),
+        usePromptEngineering: seal.ext.getBoolConfig(_ToolConfig.ext, "是否切换为提示词工程"),
+        toolsNotAllow: seal.ext.getTemplateConfig(_ToolConfig.ext, "不允许调用的函数"),
+        toolsDefaultClosed: seal.ext.getTemplateConfig(_ToolConfig.ext, "默认关闭的函数"),
+        memoryLimit: seal.ext.getIntConfig(_ToolConfig.ext, "长期记忆上限"),
+        decks: seal.ext.getTemplateConfig(_ToolConfig.ext, "提供给AI的牌堆名称"),
+        character: seal.ext.getOptionConfig(_ToolConfig.ext, "ai语音使用的音色"),
+        recordsTemplate: seal.ext.getTemplateConfig(_ToolConfig.ext, "本地语音路径")
       };
     }
   };
 
   // src/config/config.ts
-  var ConfigManager = class {
+  var _ConfigManager = class _ConfigManager {
     static registerConfig() {
       LogConfig.register();
       RequestConfig.register();
@@ -307,8 +314,20 @@
     static get image() {
       return this.getCache("image", ImageConfig.get);
     }
+    static getExt(name) {
+      if (name == "aiplugin4") {
+        return _ConfigManager.ext;
+      }
+      let ext = seal.ext.find(name);
+      if (!ext) {
+        ext = seal.ext.new(name, "baiyu&错误", "1.0.0");
+        seal.ext.register(ext);
+      }
+      return ext;
+    }
   };
-  ConfigManager.cache = {};
+  _ConfigManager.cache = {};
+  var ConfigManager = _ConfigManager;
 
   // src/utils/utils.ts
   function log(...data) {
@@ -1757,11 +1776,29 @@ QQ等级: ${data.qqLevel}
   // src/utils/utils_reply.ts
   async function handleReply(ctx, msg, s, context) {
     const { maxChar, replymsg, filterContextTemplate, filterReplyTemplate } = ConfigManager.reply;
-    const segments = s.split(/<[\|｜]from.*?[\|｜]?>/).filter((item) => item.trim() !== "");
+    const segments = s.split(/(<[\|｜]from:?.*?[\|｜]?>)/).filter((item) => item.trim() !== "");
     if (segments.length === 0) {
       return { s: "", reply: "", isRepeat: false, images: [] };
     }
-    s = segments[0];
+    s = "";
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const match = segment.match(/<[\|｜]from:?(.*?)[\|｜]?>/);
+      if (match) {
+        const uid = await context.findUserId(ctx, match[1]);
+        if (uid === ctx.endPoint.userId && i < segments.length - 1) {
+          s += segments[i + 1];
+        }
+      } else if (i === 0) {
+        s = segment;
+      }
+    }
+    if (!s.trim()) {
+      s = segments.find((segment) => !/<[\|｜]from:?.*?[\|｜]?>/.test(segment));
+      if (!s.trim()) {
+        return { s: "", reply: "", isRepeat: false, images: [] };
+      }
+    }
     let reply = s;
     filterContextTemplate.forEach((item) => {
       try {
@@ -1902,8 +1939,8 @@ QQ等级: ${data.qqLevel}
                   description: "函数名称"
                 },
                 arguments: {
-                  type: "object",
-                  description: "函数参数，必须严格按照目标函数的参数定义（包括参数名和类型）完整填写"
+                  type: "string",
+                  description: "函数参数，必须严格按照目标函数的参数定义（包括参数名和类型）完整填写，格式为JSON字符串"
                 }
               },
               required: ["name", "arguments"],
@@ -1979,6 +2016,11 @@ QQ等级: ${data.qqLevel}
         }
         try {
           const tool2 = ToolManager.toolMap[tool_call.name];
+          try {
+            tool_call.arguments = JSON.parse(tool_call.arguments);
+          } catch (e) {
+            return `调用函数失败:arguement不是一个合法的JSON字符串`;
+          }
           const args2 = tool_call.arguments;
           if (args2 !== null && typeof args2 !== "object") {
             return `调用函数失败:arguement不是一个object`;
@@ -2401,6 +2443,102 @@ QQ等级: ${data.qqLevel}
     ToolManager.toolMap[info.function.name] = tool;
   }
 
+  // src/tool/tool_music.ts
+  function registerMusicPlay() {
+    const info = {
+      type: "function",
+      function: {
+        name: "music_play",
+        description: `搜索并播放音乐`,
+        parameters: {
+          type: "object",
+          properties: {
+            platform: {
+              type: "string",
+              description: "音乐平台",
+              enum: ["网易云", "qq"]
+            },
+            song_name: {
+              type: "string",
+              description: "歌曲名称"
+            }
+          },
+          required: ["platform", "song_name"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, _, args) => {
+      const { platform, song_name } = args;
+      let api = "";
+      switch (platform) {
+        case "网易云": {
+          api = `http://net.ease.music.lovesealdice.online/search?keywords=${song_name}`;
+          break;
+        }
+        case "qq": {
+          api = `http://qqmusic.lovesealdice.online/search?key=${song_name}`;
+          break;
+        }
+        default: {
+          return `不支持的平台: ${platform}`;
+        }
+      }
+      try {
+        log(`搜索音乐: ${api}`);
+        const response = await fetch(api, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`${platform}API失效`);
+        }
+        const data = await response.json();
+        switch (platform) {
+          case "网易云": {
+            const song = data.result.songs[0];
+            if (!song) {
+              return "网易云没找到这首歌";
+            }
+            const id = song.id;
+            const name = song.name;
+            const artist = song.artists[0].name;
+            const imgResponse = await fetch(`http://net.ease.music.lovesealdice.online/song/detail?ids=${id}`);
+            const imgData = await imgResponse.json();
+            const img = imgData.songs[0].al.picUrl;
+            const downloadResponse = await fetch(`http://net.ease.music.lovesealdice.online/song/download/url?id=${id}`, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Cookie": "_gid=GA1.2.2048499931.1737983161; _ga_MD3K4WETFE=GS1.1.1737983160.8.1.1737983827.0.0.0; _ga=GA1.1.1845263601.1736600307; MUSIC_U=00C10F470166570C36209E7E3E3649FEE210D3DB5B3C39C25214CFE5678DCC5773C63978903CEBA7BF4292B97ADADB566D96A055DCFDC860847761109F8986373FEC32BE2AFBF3DCFF015894EC61602562BF9D16AD12D76CED169C5052A470677A8D59F7B7D16D9FDE2A4ED237DE5C6956C0ED5F7A9EA151C3FA7367B0C6269FF7A74E6626B4D7F920D524718347659394CBB0DAE362991418070195FEFC730BCCE3CF4B03F24274075679FB4BFC884D099BD3CF679E4F1C9D5CBC2959CD29B0741BD52BCA155480116CE96393663B1A51D88AFDB57680F030CF93A305064A797B99874CA826D6760F616CB756B680591167AEE9AF31C4A187E61A19D7C1175961D4FE64CFD878F0BCEBB322A23E396DC5E8175A50D5E07B9788E4EBE8F8257FF139DB4FD03A89676F5C3DF1B70C101F4568C0A3657C24185218F975368ADB2DEF860760C59E9AFCCB214A4B51029E29ED; __csrf=85f3aa8cedc01f6d50b6b924efbf6f95; NMTID=00OG17oToz2Ne1rikTtgKPqOLaYuP0AAAGUqBEN0A"
+              }
+            });
+            const downloadData = await downloadResponse.json();
+            const url = downloadData.data.url;
+            seal.replyToSender(ctx, msg, `[CQ:music,type=163,url=${url},audio=${url},title=${name},content=${artist},image=${img}]`);
+            return `发送成功，歌名:${name}，歌手:${artist}`;
+          }
+          case "qq": {
+            const song = data.data.list[0];
+            if (!song) {
+              return "QQ音乐没找到这首歌...";
+            }
+            seal.replyToSender(ctx, msg, `[CQ:music,type=qq,id=${song.songid}]`);
+            return "发送成功";
+          }
+          default: {
+            return "不支持的平台";
+          }
+        }
+      } catch (error) {
+        log(`音乐搜索请求错误: ${error}`);
+        return `音乐搜索请求错误: ${error}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+
   // src/tool/tool.ts
   var Tool = class {
     constructor(info) {
@@ -2489,6 +2627,7 @@ QQ等级: ${data.qqLevel}
       registerSearchChat();
       registerSearchCommonGroup();
       registerSetTriggerCondition();
+      registerMusicPlay();
     }
     /**
      * 利用预存的指令信息和额外输入的参数构建一个cmdArgs, 并调用solve函数
@@ -2635,9 +2774,13 @@ QQ等级: ${data.qqLevel}
 
   // src/utils/utils_message.ts
   function buildSystemMessage(ctx, ai) {
-    const { roleSetting, showNumber } = ConfigManager.message;
+    const { roleSettingTemplate, showNumber } = ConfigManager.message;
     const { isTool, usePromptEngineering } = ConfigManager.tool;
-    let content = roleSetting;
+    let [roleSettingIndex, _] = seal.vars.intGet(ctx, "$g人工智能插件专用角色设定序号");
+    if (roleSettingIndex < 0 || roleSettingIndex >= roleSettingTemplate.length) {
+      roleSettingIndex = 0;
+    }
+    let content = roleSettingTemplate[roleSettingIndex];
     if (!ctx.isPrivate) {
       content += `
 **相关信息**
@@ -3097,7 +3240,7 @@ ${memeryPrompt}`;
       }
       const textContent = {
         "type": "text",
-        "text": text ? text : "请帮我用简短的语言概括这张图片的特征，包括图片类型、场景、主题等信息"
+        "text": text ? text : "请帮我用简短的语言概括这张图片的特征，包括图片类型、场景、主题、主体等信息，如果有文字，请全部输出"
       };
       const messages = [{
         role: "user",
@@ -3517,7 +3660,6 @@ ${memeryPrompt}`;
         content: ""
       };
       this.isChatting = false;
-      this.isGettingAct = false;
     }
     static reviver(value, id) {
       const ai = new _AI(id);
@@ -3708,7 +3850,7 @@ ${memeryPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.13");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.14");
       seal.ext.register(ext);
     }
     try {
