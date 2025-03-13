@@ -1,11 +1,13 @@
 // ==UserScript==
-// @name         查找ID并管理共群
+// @name         查找共群
 // @author       白鱼
 // @version      1.0.0
-// @description  查找ID是否在好友列表，查找共群并显示信息，支持根据权限退出群聊和删除好友。基于错误佬的HTTP依赖[https://github.com/error2913/sealdice-js/blob/main/HTTP%E4%BE%9D%E8%B5%96.js]运行,改良自aiplugin4的查找共群tools.
+// @description  查找ID是否在好友列表，查找共群并显示信息，支持根据权限退出群聊和删除好友，支持根据发送退群告别语，支持白名单群添加。基于错误佬的HTTP依赖[https://github.com/error2913/sealdice-js/blob/main/HTTP%E4%BE%9D%E8%B5%96.js]运行，改良自aiplugin4的查找共群tools.
 // @timestamp    1741888973
 // @license      MIT
-// @homepageURL  https://github.com/sealdice/javascript
+// @homepageURL  https://github.com/baiyu-yu/plug-in
+// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/refs/heads/main/Findcogroup.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/refs/heads/main/Findcogroup.js
 // @depends 错误:HTTP依赖:>=1.0.0
 // ==/UserScript==
 
