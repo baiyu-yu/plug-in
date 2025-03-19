@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.5.14
+// @version      4.6.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
 // @license      MIT
-// @homepageURL  https://github.com/error2913/sealdice-js/
+// @homepageURL  https://github.com/error2913/aiplugin4/
 // @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/aiplugin4.js
 // @updateUrl    https://raw.githubusercontent.com//baiyu-yu/plug-in/main/aiplugin4.js
 // ==/UserScript==
@@ -16,25 +16,24 @@
   var ImageConfig = class _ImageConfig {
     static register() {
       _ImageConfig.ext = ConfigManager.getExt("aiplugin4_5:图片");
-      seal.ext.registerTemplateConfig(_ImageConfig.ext, "本地图片路径", ["<海豹>data/images/sealdice.png"], "如不需要可以不填写，尖括号内是图片的名称，便于AI调用，修改完需要重载js");
+      seal.ext.registerTemplateConfig(_ImageConfig.ext, "本地图片路径", ["data/images/sealdice.png"], "如不需要可以不填写，修改完需要重载js");
       seal.ext.registerStringConfig(_ImageConfig.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
       seal.ext.registerIntConfig(_ImageConfig.ext, "发送图片的概率/%", 100);
       seal.ext.registerStringConfig(_ImageConfig.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
       seal.ext.registerStringConfig(_ImageConfig.ext, "图片API key", "yours");
       seal.ext.registerTemplateConfig(_ImageConfig.ext, "图片body", [
-        `"messages":null`,
         `"model":"glm-4v"`,
         `"max_tokens":20`,
         `"stop":null`,
         `"stream":false`
-      ], "messages将会自动替换");
+      ], "messages不存在时，将会自动替换");
       seal.ext.registerOptionConfig(_ImageConfig.ext, "识别图片时将url转换为base64", "永不", ["永不", "自动", "总是"], "解决大模型无法正常获取QQ图床图片的问题");
       seal.ext.registerIntConfig(_ImageConfig.ext, "图片最大回复字符数", 100);
       seal.ext.registerIntConfig(_ImageConfig.ext, "偷取图片存储上限", 30, "每个群聊或私聊单独储存");
     }
     static get() {
       return {
-        localImagesTemplate: seal.ext.getTemplateConfig(_ImageConfig.ext, "本地图片路径"),
+        localImagePaths: seal.ext.getTemplateConfig(_ImageConfig.ext, "本地图片路径"),
         condition: seal.ext.getStringConfig(_ImageConfig.ext, "图片识别需要满足的条件"),
         p: seal.ext.getIntConfig(_ImageConfig.ext, "发送图片的概率/%"),
         url: seal.ext.getStringConfig(_ImageConfig.ext, "图片大模型URL"),
@@ -188,25 +187,23 @@
       seal.ext.registerStringConfig(_RequestConfig.ext, "url地址", "https://api.deepseek.com/v1/chat/completions", "");
       seal.ext.registerStringConfig(_RequestConfig.ext, "API Key", "你的API Key", "");
       seal.ext.registerTemplateConfig(_RequestConfig.ext, "body", [
-        `"messages":null`,
         `"model":"deepseek-chat"`,
         `"max_tokens":70`,
         `"stop":null`,
         `"stream":false`,
-        `"response_format":{"type":"text"}`,
         `"frequency_penalty":0`,
         `"presence_penalty":0`,
         `"temperature":1`,
-        `"top_p":1`,
-        `"tools":null`,
-        `"tool_choice":null`
-      ], "messages,tools,tool_choice为null时，将会自动替换。具体参数请参考你所使用模型的接口文档");
+        `"top_p":1`
+      ], "messages,tools,tool_choice不存在时，将会自动替换。具体参数请参考你所使用模型的接口文档");
+      seal.ext.registerStringConfig(_RequestConfig.ext, "流式输出后端url", "http://localhost:3010", "自行搭建或使用他人提供的后端");
     }
     static get() {
       return {
         url: seal.ext.getStringConfig(_RequestConfig.ext, "url地址"),
         apiKey: seal.ext.getStringConfig(_RequestConfig.ext, "API Key"),
-        bodyTemplate: seal.ext.getTemplateConfig(_RequestConfig.ext, "body")
+        bodyTemplate: seal.ext.getTemplateConfig(_RequestConfig.ext, "body"),
+        streamUrl: seal.ext.getStringConfig(_RequestConfig.ext, "流式输出后端url")
       };
     }
   };
@@ -227,7 +224,7 @@
         "check_list"
       ], "");
       seal.ext.registerIntConfig(_ToolConfig.ext, "长期记忆上限", 5, "");
-      seal.ext.registerTemplateConfig(_ToolConfig.ext, "提供给AI的牌堆名称", ["没有的话请去上面把draw_deck这个函数删掉"], "");
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "提供给AI的牌堆名称", ["没有的话建议把draw_deck这个函数加入不允许调用"], "");
       seal.ext.registerOptionConfig(_ToolConfig.ext, "ai语音使用的音色", "小新", [
         "小新",
         "猴哥",
@@ -253,7 +250,7 @@
         "书香少女",
         "自定义"
       ], "该功能在选择预设音色时，需要安装http依赖插件，且需要可以调用ai语音api版本的napcat/lagrange等。选择自定义音色时，则需要aitts依赖插件和ffmpeg");
-      seal.ext.registerTemplateConfig(_ToolConfig.ext, "本地语音路径", ["<钢管落地>data/records/钢管落地.mp3"], "如不需要可以不填写，尖括号内是语音的名称，便于AI调用，修改完需要重载js。发送语音需要配置ffmpeg到环境变量中");
+      seal.ext.registerTemplateConfig(_ToolConfig.ext, "本地语音路径", ["data/records/钢管落地.mp3"], "如不需要可以不填写，修改完需要重载js。发送语音需要配置ffmpeg到环境变量中");
     }
     static get() {
       return {
@@ -264,7 +261,7 @@
         memoryLimit: seal.ext.getIntConfig(_ToolConfig.ext, "长期记忆上限"),
         decks: seal.ext.getTemplateConfig(_ToolConfig.ext, "提供给AI的牌堆名称"),
         character: seal.ext.getOptionConfig(_ToolConfig.ext, "ai语音使用的音色"),
-        recordsTemplate: seal.ext.getTemplateConfig(_ToolConfig.ext, "本地语音路径")
+        recordPaths: seal.ext.getTemplateConfig(_ToolConfig.ext, "本地语音路径")
       };
     }
   };
@@ -348,6 +345,41 @@
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 6);
     return (timestamp + random).slice(-6);
+  }
+  function parseBody(template, messages, tools, tool_choice) {
+    const { isTool, usePromptEngineering } = ConfigManager.tool;
+    const bodyObject = {};
+    for (let i = 0; i < template.length; i++) {
+      const s = template[i];
+      if (s.trim() === "") {
+        continue;
+      }
+      try {
+        const obj = JSON.parse(`{${s}}`);
+        const key = Object.keys(obj)[0];
+        bodyObject[key] = obj[key];
+      } catch (err) {
+        throw new Error(`解析body的【${s}】时出现错误:${err}`);
+      }
+    }
+    if (!bodyObject.hasOwnProperty("messages")) {
+      bodyObject.messages = messages;
+    }
+    if (!bodyObject.hasOwnProperty("model")) {
+      throw new Error(`body中没有model`);
+    }
+    if (isTool && !usePromptEngineering) {
+      if (!bodyObject.hasOwnProperty("tools")) {
+        bodyObject.tools = tools;
+      }
+      if (!bodyObject.hasOwnProperty("tool_choice")) {
+        bodyObject.tool_choice = tool_choice;
+      }
+    } else {
+      bodyObject == null ? true : delete bodyObject.tools;
+      bodyObject == null ? true : delete bodyObject.tool_choice;
+    }
+    return bodyObject;
   }
 
   // src/utils/utils_seal.ts
@@ -632,7 +664,7 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_draw_deck.ts
+  // src/tool/tool_deck.ts
   function registerDrawDeck() {
     const { decks } = ConfigManager.tool;
     const info = {
@@ -671,14 +703,21 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_face.ts
+  // src/tool/tool_image.ts
   function registerFace() {
-    const { localImagesTemplate } = ConfigManager.image;
-    const localImages = localImagesTemplate.reduce((acc, item) => {
-      const match = item.match(/<(.+)>.*/);
-      if (match !== null) {
-        const key = match[1];
-        acc[key] = item.replace(/<.*>/g, "");
+    const { localImagePaths } = ConfigManager.image;
+    const localImages = localImagePaths.reduce((acc, path) => {
+      if (path.trim() === "") {
+        return acc;
+      }
+      try {
+        const name = path.split("/").pop().split(".")[0];
+        if (!name) {
+          throw new Error(`本地图片路径格式错误:${path}`);
+        }
+        acc[name] = path;
+      } catch (e) {
+        console.error(e);
       }
       return acc;
     }, {});
@@ -715,29 +754,6 @@ ${attr}: ${value}=>${result}`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
-
-  // src/tool/tool_get_time.ts
-  function registerGetTime() {
-    const info = {
-      type: "function",
-      function: {
-        name: "get_time",
-        description: `获取当前时间`,
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      }
-    };
-    const tool = new Tool(info);
-    tool.solve = async (_, __, ___, ____) => {
-      return (/* @__PURE__ */ new Date()).toLocaleString();
-    };
-    ToolManager.toolMap[info.function.name] = tool;
-  }
-
-  // src/tool/tool_image_to_text.ts
   function registerImageToText() {
     const info = {
       type: "function",
@@ -834,6 +850,46 @@ ${attr}: ${value}=>${result}`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
+  function registerTextToImage() {
+    const info = {
+      type: "function",
+      function: {
+        name: "text_to_image",
+        description: "通过文字描述生成图像",
+        parameters: {
+          type: "object",
+          properties: {
+            prompt: {
+              type: "string",
+              description: "图像描述"
+            },
+            negative_prompt: {
+              type: "string",
+              description: "不希望图片中出现的内容描述"
+            }
+          },
+          required: ["prompt"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, _, args) => {
+      const { prompt, negative_prompt } = args;
+      const ext = seal.ext.find("AIDrawing");
+      if (!ext) {
+        console.error(`未找到AIDrawing依赖`);
+        return `未找到AIDrawing依赖，请提示用户安装AIDrawing依赖`;
+      }
+      try {
+        await globalThis.aiDrawing.generateImage(prompt, ctx, msg, negative_prompt);
+        return `图像生成请求已发送`;
+      } catch (e) {
+        console.error(`图像生成失败：${e}`);
+        return `图像生成失败：${e}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
 
   // src/tool/tool_jrrp.ts
   function registerJrrp() {
@@ -898,7 +954,7 @@ ${attr}: ${value}=>${result}`;
             },
             content: {
               type: "string",
-              description: "记忆内容"
+              description: "记忆内容，尽量简短，无需附带时间与来源"
             }
           },
           required: ["memory_type", "name", "content"]
@@ -916,7 +972,7 @@ ${attr}: ${value}=>${result}`;
         if (uid === ctx.endPoint.userId) {
           return `不能添加自己的记忆`;
         }
-        msg = createMsg("private", uid, "");
+        msg = createMsg(msg.messageType, uid, ctx.group.groupId);
         ctx = createCtx(ctx.endPoint.userId, msg);
         ai = AIManager.getAI(uid);
       } else if (memory_type === "group") {
@@ -1225,8 +1281,6 @@ ${attr}: ${value}=>${result}`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
-
-  // src/tool/tool_san_check.ts
   function registerSanCheck() {
     const info = {
       type: "function",
@@ -1281,8 +1335,27 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_timer.ts
+  // src/tool/tool_time.ts
   var timerQueue = [];
+  function registerGetTime() {
+    const info = {
+      type: "function",
+      function: {
+        name: "get_time",
+        description: `获取当前时间`,
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ___, ____) => {
+      return (/* @__PURE__ */ new Date()).toLocaleString();
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
   function registerSetTimer() {
     const info = {
       type: "function",
@@ -1409,7 +1482,57 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_text_to_sound.ts
+  // src/tool/tool_voice.ts
+  function registerRecord() {
+    const { recordPaths } = ConfigManager.tool;
+    const records = recordPaths.reduce((acc, path) => {
+      if (path.trim() === "") {
+        return acc;
+      }
+      try {
+        const name = path.split("/").pop().split(".")[0];
+        if (!name) {
+          throw new Error(`本地语音路径格式错误:${path}`);
+        }
+        acc[name] = path;
+      } catch (e) {
+        console.error(e);
+      }
+      return acc;
+    }, {});
+    if (Object.keys(records).length === 0) {
+      return;
+    }
+    const info = {
+      type: "function",
+      function: {
+        name: "record",
+        description: `发送语音，语音名称有:${Object.keys(records).join("、")}`,
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "语音名称"
+            }
+          },
+          required: ["name"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, _, args) => {
+      const { name } = args;
+      if (records.hasOwnProperty(name)) {
+        seal.replyToSender(ctx, msg, `[语音:${records[name]}]`);
+        return "发送成功";
+      } else {
+        console.error(`本地语音${name}不存在`);
+        return `本地语音${name}不存在`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
   var characterMap = {
     "小新": "lucy-voice-laibixiaoxin",
     "猴哥": "lucy-voice-houge",
@@ -1605,7 +1728,7 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_get_person_info.ts
+  // src/tool/tool_person_info.ts
   var constellations = ["水瓶座", "双鱼座", "白羊座", "金牛座", "双子座", "巨蟹座", "狮子座", "处女座", "天秤座", "天蝎座", "射手座", "摩羯座"];
   var shengXiao = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"];
   function registerGetPersonInfo() {
@@ -1677,51 +1800,6 @@ QQ等级: ${data.qqLevel}
       } catch (e) {
         console.error(e);
         return `获取用户信息失败`;
-      }
-    };
-    ToolManager.toolMap[info.function.name] = tool;
-  }
-
-  // src/tool/tool_record.ts
-  function registerRecord() {
-    const { recordsTemplate } = ConfigManager.tool;
-    const records = recordsTemplate.reduce((acc, item) => {
-      const match = item.match(/<(.+)>.*/);
-      if (match !== null) {
-        const key = match[1];
-        acc[key] = item.replace(/<.*>/g, "");
-      }
-      return acc;
-    }, {});
-    if (Object.keys(records).length === 0) {
-      return;
-    }
-    const info = {
-      type: "function",
-      function: {
-        name: "record",
-        description: `发送语音，语音名称有:${Object.keys(records).join("、")}`,
-        parameters: {
-          type: "object",
-          properties: {
-            name: {
-              type: "string",
-              description: "语音名称"
-            }
-          },
-          required: ["name"]
-        }
-      }
-    };
-    const tool = new Tool(info);
-    tool.solve = async (ctx, msg, _, args) => {
-      const { name } = args;
-      if (records.hasOwnProperty(name)) {
-        seal.replyToSender(ctx, msg, `[语音:${records[name]}]`);
-        return "发送成功";
-      } else {
-        console.error(`本地语音${name}不存在`);
-        return `本地语音${name}不存在`;
       }
     };
     ToolManager.toolMap[info.function.name] = tool;
@@ -1821,7 +1899,7 @@ QQ等级: ${data.qqLevel}
         console.error("Error in RegExp:", error);
       }
     });
-    const prefix = replymsg ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
+    const prefix = replymsg && msg.rawId ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
     const segments2 = reply.split(/(\[CQ:.+?\])/);
     let nonCQLength = 0;
     let finalReply = prefix;
@@ -2048,7 +2126,7 @@ QQ等级: ${data.qqLevel}
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_get_context.ts
+  // src/tool/tool_context.ts
   function registerGetContext() {
     const info = {
       type: "function",
@@ -2125,7 +2203,7 @@ QQ等级: ${data.qqLevel}
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_get_list.ts
+  // src/tool/tool_qq_list.ts
   function registerGetList() {
     const info = {
       type: "function",
@@ -2245,8 +2323,6 @@ QQ等级: ${data.qqLevel}
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
-
-  // src/tool/tool_search_chat.ts
   function registerSearchChat() {
     const info = {
       type: "function",
@@ -2380,7 +2456,7 @@ QQ等级: ${data.qqLevel}
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/tool/tool_set_trigger_condition.ts
+  // src/tool/tool_trigger.ts
   var triggerConditionMap = {};
   function registerSetTriggerCondition() {
     const info = {
@@ -2595,11 +2671,11 @@ QQ等级: ${data.qqLevel}
       registerAddMemory();
       registerShowMemory();
       registerDrawDeck();
-      registerFace();
       registerJrrp();
       registerModuRoll();
       registerModuSearch();
       registerRollCheck();
+      registerSanCheck();
       registerRename();
       registerAttrShow();
       registerAttrGet();
@@ -2607,6 +2683,7 @@ QQ等级: ${data.qqLevel}
       registerBan();
       registerWholeBan();
       registerGetBanList();
+      registerRecord();
       registerTextToSound();
       registerPoke();
       registerGetTime();
@@ -2614,12 +2691,12 @@ QQ等级: ${data.qqLevel}
       registerShowTimerList();
       registerCancelTimer();
       registerWebSearch();
+      registerFace();
       registerImageToText();
       registerCheckAvatar();
-      registerSanCheck();
+      registerTextToImage();
       registerGroupSign();
       registerGetPersonInfo();
-      registerRecord();
       registerSendMsg();
       registerGetContext();
       registerGetList();
@@ -3038,41 +3115,122 @@ ${memeryPrompt}`;
     }
     return data;
   }
-  function parseBody(template, messages, tools, tool_choice) {
-    const { isTool, usePromptEngineering } = ConfigManager.tool;
-    const bodyObject = {};
-    for (let i = 0; i < template.length; i++) {
-      const s = template[i];
-      if (s.trim() === "") {
-        continue;
+  async function start_stream(messages) {
+    const { url, apiKey, bodyTemplate, streamUrl } = ConfigManager.request;
+    try {
+      const bodyObject = parseBody(bodyTemplate, messages, null, null);
+      const s = JSON.stringify(bodyObject.messages, (key, value) => {
+        if (key === "" && Array.isArray(value)) {
+          return value.filter((item) => {
+            return item.role !== "system";
+          });
+        }
+        return value;
+      });
+      log(`请求发送前的上下文:
+`, s);
+      const response = await fetch(`${streamUrl}/start`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({
+          url,
+          api_key: apiKey,
+          body_obj: bodyObject
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        let s2 = `请求失败! 状态码: ${response.status}`;
+        if (data.error) {
+          s2 += `
+错误信息: ${data.error.message}`;
+        }
+        s2 += `
+响应体: ${JSON.stringify(data, null, 2)}`;
+        throw new Error(s2);
       }
-      try {
-        const obj = JSON.parse(`{${s}}`);
-        const key = Object.keys(obj)[0];
-        bodyObject[key] = obj[key];
-      } catch (err) {
-        throw new Error(`解析body的【${s}】时出现错误:${err}`);
+      if (data.id) {
+        const id = data.id;
+        return id;
+      } else {
+        throw new Error("服务器响应中没有id字段");
       }
+    } catch (error) {
+      console.error("在start_stream中出错：", error);
+      return "";
     }
-    if ((bodyObject == null ? void 0 : bodyObject.messages) === null) {
-      bodyObject.messages = messages;
-    }
-    if ((bodyObject == null ? void 0 : bodyObject.stream) !== false) {
-      console.error(`不支持流式传输，请将stream设置为false`);
-      bodyObject.stream = false;
-    }
-    if (isTool && !usePromptEngineering) {
-      if ((bodyObject == null ? void 0 : bodyObject.tools) === null) {
-        bodyObject.tools = tools;
+  }
+  async function poll_stream(id, after) {
+    const { streamUrl } = ConfigManager.request;
+    try {
+      const response = await fetch(`${streamUrl}/poll?id=${id}&after=${after}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        let s = `请求失败! 状态码: ${response.status}`;
+        if (data.error) {
+          s += `
+错误信息: ${data.error.message}`;
+        }
+        s += `
+响应体: ${JSON.stringify(data, null, 2)}`;
+        throw new Error(s);
       }
-      if ((bodyObject == null ? void 0 : bodyObject.tool_choice) === null) {
-        bodyObject.tool_choice = tool_choice;
+      if (data.status) {
+        const status = data.status;
+        const reply = data.results.join("");
+        const nextAfter = data.next_after;
+        return { status, reply, nextAfter };
+      } else {
+        throw new Error("服务器响应中没有status字段");
       }
-    } else {
-      bodyObject == null ? true : delete bodyObject.tools;
-      bodyObject == null ? true : delete bodyObject.tool_choice;
+    } catch (error) {
+      console.error("在poll_stream中出错：", error);
+      return { status: "failed", reply: "", nextAfter: 0 };
     }
-    return bodyObject;
+  }
+  async function end_stream(id) {
+    const { streamUrl } = ConfigManager.request;
+    try {
+      const response = await fetch(`${streamUrl}/end?id=${id}`, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        let s = `请求失败! 状态码: ${response.status}`;
+        if (data.error) {
+          s += `
+错误信息: ${data.error.message}`;
+        }
+        s += `
+响应体: ${JSON.stringify(data, null, 2)}`;
+        throw new Error(s);
+      }
+      if (data.status) {
+        const status = data.status;
+        if (status === "success") {
+          log(`对话结束成功`);
+        } else {
+          log(`对话结束失败`);
+        }
+        return status;
+      } else {
+        throw new Error("服务器响应中没有status字段");
+      }
+    } catch (error) {
+      console.error("在end_stream中出错：", error);
+      return "";
+    }
   }
 
   // src/AI/image.ts
@@ -3104,12 +3262,19 @@ ${memeryPrompt}`;
       this.imageList = this.imageList.concat(images.filter((item) => item.isUrl)).slice(-maxImageNum);
     }
     drawLocalImageFile() {
-      const { localImagesTemplate } = ConfigManager.image;
-      const localImages = localImagesTemplate.reduce((acc, item) => {
-        const match = item.match(/<(.+)>.*/);
-        if (match !== null) {
-          const key = match[1];
-          acc[key] = item.replace(/<.*>/g, "");
+      const { localImagePaths } = ConfigManager.image;
+      const localImages = localImagePaths.reduce((acc, path) => {
+        if (path.trim() === "") {
+          return acc;
+        }
+        try {
+          const name = path.split("/").pop().split(".")[0];
+          if (!name) {
+            throw new Error(`本地图片路径格式错误:${path}`);
+          }
+          acc[name] = path;
+        } catch (e) {
+          console.error(e);
         }
         return acc;
       }, {});
@@ -3134,12 +3299,19 @@ ${memeryPrompt}`;
       return url;
     }
     async drawImageFile() {
-      const { localImagesTemplate } = ConfigManager.image;
-      const localImages = localImagesTemplate.reduce((acc, item) => {
-        const match = item.match(/<(.+)>.*/);
-        if (match !== null) {
-          const key = match[1];
-          acc[key] = item.replace(/<.*>/g, "");
+      const { localImagePaths } = ConfigManager.image;
+      const localImages = localImagePaths.reduce((acc, path) => {
+        if (path.trim() === "") {
+          return acc;
+        }
+        try {
+          const name = path.split("/").pop().split(".")[0];
+          if (!name) {
+            throw new Error(`本地图片路径格式错误:${path}`);
+          }
+          acc[name] = path;
+        } catch (e) {
+          console.error(e);
         }
         return acc;
       }, {});
@@ -3587,7 +3759,10 @@ ${memeryPrompt}`;
         s += "无";
       } else {
         s += this.memoryList.map((item, i) => {
-          return `${i + 1}. (${item.time}) ${item.isPrivate ? `来自私聊` : `来自群聊<${item.group.groupName}>${showNumber ? `(${item.group.groupId.replace(/\D+/g, "")})` : ``}`}: ${item.content}`;
+          const source = item.isPrivate ? `私聊` : `群聊<${item.group.groupName}>${showNumber ? `(${item.group.groupId.replace(/\D+/g, "")})` : ``}`;
+          return `${i + 1}. 时间:${item.time}
+    来源:${source}
+    内容:${item.content}`;
         }).join("\n");
       }
       return s;
@@ -3600,7 +3775,8 @@ ${memeryPrompt}`;
         s += "无";
       } else {
         s += this.memoryList.map((item, i) => {
-          return `${i + 1}. (${item.time}) ${item.content}`;
+          return `${i + 1}. 时间:${item.time}
+    内容:${item.content}`;
         }).join("\n");
       }
       return s;
@@ -3660,6 +3836,11 @@ ${memeryPrompt}`;
         content: ""
       };
       this.isChatting = false;
+      this.stream = {
+        id: "",
+        reply: "",
+        images: []
+      };
     }
     static reviver(value, id) {
       const ai = new _AI(id);
@@ -3694,6 +3875,12 @@ ${memeryPrompt}`;
       return { s, reply, images };
     }
     async chat(ctx, msg) {
+      const bodyTemplate = ConfigManager.request.bodyTemplate;
+      const bodyObject = parseBody(bodyTemplate, [], null, null);
+      if ((bodyObject == null ? void 0 : bodyObject.stream) === true) {
+        await this.chatStream(ctx, msg);
+        return;
+      }
       if (this.isChatting) {
         log(this.id, `正在处理消息，跳过`);
         return;
@@ -3717,6 +3904,51 @@ ${memeryPrompt}`;
       }
       clearTimeout(timeout);
       this.isChatting = false;
+    }
+    async chatStream(ctx, msg) {
+      await this.stopCurrentChatStream(ctx, msg);
+      this.clearData();
+      const messages = handleMessages(ctx, this);
+      const id = await start_stream(messages);
+      this.stream.id = id;
+      let status = "processing";
+      let after = 0;
+      while (status == "processing" && this.stream.id === id) {
+        const result = await poll_stream(this.stream.id, after);
+        status = result.status;
+        after = result.nextAfter;
+        const raw_reply = result.reply;
+        if (raw_reply.trim() !== "") {
+          const { s, reply, images } = await handleReply(ctx, msg, raw_reply, this.context);
+          if (this.stream.id !== id) {
+            return;
+          }
+          this.stream.reply += s;
+          this.stream.images.push(...images);
+          seal.replyToSender(ctx, msg, reply);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1e3));
+      }
+      if (this.stream.id !== id) {
+        return;
+      }
+      await this.stopCurrentChatStream(ctx, msg);
+    }
+    async stopCurrentChatStream(ctx, msg) {
+      const { id, reply, images } = this.stream;
+      this.stream = {
+        id: "",
+        reply: "",
+        images: []
+      };
+      if (id) {
+        log(`结束会话${id}`);
+        if (reply) {
+          const { s } = await handleReply(ctx, msg, reply, this.context);
+          await this.context.iteration(ctx, s, images, "assistant");
+        }
+        await end_stream(id);
+      }
     }
   };
   var AIManager = class {
@@ -3850,7 +4082,7 @@ ${memeryPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.5.14");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.6.1");
       seal.ext.register(ext);
     }
     try {
