@@ -2,7 +2,7 @@
 // @name         打电话
 // @author       白鱼魔改版（原作者：错误）
 // @version      1.0.0
-// @description  连接群聊私聊，只适配了QQ，原插件https://mirror.ghproxy.com/https://raw.githubusercontent.com/error2913/sealdice-js/main/link.js。使用 .chatroom 获取帮助，只为聊天室内群/私聊转发双引号内的消息。
+// @description  连接群聊私聊，只适配了QQ，原插件https://github.com/error2913/sealdice-js/blob/main/link.js。使用 .chatroom 获取帮助，只为聊天室内群/私聊转发双引号内的消息。
 // @timestamp    1737605949
 // @license      MIT
 // @homepageURL  https://github.com/baiyu-yu/plug-in/
