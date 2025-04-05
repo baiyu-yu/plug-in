@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.6.2
+// @version      4.7.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
 // @license      MIT
 // @homepageURL  https://github.com/error2913/aiplugin4/
 // @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/aiplugin4.js
-// @updateUrl    https://raw.githubusercontent.com//baiyu-yu/plug-in/main/aiplugin4.js
+// @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/aiplugin4.js
 // ==/UserScript==
 
 (() => {
@@ -17,7 +17,7 @@
     static register() {
       _ImageConfig.ext = ConfigManager.getExt("aiplugin4_5:图片");
       seal.ext.registerTemplateConfig(_ImageConfig.ext, "本地图片路径", ["data/images/sealdice.png"], "如不需要可以不填写，修改完需要重载js");
-      seal.ext.registerStringConfig(_ImageConfig.ext, "图片识别需要满足的条件", "1", "使用豹语表达式，例如：$t群号_RAW=='2001'");
+      seal.ext.registerStringConfig(_ImageConfig.ext, "图片识别需要满足的条件", "0", "使用豹语表达式，例如：$t群号_RAW=='2001'。若要开启所有图片自动识别转文字，请填写'1'");
       seal.ext.registerIntConfig(_ImageConfig.ext, "发送图片的概率/%", 100);
       seal.ext.registerStringConfig(_ImageConfig.ext, "图片大模型URL", "https://open.bigmodel.cn/api/paas/v4/chat/completions");
       seal.ext.registerStringConfig(_ImageConfig.ext, "图片API key", "yours");
@@ -111,6 +111,7 @@
       ], "role顺序为user和assistant轮流出现");
       seal.ext.registerBoolConfig(_MessageConfig.ext, "是否在消息内添加前缀", true, "可用于辨别不同用户");
       seal.ext.registerBoolConfig(_MessageConfig.ext, "是否给AI展示数字号码", false, "例如QQ号和群号，能力较弱模型可能会出现幻觉");
+      seal.ext.registerBoolConfig(_MessageConfig.ext, "是否在消息内添加消息ID", false, "可用于撤回等情况");
       seal.ext.registerBoolConfig(_MessageConfig.ext, "是否合并user content", false, "在不支持连续多个role为user的情况下开启，可用于适配deepseek-reasoner");
       seal.ext.registerIntConfig(_MessageConfig.ext, "存储上下文对话限制轮数", 10, "出现一次user视作一轮");
     }
@@ -120,6 +121,7 @@
         samples: seal.ext.getTemplateConfig(_MessageConfig.ext, "示例对话"),
         isPrefix: seal.ext.getBoolConfig(_MessageConfig.ext, "是否在消息内添加前缀"),
         showNumber: seal.ext.getBoolConfig(_MessageConfig.ext, "是否给AI展示数字号码"),
+        showMsgId: seal.ext.getBoolConfig(_MessageConfig.ext, "是否在消息内添加消息ID"),
         isMerge: seal.ext.getBoolConfig(_MessageConfig.ext, "是否合并user content"),
         maxRounds: seal.ext.getIntConfig(_MessageConfig.ext, "存储上下文对话限制轮数")
       };
@@ -159,12 +161,12 @@
       seal.ext.registerBoolConfig(_ReplyConfig.ext, "禁止AI复读", false, "");
       seal.ext.registerFloatConfig(_ReplyConfig.ext, "视作复读的最低相似度", 0.8, "");
       seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤上下文正则表达式", [
-        "<[\\|｜]from:?.*?[\\|｜]?>",
-        "^<think>[\\s\\S]*?<\\/think>"
+        "<\\s?[\\|│｜]from:?.*?[\\|│｜]?\\s?>",
+        "<think>[\\s\\S]*?<\\/think>"
       ], "回复加入上下文时，将符合正则表达式的内容删掉");
       seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤回复正则表达式", [
-        "<[\\|｜].*?[\\|｜]?>",
-        "^<think>[\\s\\S]*?<\\/think>",
+        "<\\s?[\\|│｜].*?[\\|│｜]?\\s?>",
+        "<think>[\\s\\S]*?<\\/think>",
         "<function_call>[\\s\\S]*?<\\/function_call>"
       ], "发送回复时，将符合正则表达式的内容删掉");
     }
@@ -325,62 +327,6 @@
   };
   _ConfigManager.cache = {};
   var ConfigManager = _ConfigManager;
-
-  // src/utils/utils.ts
-  function log(...data) {
-    const { logLevel } = ConfigManager.log;
-    if (logLevel === "永不") {
-      return;
-    }
-    if (logLevel === "简短") {
-      const s = data.map((item) => `${item}`).join(" ");
-      if (s.length > 1e3) {
-        console.log(s.substring(0, 500), "\n...\n", s.substring(s.length - 500));
-        return;
-      }
-    }
-    console.log(...data);
-  }
-  function generateId() {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 6);
-    return (timestamp + random).slice(-6);
-  }
-  function parseBody(template, messages, tools, tool_choice) {
-    const { isTool, usePromptEngineering } = ConfigManager.tool;
-    const bodyObject = {};
-    for (let i = 0; i < template.length; i++) {
-      const s = template[i];
-      if (s.trim() === "") {
-        continue;
-      }
-      try {
-        const obj = JSON.parse(`{${s}}`);
-        const key = Object.keys(obj)[0];
-        bodyObject[key] = obj[key];
-      } catch (err) {
-        throw new Error(`解析body的【${s}】时出现错误:${err}`);
-      }
-    }
-    if (!bodyObject.hasOwnProperty("messages")) {
-      bodyObject.messages = messages;
-    }
-    if (!bodyObject.hasOwnProperty("model")) {
-      throw new Error(`body中没有model`);
-    }
-    if (isTool && !usePromptEngineering) {
-      if (!bodyObject.hasOwnProperty("tools")) {
-        bodyObject.tools = tools;
-      }
-      if (!bodyObject.hasOwnProperty("tool_choice")) {
-        bodyObject.tool_choice = tool_choice;
-      }
-    } else {
-      bodyObject == null ? true : delete bodyObject.tools;
-      bodyObject == null ? true : delete bodyObject.tool_choice;
-    }
-    return bodyObject;
-  }
 
   // src/utils/utils_seal.ts
   function createMsg(messageType, senderId, groupId = "") {
@@ -563,8 +509,11 @@ ${attr}: ${value}=>${result}`;
       }
     };
     const tool = new Tool(info);
-    tool.solve = async (ctx, msg, ai, args) => {
+    tool.solve = async (ctx, _, ai, args) => {
       const { name, duration } = args;
+      if (ctx.isPrivate) {
+        return `该命令只能在群聊中使用`;
+      }
       const ext = seal.ext.find("HTTP依赖");
       if (!ext) {
         console.error(`未找到HTTP依赖`);
@@ -574,12 +523,22 @@ ${attr}: ${value}=>${result}`;
       if (uid === null) {
         return `未找到<${name}>`;
       }
-      msg = createMsg(msg.messageType, uid, ctx.group.groupId);
-      ctx = createCtx(ctx.endPoint.userId, msg);
       try {
         const epId = ctx.endPoint.userId;
         const group_id = ctx.group.groupId.replace(/\D+/g, "");
-        const user_id = ctx.player.userId.replace(/\D+/g, "");
+        const user_id = epId.replace(/\D+/g, "");
+        const result = await globalThis.http.getData(epId, `get_group_member_info?group_id=${group_id}&user_id=${user_id}&no_cache=true`);
+        if (result.role !== "owner" && result.role !== "admin") {
+          return `你没有管理员权限`;
+        }
+      } catch (e) {
+        console.error(e);
+        return `获取权限信息失败`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = uid.replace(/\D+/g, "");
         await globalThis.http.getData(epId, `set_group_ban?group_id=${group_id}&user_id=${user_id}&duration=${duration}`);
         return `已禁言<${name}> ${duration}秒`;
       } catch (e) {
@@ -1189,6 +1148,21 @@ ${attr}: ${value}=>${result}`;
     const tool = new Tool(info);
     tool.solve = async (ctx, msg, ai, args) => {
       const { name, new_name } = args;
+      const ext = seal.ext.find("HTTP依赖");
+      if (ext) {
+        try {
+          const epId = ctx.endPoint.userId;
+          const group_id = ctx.group.groupId.replace(/\D+/g, "");
+          const user_id = epId.replace(/\D+/g, "");
+          const result = await globalThis.http.getData(epId, `get_group_member_info?group_id=${group_id}&user_id=${user_id}&no_cache=true`);
+          if (result.role !== "owner" && result.role !== "admin") {
+            return `你没有管理员权限`;
+          }
+        } catch (e) {
+          console.error(e);
+          return `获取权限信息失败`;
+        }
+      }
       const uid = await ai.context.findUserId(ctx, name);
       if (uid === null) {
         return `未找到<${name}>`;
@@ -1607,6 +1581,52 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
+  // src/AI/logger.ts
+  var Logger = class {
+    constructor(name) {
+      this.name = name;
+    }
+    handleLog(...data) {
+      const { logLevel } = ConfigManager.log;
+      if (logLevel === "永不") {
+        return "";
+      } else if (logLevel === "简短") {
+        const s = data.map((item) => `${item}`).join(" ");
+        if (s.length > 1e3) {
+          return s.substring(0, 500) + "\n...\n" + s.substring(s.length - 500);
+        } else {
+          return s;
+        }
+      } else if (logLevel === "详细") {
+        return data.map((item) => `${item}`).join(" ");
+      } else {
+        return "";
+      }
+    }
+    info(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.log(`【${this.name}】: ${s}`);
+    }
+    warning(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.warn(`【${this.name}】: ${s}`);
+    }
+    error(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.error(`【${this.name}】: ${s}`);
+    }
+  };
+  var logger = new Logger("aiplugin4");
+
   // src/tool/tool_web_search.ts
   function registerWebSearch() {
     const info = {
@@ -1651,7 +1671,7 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
       }
       const url = `http://110.41.69.149:8080/search?q=${q}&format=json${pageno ? `&pageno=${pageno}` : ""}${categories ? `&categories=${categories}` : ""}${time_range ? `&time_range=${time_range}` : ""}`;
       try {
-        log(`使用搜索引擎搜索:${url}`);
+        logger.info(`使用搜索引擎搜索:${url}`);
         const response = await fetch(url, {
           method: "GET",
           headers: {
@@ -1799,13 +1819,177 @@ QQ等级: ${data.qqLevel}
   }
 
   // src/utils/utils_string.ts
-  function getCQTypes(s) {
-    const match = s.match(/\[CQ:([^,]*?),.*?\]/g);
-    if (match) {
-      return match.map((item) => item.match(/\[CQ:([^,]*?),/)[1]);
-    } else {
-      return [];
+  function parseText(s) {
+    const segments = s.split(/(\[CQ:.*?\])/).filter((segment) => segment !== "");
+    const messageArray = [];
+    for (const segment of segments) {
+      if (segment.startsWith("[CQ:")) {
+        const match = segment.match(/^\[CQ:([^,]+),?([^\]]*)\]$/);
+        if (match) {
+          const params = {};
+          if (match[2]) {
+            match[2].trim().split(",").forEach((param) => {
+              const eqIndex = param.indexOf("=");
+              if (eqIndex === -1) {
+                return;
+              }
+              const key = param.slice(0, eqIndex).trim();
+              const value = param.slice(eqIndex + 1).trim();
+              if (key) {
+                params[key] = value;
+              }
+            });
+          }
+          messageArray.push({
+            type: match[1].trim(),
+            data: params
+          });
+        } else {
+          logger.error(`无法解析CQ码：${segment}`);
+        }
+      } else {
+        messageArray.push({ type: "text", data: { text: segment } });
+      }
     }
+    return messageArray;
+  }
+  async function handleReply(ctx, msg, s, context) {
+    const { maxChar, replymsg, filterContextTemplate, filterReplyTemplate } = ConfigManager.reply;
+    const segments = s.split(/(<\s?[\|│｜]from:?.*?[\|│｜]?\s?>)/).filter((item) => item.trim() !== "");
+    if (segments.length === 0) {
+      return { s: "", reply: "", images: [] };
+    }
+    s = "";
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const match = segment.match(/<\s?[\|│｜]from:?(.*?)[\|│｜]?\s?>/);
+      if (match) {
+        const uid = await context.findUserId(ctx, match[1]);
+        if (uid === ctx.endPoint.userId && i < segments.length - 1) {
+          s += segments[i + 1];
+        }
+      } else if (i === 0) {
+        s = segment;
+      }
+    }
+    if (!s.trim()) {
+      s = segments.find((segment) => !/<\s?[\|│｜]from:?.*?[\|│｜]?\s?>/.test(segment));
+      if (!s || !s.trim()) {
+        return { s: "", reply: "", images: [] };
+      }
+    }
+    let reply = s;
+    filterContextTemplate.forEach((item) => {
+      if (!item) {
+        return;
+      }
+      try {
+        const regex = new RegExp(item, "g");
+        s = s.replace(regex, "");
+      } catch (error) {
+        console.error("Error in RegExp:", error);
+      }
+    });
+    s = s.slice(0, maxChar).trim();
+    reply = await replaceMentions(ctx, context, reply);
+    const { result, images } = await replaceImages(context, reply);
+    reply = result;
+    filterReplyTemplate.forEach((item) => {
+      if (!item) {
+        return;
+      }
+      try {
+        const regex = new RegExp(item, "g");
+        reply = reply.replace(regex, "");
+      } catch (error) {
+        console.error("Error in RegExp:", error);
+      }
+    });
+    const prefix = replymsg && msg.rawId ? `[CQ:reply,id=${msg.rawId}]` : ``;
+    const segments2 = reply.split(/(\[CQ:.+?\])/);
+    let nonCQLength = 0;
+    let finalReply = prefix;
+    for (const segment of segments2) {
+      if (segment.startsWith("[CQ:") && segment.endsWith("]")) {
+        finalReply += segment;
+      } else {
+        const remaining = maxChar - nonCQLength;
+        if (remaining > 0) {
+          finalReply += segment.slice(0, remaining);
+          nonCQLength += Math.min(segment.length, remaining);
+        }
+      }
+    }
+    reply = finalReply.trim();
+    return { s, reply, images };
+  }
+  function checkRepeat(context, s) {
+    const { stopRepeat, similarityLimit } = ConfigManager.reply;
+    if (!stopRepeat) {
+      return false;
+    }
+    const messages = context.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message.role === "assistant" && !(message == null ? void 0 : message.tool_calls)) {
+        const content = message.content;
+        const similarity = calculateSimilarity(content.trim(), s.trim());
+        logger.info(`复读相似度：${similarity}`);
+        if (similarity > similarityLimit) {
+          let start = i;
+          let count = 1;
+          for (let j = i - 1; j >= 0; j--) {
+            const message2 = messages[j];
+            if (message2.role === "tool" || message2.role === "assistant" && (message2 == null ? void 0 : message2.tool_calls)) {
+              start = j;
+              count++;
+            } else {
+              break;
+            }
+          }
+          messages.splice(start, count);
+          return true;
+        }
+        break;
+      }
+    }
+    return false;
+  }
+  async function replaceMentions(ctx, context, reply) {
+    const match = reply.match(/<\s?[\|│｜]@(.+?)[\|│｜]?\s?>/g);
+    if (match) {
+      for (let i = 0; i < match.length; i++) {
+        const name = match[i].replace(/^<\s?[\|│｜]@|[\|│｜]?\s?>$/g, "");
+        const uid = await context.findUserId(ctx, name);
+        if (uid !== null) {
+          reply = reply.replace(match[i], `[CQ:at,qq=${uid.replace(/\D+/g, "")}]`);
+        } else {
+          reply = reply.replace(match[i], ` @${name} `);
+        }
+      }
+    }
+    return reply;
+  }
+  async function replaceImages(context, reply) {
+    let result = reply;
+    const images = [];
+    const match = reply.match(/<\s?[\|│｜]图片.+?[\|│｜]?\s?>/g);
+    if (match) {
+      for (let i = 0; i < match.length; i++) {
+        const id = match[i].match(/<\s?[\|│｜]图片(.+?)[\|│｜]?\s?>/)[1].trim().slice(0, 6);
+        const image = context.findImage(id);
+        if (image) {
+          const file = image.file;
+          images.push(image);
+          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(file)) {
+            result = result.replace(match[i], `[CQ:image,file=${file}]`);
+            continue;
+          }
+        }
+        result = result.replace(match[i], ``);
+      }
+    }
+    return { result, images };
   }
   function levenshteinDistance(s1, s2) {
     const len1 = s1.length;
@@ -1844,141 +2028,73 @@ QQ等级: ${data.qqLevel}
     return 1 - distance / maxLength || 0;
   }
 
-  // src/utils/utils_reply.ts
-  async function handleReply(ctx, msg, s, context) {
-    const { maxChar, replymsg, filterContextTemplate, filterReplyTemplate } = ConfigManager.reply;
-    const segments = s.split(/(<[\|｜]from:?.*?[\|｜]?>)/).filter((item) => item.trim() !== "");
-    if (segments.length === 0) {
-      return { s: "", reply: "", images: [] };
+  // src/utils/utils.ts
+  function transformMsgId(msgId) {
+    if (typeof msgId === "string") {
+      msgId = parseInt(msgId);
     }
-    s = "";
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      const match = segment.match(/<[\|｜]from:?(.*?)[\|｜]?>/);
-      if (match) {
-        const uid = await context.findUserId(ctx, match[1]);
-        if (uid === ctx.endPoint.userId && i < segments.length - 1) {
-          s += segments[i + 1];
-        }
-      } else if (i === 0) {
-        s = segment;
-      }
-    }
-    if (!s.trim()) {
-      s = segments.find((segment) => !/<[\|｜]from:?.*?[\|｜]?>/.test(segment));
-      if (!s || !s.trim()) {
-        return { s: "", reply: "", images: [] };
-      }
-    }
-    let reply = s;
-    filterContextTemplate.forEach((item) => {
-      try {
-        const regex = new RegExp(item, "g");
-        s = s.replace(regex, "");
-      } catch (error) {
-        console.error("Error in RegExp:", error);
-      }
-    });
-    s = s.slice(0, maxChar).trim();
-    reply = await replaceMentions(ctx, context, reply);
-    const { result, images } = await replaceImages(context, reply);
-    reply = result;
-    filterReplyTemplate.forEach((item) => {
-      try {
-        const regex = new RegExp(item, "g");
-        reply = reply.replace(regex, "");
-      } catch (error) {
-        console.error("Error in RegExp:", error);
-      }
-    });
-    const prefix = replymsg && msg.rawId ? `[CQ:reply,id=${msg.rawId}][CQ:at,qq=${ctx.player.userId.replace(/\D+/g, "")}] ` : ``;
-    const segments2 = reply.split(/(\[CQ:.+?\])/);
-    let nonCQLength = 0;
-    let finalReply = prefix;
-    for (const segment of segments2) {
-      if (segment.startsWith("[CQ:") && segment.endsWith("]")) {
-        finalReply += segment;
-      } else {
-        const remaining = maxChar - nonCQLength;
-        if (remaining > 0) {
-          finalReply += segment.slice(0, remaining);
-          nonCQLength += Math.min(segment.length, remaining);
-        }
-      }
-    }
-    reply = finalReply;
-    return { s, reply, images };
+    return isNaN(msgId) ? "" : msgId.toString(36);
   }
-  function checkRepeat(context, s) {
-    const { stopRepeat, similarityLimit } = ConfigManager.reply;
-    if (!stopRepeat) {
-      return false;
-    }
-    const messages = context.messages;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message.role === "assistant" && !(message == null ? void 0 : message.tool_calls)) {
-        const content = message.content;
-        const similarity = calculateSimilarity(content.trim(), s.trim());
-        log(`复读相似度：${similarity}`);
-        if (similarity > similarityLimit) {
-          let start = i;
-          let count = 1;
-          for (let j = i - 1; j >= 0; j--) {
-            const message2 = messages[j];
-            if (message2.role === "tool" || message2.role === "assistant" && (message2 == null ? void 0 : message2.tool_calls)) {
-              start = j;
-              count++;
-            } else {
-              break;
-            }
-          }
-          messages.splice(start, count);
-          return true;
-        }
-        break;
-      }
-    }
-    return false;
+  function transformMsgIdBack(msgId) {
+    return parseInt(msgId, 36);
   }
-  async function replaceMentions(ctx, context, reply) {
-    const match = reply.match(/<[\|｜]@(.+?)[\|｜]?>/g);
-    if (match) {
-      for (let i = 0; i < match.length; i++) {
-        const name = match[i].replace(/^<[\|｜]@|[\|｜]?>$/g, "");
-        const uid = await context.findUserId(ctx, name);
-        if (uid !== null) {
-          reply = reply.replace(match[i], `[CQ:at,qq=${uid.replace(/\D+/g, "")}]`);
+  function generateId() {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 6);
+    return (timestamp + random).slice(-6);
+  }
+  async function replyToSender(ctx, msg, ai, s) {
+    if (!s) {
+      return "";
+    }
+    const { showMsgId } = ConfigManager.message;
+    if (showMsgId) {
+      const ext = seal.ext.find("HTTP依赖");
+      if (!ext) {
+        console.error(`未找到HTTP依赖`);
+        ai.context.lastReply = s;
+        seal.replyToSender(ctx, msg, s);
+        return "";
+      }
+      const messageArray = parseText(s);
+      const epId = ctx.endPoint.userId;
+      const group_id = ctx.group.groupId.replace(/\D+/g, "");
+      const user_id = ctx.player.userId.replace(/\D+/g, "");
+      if (msg.messageType === "private") {
+        const data = {
+          user_id,
+          message: messageArray
+        };
+        const result = await globalThis.http.getData(epId, "send_private_msg", data);
+        if (result == null ? void 0 : result.message_id) {
+          logger.info(`(${result.message_id})发送给QQ:${user_id}:${s}`);
+          return transformMsgId(result.message_id);
         } else {
-          reply = reply.replace(match[i], ` @${name} `);
+          throw new Error(`在replyToSender中: 获取消息ID失败`);
         }
-      }
-    }
-    return reply;
-  }
-  async function replaceImages(context, reply) {
-    let result = reply;
-    const images = [];
-    const match = reply.match(/<[\|｜]图片.+?[\|｜]?>/g);
-    if (match) {
-      for (let i = 0; i < match.length; i++) {
-        const id = match[i].match(/<[\|｜]图片(.+?)[\|｜]?>/)[1].trim().slice(0, 6);
-        const image = context.findImage(id);
-        if (image) {
-          const file = image.file;
-          images.push(image);
-          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(file)) {
-            result = result.replace(match[i], `[CQ:image,file=${file}]`);
-            continue;
-          }
+      } else if (msg.messageType === "group") {
+        const data = {
+          group_id,
+          message: messageArray
+        };
+        const result = await globalThis.http.getData(epId, "send_group_msg", data);
+        if (result == null ? void 0 : result.message_id) {
+          logger.info(`(${result.message_id})发送给QQ-Group:${group_id}:${s}`);
+          return transformMsgId(result.message_id);
+        } else {
+          throw new Error(`在replyToSender中: 获取消息ID失败`);
         }
-        result = result.replace(match[i], ``);
+      } else {
+        throw new Error(`在replyToSender中: 未知的消息类型`);
       }
+    } else {
+      ai.context.lastReply = s;
+      seal.replyToSender(ctx, msg, s);
+      return "";
     }
-    return { result, images };
   }
 
-  // src/tool/tool_send_msg.ts
+  // src/tool/tool_message.ts
   function registerSendMsg() {
     const info = {
       type: "function",
@@ -2031,10 +2147,10 @@ QQ等级: ${data.qqLevel}
       const { showNumber } = ConfigManager.message;
       const source = ctx.isPrivate ? `来自<${ctx.player.name}>${showNumber ? `(${ctx.player.userId.replace(/\D+/g, "")})` : ``}` : `来自群聊<${ctx.group.groupName}>${showNumber ? `(${ctx.group.groupId.replace(/\D+/g, "")})` : ``}`;
       const originalImages = [];
-      const match = content.match(/<[\|｜]图片.+?[\|｜]?>/g);
+      const match = content.match(/<\s?[\|│｜]图片.+?[\|│｜]?\s?>/g);
       if (match) {
         for (let i = 0; i < match.length; i++) {
-          const id = match[i].match(/<[\|｜]图片(.+?)[\|｜]?>/)[1].trim().slice(0, 6);
+          const id = match[i].match(/<\s?[\|│｜]图片(.+?)[\|│｜]?\s?>/)[1].trim().slice(0, 6);
           const image = ai.context.findImage(id);
           if (image) {
             originalImages.push(image);
@@ -2069,11 +2185,10 @@ QQ等级: ${data.qqLevel}
       } else {
         return `未知的消息类型<${msg_type}>`;
       }
-      await ai.context.systemUserIteration("来自其他对话的消息发送提示", `${source}: 原因: ${reason || "无"}`, originalImages);
+      await ai.context.addSystemUserMessage("来自其他对话的消息发送提示", `${source}: 原因: ${reason || "无"}`, originalImages);
       const { s, reply, images } = await handleReply(ctx, msg, content, ai.context);
-      ai.context.lastReply = reply;
-      await ai.context.iteration(ctx, s, images, "assistant");
-      seal.replyToSender(ctx, msg, reply);
+      const msgId = await replyToSender(ctx, msg, ai, reply);
+      await ai.context.addMessage(ctx, s, images, "assistant", msgId);
       if (tool_call) {
         if (!ToolManager.toolMap.hasOwnProperty(tool_call.name)) {
           return `调用函数失败:未注册的函数:${tool_call.name}`;
@@ -2101,19 +2216,117 @@ QQ等级: ${data.qqLevel}
             }
           }
           const s2 = await tool2.solve(ctx, msg, ai, args2);
-          await ai.context.systemUserIteration("调用函数返回", s2, []);
+          await ai.context.addSystemUserMessage("调用函数返回", s2, []);
           AIManager.saveAI(ai.id);
           return `函数调用成功，返回值:${s2}`;
         } catch (e) {
           const s2 = `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`;
           console.error(s2);
-          await ai.context.systemUserIteration("调用函数返回", s2, []);
+          await ai.context.addSystemUserMessage("调用函数返回", s2, []);
           AIManager.saveAI(ai.id);
           return s2;
         }
       }
       AIManager.saveAI(ai.id);
       return "消息发送成功";
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerDeleteMsg() {
+    const info = {
+      type: "function",
+      function: {
+        name: "delete_msg",
+        description: "撤回指定消息",
+        parameters: {
+          type: "object",
+          properties: {
+            msg_id: {
+              type: "string",
+              description: "消息ID"
+            }
+          },
+          required: ["msg_id"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, _, __, args) => {
+      const { msg_id } = args;
+      const ext = seal.ext.find("HTTP依赖");
+      if (!ext) {
+        console.error(`未找到HTTP依赖`);
+        return `未找到HTTP依赖，请提示用户安装HTTP依赖`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const result = await globalThis.http.getData(epId, `get_msg?message_id=${transformMsgIdBack(msg_id)}`);
+        if (result.sender.user_id != epId.replace(/\D+/g, "")) {
+          if (result.sender.role == "owner" || result.sender.role == "admin") {
+            return `你没有权限撤回该消息`;
+          }
+          try {
+            const epId2 = ctx.endPoint.userId;
+            const group_id = ctx.group.groupId.replace(/\D+/g, "");
+            const user_id = epId2.replace(/\D+/g, "");
+            const result2 = await globalThis.http.getData(epId2, `get_group_member_info?group_id=${group_id}&user_id=${user_id}&no_cache=true`);
+            if (result2.role !== "owner" && result2.role !== "admin") {
+              return `你没有管理员权限`;
+            }
+          } catch (e) {
+            console.error(e);
+            return `获取权限信息失败`;
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        return `获取消息信息失败`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        await globalThis.http.getData(epId, `delete_msg?message_id=${transformMsgIdBack(msg_id)}`);
+        return `已撤回消息${msg_id}`;
+      } catch (e) {
+        console.error(e);
+        return `撤回消息失败`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerQuoteMsg() {
+    const info = {
+      type: "function",
+      function: {
+        name: "quote_msg",
+        description: "引用指定消息并回复",
+        parameters: {
+          type: "object",
+          properties: {
+            msg_id: {
+              type: "string",
+              description: "消息ID"
+            },
+            content: {
+              type: "string",
+              description: "回复的内容"
+            }
+          },
+          required: ["msg_id", "content"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, msg, ai, args) => {
+      const { msg_id, content } = args;
+      try {
+        const { s, reply, images } = await handleReply(ctx, msg, content, ai.context);
+        const msgId = await replyToSender(ctx, msg, ai, `[CQ:reply,id=${transformMsgIdBack(msg_id)}]${reply}`);
+        await ai.context.addMessage(ctx, s, images, "assistant", msgId);
+        return `已引用消息${msg_id}并回复`;
+      } catch (e) {
+        console.error(e);
+        return `引用消息失败`;
+      }
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -2553,7 +2766,7 @@ QQ等级: ${data.qqLevel}
         }
       }
       try {
-        log(`搜索音乐: ${api}`);
+        logger.info(`搜索音乐: ${api}`);
         const response = await fetch(api, {
           method: "GET",
           headers: {
@@ -2600,7 +2813,7 @@ QQ等级: ${data.qqLevel}
           }
         }
       } catch (error) {
-        log(`音乐搜索请求错误: ${error}`);
+        logger.warning(`音乐搜索请求错误: ${error}`);
         return `音乐搜索请求错误: ${error}`;
       }
     };
@@ -2694,6 +2907,8 @@ QQ等级: ${data.qqLevel}
       registerGroupSign();
       registerGetPersonInfo();
       registerSendMsg();
+      registerDeleteMsg();
+      registerQuoteMsg();
       registerGetContext();
       registerGetList();
       registerGetGroupMemberList();
@@ -2738,7 +2953,7 @@ QQ等级: ${data.qqLevel}
     static async handleToolCalls(ctx, msg, ai, tool_calls) {
       tool_calls.splice(5);
       if (tool_calls.length !== 0) {
-        log(`调用函数:`, tool_calls.map((item, i) => {
+        logger.info(`调用函数:`, tool_calls.map((item, i) => {
           return `(${i}) ${item.function.name}:${item.function.arguments}`;
         }).join("\n"));
       }
@@ -2757,87 +2972,87 @@ QQ等级: ${data.qqLevel}
     static async handleToolCall(ctx, msg, ai, tool_call) {
       const name = tool_call.function.name;
       if (!this.toolMap.hasOwnProperty(name)) {
-        log(`调用函数失败:未注册的函数:${name}`);
-        await ai.context.toolIteration(tool_call.id, `调用函数失败:未注册的函数:${name}`);
+        logger.warning(`调用函数失败:未注册的函数:${name}`);
+        await ai.context.addToolMessage(tool_call.id, `调用函数失败:未注册的函数:${name}`);
         return "none";
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
-        log(`调用函数失败:禁止调用的函数:${name}`);
-        await ai.context.toolIteration(tool_call.id, `调用函数失败:禁止调用的函数:${name}`);
+        logger.warning(`调用函数失败:禁止调用的函数:${name}`);
+        await ai.context.addToolMessage(tool_call.id, `调用函数失败:禁止调用的函数:${name}`);
         return "none";
       }
       if (this.cmdArgs == null) {
-        log(`暂时无法调用函数，请先使用任意指令`);
-        await ai.context.toolIteration(tool_call.id, `暂时无法调用函数，请先提示用户使用任意指令`);
+        logger.warning(`暂时无法调用函数，请先使用任意指令`);
+        await ai.context.addToolMessage(tool_call.id, `暂时无法调用函数，请先提示用户使用任意指令`);
         return "none";
       }
       try {
         const tool = this.toolMap[name];
         const args = JSON.parse(tool_call.function.arguments);
         if (args !== null && typeof args !== "object") {
-          log(`调用函数失败:arguement不是一个object`);
-          await ai.context.toolIteration(tool_call.id, `调用函数失败:arguement不是一个object`);
+          logger.warning(`调用函数失败:arguement不是一个object`);
+          await ai.context.addToolMessage(tool_call.id, `调用函数失败:arguement不是一个object`);
           return "none";
         }
         for (const key of tool.info.function.parameters.required) {
           if (!args.hasOwnProperty(key)) {
-            log(`调用函数失败:缺少必需参数 ${key}`);
-            await ai.context.toolIteration(tool_call.id, `调用函数失败:缺少必需参数 ${key}`);
+            logger.warning(`调用函数失败:缺少必需参数 ${key}`);
+            await ai.context.addToolMessage(tool_call.id, `调用函数失败:缺少必需参数 ${key}`);
             return "none";
           }
         }
         const s = await tool.solve(ctx, msg, ai, args);
-        await ai.context.toolIteration(tool_call.id, s);
+        await ai.context.addToolMessage(tool_call.id, s);
         return tool.tool_choice;
       } catch (e) {
         const s = `调用函数 (${name}:${tool_call.function.arguments}) 失败:${e.message}`;
         console.error(s);
-        await ai.context.toolIteration(tool_call.id, s);
+        await ai.context.addToolMessage(tool_call.id, s);
         return "none";
       }
     }
     static async handlePromptToolCall(ctx, msg, ai, tool_call) {
       if (!tool_call.hasOwnProperty("name") || !tool_call.hasOwnProperty("arguments")) {
-        log(`调用函数失败:缺少name或arguments`);
-        await ai.context.systemUserIteration("调用函数返回", `调用函数失败:缺少name或arguments`, []);
+        logger.warning(`调用函数失败:缺少name或arguments`);
+        await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:缺少name或arguments`, []);
       }
       const name = tool_call.name;
       if (!this.toolMap.hasOwnProperty(name)) {
-        log(`调用函数失败:未注册的函数:${name}`);
-        await ai.context.systemUserIteration("调用函数返回", `调用函数失败:未注册的函数:${name}`, []);
+        logger.warning(`调用函数失败:未注册的函数:${name}`);
+        await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:未注册的函数:${name}`, []);
         return;
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
-        log(`调用函数失败:禁止调用的函数:${name}`);
-        await ai.context.systemUserIteration("调用函数返回", `调用函数失败:禁止调用的函数:${name}`, []);
+        logger.warning(`调用函数失败:禁止调用的函数:${name}`);
+        await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:禁止调用的函数:${name}`, []);
         return;
       }
       if (this.cmdArgs == null) {
-        log(`暂时无法调用函数，请先使用任意指令`);
-        await ai.context.systemUserIteration("调用函数返回", `暂时无法调用函数，请先提示用户使用任意指令`, []);
+        logger.warning(`暂时无法调用函数，请先使用任意指令`);
+        await ai.context.addSystemUserMessage("调用函数返回", `暂时无法调用函数，请先提示用户使用任意指令`, []);
         return;
       }
       try {
         const tool = this.toolMap[name];
         const args = tool_call.arguments;
         if (args !== null && typeof args !== "object") {
-          log(`调用函数失败:arguement不是一个object`);
-          await ai.context.systemUserIteration("调用函数返回", `调用函数失败:arguement不是一个object`, []);
+          logger.warning(`调用函数失败:arguement不是一个object`);
+          await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:arguement不是一个object`, []);
           return;
         }
         for (const key of tool.info.function.parameters.required) {
           if (!args.hasOwnProperty(key)) {
-            log(`调用函数失败:缺少必需参数 ${key}`);
-            await ai.context.systemUserIteration("调用函数返回", `调用函数失败:缺少必需参数 ${key}`, []);
+            logger.warning(`调用函数失败:缺少必需参数 ${key}`);
+            await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:缺少必需参数 ${key}`, []);
             return;
           }
         }
         const s = await tool.solve(ctx, msg, ai, args);
-        await ai.context.systemUserIteration("调用函数返回", s, []);
+        await ai.context.addSystemUserMessage("调用函数返回", s, []);
       } catch (e) {
         const s = `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`;
         console.error(s);
-        await ai.context.systemUserIteration("调用函数返回", s, []);
+        await ai.context.addSystemUserMessage("调用函数返回", s, []);
       }
     }
   };
@@ -2847,7 +3062,7 @@ QQ等级: ${data.qqLevel}
 
   // src/utils/utils_message.ts
   function buildSystemMessage(ctx, ai) {
-    const { roleSettingTemplate, showNumber } = ConfigManager.message;
+    const { roleSettingTemplate, showNumber, showMsgId } = ConfigManager.message;
     const { isTool, usePromptEngineering } = ConfigManager.tool;
     const { condition } = ConfigManager.image;
     let [roleSettingIndex, _] = seal.vars.intGet(ctx, "$g人工智能插件专用角色设定序号");
@@ -2861,7 +3076,10 @@ QQ等级: ${data.qqLevel}
 - 当前私聊:<${ctx.player.name}>${showNumber ? `(${ctx.player.userId.replace(/\D+/g, "")})` : ``}` : `
 - 当前群聊:<${ctx.group.groupName}>${showNumber ? `(${ctx.group.groupId.replace(/\D+/g, "")})` : ``}
 - <|@xxx|>表示@某个群成员`;
-    content += `- <|from:xxx|>表示消息来源`;
+    content += `
+- <|from:xxx|>表示消息来源，不要在生成的回复中使用`;
+    content += showMsgId ? `
+- <|msg_id:xxx|>表示消息ID，仅用于调用函数时使用，不要在生成的回复中提及或使用` : ``;
     content += condition === "0" ? `
 - <|图片xxxxxx|>为图片，其中xxxxxx为6位的图片id，如果要发送出现过的图片请使用<|图片xxxxxx|>的格式` : `
 - <|图片xxxxxx:yyy|>为图片，其中xxxxxx为6位的图片id，yyy为图片描述（可能没有），如果要发送出现过的图片请使用<|图片xxxxxx|>的格式`;
@@ -2903,7 +3121,8 @@ ${toolsPrompt}`;
       uid: "",
       name: "",
       timestamp: 0,
-      images: []
+      images: [],
+      contentMap: {}
     };
     return systemMessage;
   }
@@ -2919,7 +3138,8 @@ ${toolsPrompt}`;
           uid: "",
           name: "用户",
           timestamp: 0,
-          images: []
+          images: [],
+          contentMap: {}
         };
       } else {
         return {
@@ -2928,14 +3148,15 @@ ${toolsPrompt}`;
           uid: ctx.endPoint.userId,
           name: seal.formatTmpl(ctx, "核心:骰子名字"),
           timestamp: 0,
-          images: []
+          images: [],
+          contentMap: {}
         };
       }
     }).filter((item) => item !== null);
     return samplesMessages;
   }
   function handleMessages(ctx, ai) {
-    const { isPrefix, showNumber, isMerge } = ConfigManager.message;
+    const { isPrefix, showNumber, showMsgId, isMerge } = ConfigManager.message;
     const systemMessage = buildSystemMessage(ctx, ai);
     const samplesMessages = buildSamplesMessages(ctx);
     const messages = [systemMessage, ...samplesMessages, ...ai.context.messages];
@@ -2968,12 +3189,14 @@ ${toolsPrompt}`;
     for (let i = 0; i < messages.length; i++) {
       const message = messages[i];
       const prefix = isPrefix && message.name && !message.content.startsWith("<function_call>") ? message.name.startsWith("_") ? `<|${message.name}|>` : `<|from:${message.name}${showNumber ? `(${message.uid.replace(/\D+/g, "")})` : ``}|>` : "";
+      const msgIdList = Object.keys((message == null ? void 0 : message.contentMap) || {});
+      const content = message.content + (msgIdList.length !== 0 ? "\n" + msgIdList.map((msgId) => (showMsgId ? `<|msg_id:${msgId}|>` : "") + message.contentMap[msgId]).join("\n") : "");
       if (isMerge && message.role === last_role && message.role !== "tool") {
-        processedMessages[processedMessages.length - 1].content += "\n\n" + prefix + message.content;
+        processedMessages[processedMessages.length - 1].content += "\n\n" + prefix + content;
       } else {
         processedMessages.push({
           role: message.role,
-          content: prefix + message.content,
+          content: prefix + content,
           tool_calls: (message == null ? void 0 : message.tool_calls) ? message.tool_calls : void 0,
           tool_call_id: (message == null ? void 0 : message.tool_call_id) ? message.tool_call_id : void 0
         });
@@ -2981,6 +3204,41 @@ ${toolsPrompt}`;
       }
     }
     return processedMessages;
+  }
+  function parseBody(template, messages, tools, tool_choice) {
+    const { isTool, usePromptEngineering } = ConfigManager.tool;
+    const bodyObject = {};
+    for (let i = 0; i < template.length; i++) {
+      const s = template[i];
+      if (s.trim() === "") {
+        continue;
+      }
+      try {
+        const obj = JSON.parse(`{${s}}`);
+        const key = Object.keys(obj)[0];
+        bodyObject[key] = obj[key];
+      } catch (err) {
+        throw new Error(`解析body的【${s}】时出现错误:${err}`);
+      }
+    }
+    if (!bodyObject.hasOwnProperty("messages")) {
+      bodyObject.messages = messages;
+    }
+    if (!bodyObject.hasOwnProperty("model")) {
+      throw new Error(`body中没有model`);
+    }
+    if (isTool && !usePromptEngineering) {
+      if (!bodyObject.hasOwnProperty("tools")) {
+        bodyObject.tools = tools;
+      }
+      if (!bodyObject.hasOwnProperty("tool_choice")) {
+        bodyObject.tool_choice = tool_choice;
+      }
+    } else {
+      bodyObject == null ? true : delete bodyObject.tools;
+      bodyObject == null ? true : delete bodyObject.tool_choice;
+    }
+    return bodyObject;
   }
 
   // src/AI/service.ts
@@ -2997,15 +3255,15 @@ ${toolsPrompt}`;
         const message = data.choices[0].message;
         const finish_reason = data.choices[0].finish_reason;
         if (message.hasOwnProperty("reasoning_content")) {
-          log(`思维链内容:`, message.reasoning_content);
+          logger.info(`思维链内容:`, message.reasoning_content);
         }
-        const reply = message.content;
-        log(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
+        const reply = message.content || "";
+        logger.info(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
         if (isTool) {
           if (usePromptEngineering) {
             const match = reply.match(/<function_call>([\s\S]*)<\/function_call>/);
             if (match) {
-              ai.context.iteration(ctx, match[0], [], "assistant");
+              ai.context.addMessage(ctx, match[0], [], "assistant", "");
               try {
                 const tool_call = JSON.parse(match[1]);
                 await ToolManager.handlePromptToolCall(ctx, msg, ai, tool_call);
@@ -3017,8 +3275,8 @@ ${toolsPrompt}`;
             }
           } else {
             if (message.hasOwnProperty("tool_calls") && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-              log(`触发工具调用`);
-              ai.context.toolCallsIteration(message.tool_calls);
+              logger.info(`触发工具调用`);
+              ai.context.addToolCallsMessage(message.tool_calls);
               const tool_choice2 = await ToolManager.handleToolCalls(ctx, msg, ai, message.tool_calls);
               const messages2 = handleMessages(ctx, ai);
               return await sendChatRequest(ctx, msg, ai, messages2, tool_choice2);
@@ -3027,7 +3285,8 @@ ${toolsPrompt}`;
         }
         return reply;
       } else {
-        throw new Error("服务器响应中没有choices或choices为空");
+        throw new Error(`服务器响应中没有choices或choices为空
+响应体:${JSON.stringify(data, null, 2)}`);
       }
     } catch (error) {
       console.error("在sendChatRequest中出错：", error);
@@ -3043,16 +3302,17 @@ ${toolsPrompt}`;
       if (data.choices && data.choices.length > 0) {
         AIManager.updateUsage(data.model, data.usage);
         const message = data.choices[0].message;
-        const reply = message.content;
-        log(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
+        const reply = message.content || "";
+        logger.info(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
         return reply;
       } else {
-        throw new Error("服务器响应中没有choices或choices为空");
+        throw new Error(`服务器响应中没有choices或choices为空
+响应体:${JSON.stringify(data, null, 2)}`);
       }
     } catch (error) {
       console.error("在imageToText中请求出错：", error);
       if (urlToBase64 === "自动" && !useBase64) {
-        log(`自动尝试使用转换为base64`);
+        logger.info(`自动尝试使用转换为base64`);
         for (let i = 0; i < messages.length; i++) {
           const message = messages[i];
           for (let j = 0; j < message.content.length; j++) {
@@ -3060,7 +3320,7 @@ ${toolsPrompt}`;
             if (content.type === "image_url") {
               const { base64, format } = await ImageManager.imageUrlToBase64(content.image_url.url);
               if (!base64 || !format) {
-                log(`转换为base64失败`);
+                logger.warning(`转换为base64失败`);
                 return "";
               }
               message.content[j].image_url.url = `data:image/${format};base64,${base64}`;
@@ -3081,7 +3341,7 @@ ${toolsPrompt}`;
       }
       return value;
     });
-    log(`请求发送前的上下文:
+    logger.info(`请求发送前的上下文:
 `, s);
     const response = await fetch(url, {
       method: "POST",
@@ -3095,7 +3355,7 @@ ${toolsPrompt}`;
     const text = await response.text();
     if (!response.ok) {
       throw new Error(`请求失败! 状态码: ${response.status}
-响应体: ${text}`);
+响应体:${text}`);
     }
     if (!text) {
       throw new Error("响应体为空");
@@ -3123,7 +3383,7 @@ ${toolsPrompt}`;
         }
         return value;
       });
-      log(`请求发送前的上下文:
+      logger.info(`请求发送前的上下文:
 `, s);
       const response = await fetch(`${streamUrl}/start`, {
         method: "POST",
@@ -3140,7 +3400,7 @@ ${toolsPrompt}`;
       const text = await response.text();
       if (!response.ok) {
         throw new Error(`请求失败! 状态码: ${response.status}
-响应体: ${text}`);
+响应体:${text}`);
       }
       if (!text) {
         throw new Error("响应体为空");
@@ -3175,7 +3435,7 @@ ${toolsPrompt}`;
       const text = await response.text();
       if (!response.ok) {
         throw new Error(`请求失败! 状态码: ${response.status}
-响应体: ${text}`);
+响应体:${text}`);
       }
       if (!text) {
         throw new Error("响应体为空");
@@ -3214,7 +3474,7 @@ ${toolsPrompt}`;
       const text = await response.text();
       if (!response.ok) {
         throw new Error(`请求失败! 状态码: ${response.status}
-响应体: ${text}`);
+响应体:${text}`);
       }
       if (!text) {
         throw new Error("响应体为空");
@@ -3227,7 +3487,7 @@ ${toolsPrompt}`;
         if (!data.status) {
           throw new Error("服务器响应中没有status字段");
         }
-        log("对话结束", data.status === "success" ? "成功" : "失败");
+        logger.info("对话结束", data.status === "success" ? "成功" : "失败");
         if (data.status === "success") {
           AIManager.updateUsage(data.model, data.usage);
         }
@@ -3382,17 +3642,17 @@ ${toolsPrompt}`;
         if (response.ok) {
           const contentType = response.headers.get("Content-Type");
           if (contentType && contentType.startsWith("image")) {
-            log("URL有效且未过期");
+            logger.info("URL有效且未过期");
             isValid = true;
           } else {
-            log(`URL有效但未返回图片 Content-Type: ${contentType}`);
+            logger.warning(`URL有效但未返回图片 Content-Type: ${contentType}`);
           }
         } else {
           if (response.status === 500) {
-            log(`URL不知道有没有效 状态码: ${response.status}`);
+            logger.warning(`URL不知道有没有效 状态码: ${response.status}`);
             isValid = true;
           } else {
-            log(`URL无效或过期 状态码: ${response.status}`);
+            logger.warning(`URL无效或过期 状态码: ${response.status}`);
           }
         }
       } catch (error) {
@@ -3410,7 +3670,7 @@ ${toolsPrompt}`;
       if (urlToBase64 == "总是") {
         const { base64, format } = await _ImageManager.imageUrlToBase64(imageUrl);
         if (!base64 || !format) {
-          log(`转换为base64失败`);
+          logger.warning(`转换为base64失败`);
           return "";
         }
         useBase64 = true;
@@ -3489,13 +3749,17 @@ ${toolsPrompt}`;
       }
       return context;
     }
-    async iteration(ctx, s, images, role) {
-      var _a;
-      const messages = this.messages;
-      if (role === "user" && messages.length !== 0 && messages[messages.length - 1].role === "assistant" && ((_a = messages[messages.length - 1]) == null ? void 0 : _a.tool_calls)) {
-        return;
+    clearMessages(...roles) {
+      if (roles.length === 0) {
+        this.messages = [];
+      } else {
+        this.messages = this.messages.filter((message) => !roles.includes(message.role));
       }
+    }
+    async addMessage(ctx, s, images, role, msgId) {
+      var _a;
       const { showNumber, maxRounds } = ConfigManager.message;
+      const messages = this.messages;
       s = s.replace(/\[CQ:reply,id=-?\d+\]\[CQ:at,qq=\d+\]/g, "").replace(/\[CQ:at,qq=(\d+)\]/g, (_, p1) => {
         const epId = ctx.endPoint.userId;
         const gid = ctx.group.groupId;
@@ -3512,23 +3776,34 @@ ${toolsPrompt}`;
       const uid = role == "user" ? ctx.player.userId : ctx.endPoint.userId;
       const length = messages.length;
       if (length !== 0 && messages[length - 1].name === name && !s.startsWith("<function_call>")) {
-        messages[length - 1].content += "\n" + s;
         messages[length - 1].timestamp = Math.floor(Date.now() / 1e3);
         messages[length - 1].images.push(...images);
+        if (!msgId && ((_a = messages[length - 1]) == null ? void 0 : _a.contentMap)) {
+          const seg = role === "assistant" ? "" : "\n";
+          messages[length - 1].content += seg + s;
+        } else {
+          messages[length - 1].contentMap[msgId] = s;
+        }
       } else {
         const message = {
           role,
-          content: s,
+          content: "",
           uid,
           name,
           timestamp: Math.floor(Date.now() / 1e3),
-          images
+          images,
+          contentMap: {}
         };
+        if (!msgId) {
+          message.content = s;
+        } else {
+          message.contentMap[msgId] = s;
+        }
         messages.push(message);
       }
       this.limitMessages(maxRounds);
     }
-    async toolCallsIteration(tool_calls) {
+    async addToolCallsMessage(tool_calls) {
       const message = {
         role: "assistant",
         content: "",
@@ -3536,11 +3811,12 @@ ${toolsPrompt}`;
         uid: "",
         name: "",
         timestamp: Math.floor(Date.now() / 1e3),
-        images: []
+        images: [],
+        contentMap: {}
       };
       this.messages.push(message);
     }
-    async toolIteration(tool_call_id, s) {
+    async addToolMessage(tool_call_id, s) {
       var _a;
       const message = {
         role: "tool",
@@ -3549,7 +3825,8 @@ ${toolsPrompt}`;
         uid: "",
         name: "",
         timestamp: Math.floor(Date.now() / 1e3),
-        images: []
+        images: [],
+        contentMap: {}
       };
       for (let i = this.messages.length - 1; i >= 0; i--) {
         if (((_a = this.messages[i]) == null ? void 0 : _a.tool_calls) && this.messages[i].tool_calls.some((tool_call) => tool_call.id === tool_call_id)) {
@@ -3559,14 +3836,15 @@ ${toolsPrompt}`;
       }
       console.error(`在添加时找不到对应的 tool_call_id: ${tool_call_id}`);
     }
-    async systemUserIteration(name, s, images) {
+    async addSystemUserMessage(name, s, images) {
       const message = {
         role: "user",
         content: s,
         uid: "",
         name: `_${name}`,
         timestamp: Math.floor(Date.now() / 1e3),
-        images
+        images,
+        contentMap: {}
       };
       this.messages.push(message);
     }
@@ -3633,7 +3911,7 @@ ${toolsPrompt}`;
           return ctx.player.userId;
         }
       }
-      log(`未找到用户<${name}>`);
+      logger.warning(`未找到用户<${name}>`);
       return null;
     }
     async findGroupId(ctx, groupName) {
@@ -3689,7 +3967,7 @@ ${toolsPrompt}`;
           return ctx.group.groupId;
         }
       }
-      log(`未找到群聊<${groupName}>`);
+      logger.warning(`未找到群聊<${groupName}>`);
       return null;
     }
     getNames() {
@@ -3845,7 +4123,6 @@ ${toolsPrompt}`;
       this.stream = {
         id: "",
         reply: "",
-        images: [],
         toolCallStatus: false
       };
     }
@@ -3877,7 +4154,7 @@ ${toolsPrompt}`;
         return;
       }
       const timeout = setTimeout(() => {
-        log(this.id, `处理消息超时`);
+        logger.warning(this.id, `处理消息超时`);
       }, 60 * 1e3);
       this.clearData();
       let result = {
@@ -3894,17 +4171,16 @@ ${toolsPrompt}`;
           break;
         }
         if (retry > MaxRetry) {
-          log(`发现复读，已达到最大重试次数，清除AI上下文`);
-          this.context.messages = this.context.messages.filter((item) => item.role !== "assistant" && item.role !== "tool");
+          logger.warning(`发现复读，已达到最大重试次数，清除AI上下文`);
+          this.context.clearMessages("assistant", "tool");
           break;
         }
-        log(`发现复读，一秒后进行重试:[${retry}/3]`);
+        logger.warning(`发现复读，一秒后进行重试:[${retry}/3]`);
         await new Promise((resolve) => setTimeout(resolve, 1e3));
       }
       const { s, reply, images } = result;
-      this.context.lastReply = reply;
-      await this.context.iteration(ctx, s, images, "assistant");
-      seal.replyToSender(ctx, msg, reply);
+      const msgId = await replyToSender(ctx, msg, this, reply);
+      await this.context.addMessage(ctx, s, images, "assistant", msgId);
       const { p } = ConfigManager.image;
       if (Math.random() * 100 <= p) {
         const file = await this.image.drawImageFile();
@@ -3916,7 +4192,7 @@ ${toolsPrompt}`;
     }
     async chatStream(ctx, msg) {
       const { isTool, usePromptEngineering } = ConfigManager.tool;
-      await this.stopCurrentChatStream(ctx, msg);
+      await this.stopCurrentChatStream();
       this.clearData();
       const messages = handleMessages(ctx, this);
       const id = await startStream(messages);
@@ -3942,19 +4218,18 @@ ${toolsPrompt}`;
           await new Promise((resolve) => setTimeout(resolve, interval));
           continue;
         }
-        log("接收到的回复:", raw_reply);
+        logger.info("接收到的回复:", raw_reply);
         if (isTool && usePromptEngineering) {
           if (!this.stream.toolCallStatus && /<function_call>/.test(this.stream.reply + raw_reply)) {
-            log("发现工具调用开始标签，拦截后续内容");
+            logger.info("发现工具调用开始标签，拦截后续内容");
             const match = raw_reply.match(/([\s\S]*)<function_call>/);
             if (match && match[1].trim() !== "") {
               const { s: s2, reply: reply2, images: images2 } = await handleReply(ctx, msg, match[1], this.context);
               if (this.stream.id !== id) {
                 return;
               }
-              this.stream.images.push(...images2);
-              seal.replyToSender(ctx, msg, reply2);
-              await this.context.iteration(ctx, this.stream.reply + s2, this.stream.images, "assistant");
+              const msgId2 = await replyToSender(ctx, msg, this, reply2);
+              await this.context.addMessage(ctx, s2, images2, "assistant", msgId2);
             }
             this.stream.toolCallStatus = true;
           }
@@ -3964,12 +4239,12 @@ ${toolsPrompt}`;
           if (this.stream.toolCallStatus) {
             this.stream.reply += raw_reply;
             if (/<\/function_call>/.test(this.stream.reply)) {
-              log("发现工具调用结束标签，开始处理对应工具调用");
+              logger.info("发现工具调用结束标签，开始处理对应工具调用");
               const match = this.stream.reply.match(/<function_call>([\s\S]*)<\/function_call>/);
               if (match) {
                 this.stream.reply = match[0];
                 this.stream.toolCallStatus = false;
-                await this.stopCurrentChatStream(ctx, msg);
+                await this.stopCurrentChatStream();
                 try {
                   const tool_call = JSON.parse(match[1]);
                   await ToolManager.handlePromptToolCall(ctx, msg, this, tool_call);
@@ -3980,7 +4255,7 @@ ${toolsPrompt}`;
                 await this.chatStream(ctx, msg);
               } else {
                 console.error("无法匹配到function_call");
-                await this.stopCurrentChatStream(ctx, msg);
+                await this.stopCurrentChatStream();
               }
               return;
             } else {
@@ -3994,32 +4269,28 @@ ${toolsPrompt}`;
         if (this.stream.id !== id) {
           return;
         }
-        this.stream.reply += s;
-        this.stream.images.push(...images);
-        seal.replyToSender(ctx, msg, reply);
+        const msgId = await replyToSender(ctx, msg, this, reply);
+        await this.context.addMessage(ctx, s, images, "assistant", msgId);
         after = result.nextAfter;
         await new Promise((resolve) => setTimeout(resolve, interval));
       }
       if (this.stream.id !== id) {
         return;
       }
-      await this.stopCurrentChatStream(ctx, msg);
+      await this.stopCurrentChatStream();
     }
-    async stopCurrentChatStream(ctx, msg) {
-      const { id, reply, images, toolCallStatus } = this.stream;
+    async stopCurrentChatStream() {
+      const { id, reply, toolCallStatus } = this.stream;
       this.stream = {
         id: "",
         reply: "",
-        images: [],
         toolCallStatus: false
       };
       if (id) {
-        log(`结束会话${id}`);
+        logger.info(`结束会话:`, id);
         if (reply) {
-          const { s } = await handleReply(ctx, msg, reply, this.context);
-          await this.context.iteration(ctx, s, images, "assistant");
           if (toolCallStatus) {
-            log(`工具调用未处理完成:${reply}`);
+            logger.warning(`工具调用未处理完成:`, reply);
           }
         }
         await endStream(id);
@@ -4160,7 +4431,7 @@ ${toolsPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.6.2");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.7.1");
       seal.ext.register(ext);
     }
     try {
@@ -4440,23 +4711,22 @@ ${toolsPrompt}`;
           }
           ai.clearData();
           const val2 = cmdArgs.getArgN(2);
-          const messages = ai.context.messages;
           switch (val2) {
             case "ass":
             case "assistant": {
-              ai.context.messages = messages.filter((item) => item.role !== "assistant");
+              ai.context.clearMessages("assistant", "tool");
               seal.replyToSender(ctx, msg, "ai上下文已清除");
               AIManager.saveAI(id);
               return ret;
             }
             case "user": {
-              ai.context.messages = messages.filter((item) => item.role !== "user");
+              ai.context.clearMessages("user");
               seal.replyToSender(ctx, msg, "用户上下文已清除");
               AIManager.saveAI(id);
               return ret;
             }
             default: {
-              ai.context.messages = [];
+              ai.context.clearMessages();
               seal.replyToSender(ctx, msg, "上下文已清除");
               AIManager.saveAI(id);
               return ret;
@@ -4638,7 +4908,7 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
                 }, {});
                 for (const key of tool.info.function.parameters.required) {
                   if (!args.hasOwnProperty(key)) {
-                    log(`调用函数失败:缺少必需参数 ${key}`);
+                    logger.warning(`调用函数失败:缺少必需参数 ${key}`);
                     seal.replyToSender(ctx, msg, `调用函数失败:缺少必需参数 ${key}`);
                     return ret;
                   }
@@ -4999,7 +5269,7 @@ ${s}`);
             seal.replyToSender(ctx, msg, "当前没有正在进行的对话");
             return ret;
           }
-          ai.stopCurrentChatStream(ctx, msg).then(() => {
+          ai.stopCurrentChatStream().then(() => {
             seal.replyToSender(ctx, msg, "已停止当前对话");
           });
           return ret;
@@ -5148,7 +5418,7 @@ ${s}`);
       let message = msg.message;
       let images = [];
       const ai = AIManager.getAI(id);
-      const CQTypes = getCQTypes(message);
+      const CQTypes = parseText(message).filter((item) => item.type !== "text").map((item) => item.type);
       if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
         if (CQTypes.includes("image")) {
           const result = await ImageManager.handleImageMessage(ctx, message);
@@ -5161,6 +5431,9 @@ ${s}`);
         clearTimeout(ai.context.timer);
         ai.context.timer = null;
         for (const keyword of keyWords) {
+          if (!keyword) {
+            continue;
+          }
           try {
             const pattern = new RegExp(keyword);
             if (!pattern.test(message)) {
@@ -5172,8 +5445,8 @@ ${s}`);
           }
           const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
           if (fmtCondition === 1) {
-            await ai.context.iteration(ctx, message, images, "user");
-            log("非指令触发回复");
+            await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
+            logger.info("非指令触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5188,10 +5461,10 @@ ${s}`);
             if (condition2.uid && condition2.uid !== userId) {
               continue;
             }
-            await ai.context.iteration(ctx, message, images, "user");
-            await ai.context.systemUserIteration("触发原因提示", condition2.reason, []);
+            await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
+            await ai.context.addSystemUserMessage("触发原因提示", condition2.reason, []);
             triggerConditionMap[id].splice(i, 1);
-            log("AI设定触发条件触发回复");
+            logger.info("AI设定触发条件触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5199,12 +5472,12 @@ ${s}`);
         }
         const pr = ai.privilege;
         if (pr.standby) {
-          await ai.context.iteration(ctx, message, images, "user");
+          await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
         }
         if (pr.counter > -1) {
           ai.context.counter += 1;
           if (ai.context.counter >= pr.counter) {
-            log("计数器触发回复");
+            logger.info("计数器触发回复");
             ai.context.counter = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5214,7 +5487,7 @@ ${s}`);
         if (pr.prob > -1) {
           const ran = Math.random() * 100;
           if (ran <= pr.prob) {
-            log("概率触发回复");
+            logger.info("概率触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5222,7 +5495,7 @@ ${s}`);
         }
         if (pr.timer > -1) {
           ai.context.timer = setTimeout(async () => {
-            log("计时器触发回复");
+            logger.info("计时器触发回复");
             ai.context.timer = null;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5242,14 +5515,14 @@ ${s}`);
         const ai = AIManager.getAI(id);
         let message = msg.message;
         let images = [];
-        const CQTypes = getCQTypes(message);
+        const CQTypes = parseText(message).filter((item) => item.type !== "text").map((item) => item.type);
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
             const result = await ImageManager.handleImageMessage(ctx, message);
             message = result.message;
             images = result.images;
-            await ai.context.iteration(ctx, message, images, "user");
+            await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
           }
         }
       }
@@ -5272,14 +5545,14 @@ ${s}`);
           ai.context.lastReply = "";
           return;
         }
-        const CQTypes = getCQTypes(message);
+        const CQTypes = parseText(message).filter((item) => item.type !== "text").map((item) => item.type);
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
             const result = await ImageManager.handleImageMessage(ctx, message);
             message = result.message;
             images = result.images;
-            await ai.context.iteration(ctx, message, images, "assistant");
+            await ai.context.addMessage(ctx, message, images, "assistant", transformMsgId(msg.rawId));
             return;
           }
         }
@@ -5291,7 +5564,7 @@ ${s}`);
         return;
       }
       if (isTaskRunning) {
-        log("定时器任务正在运行，跳过");
+        logger.info("定时器任务正在运行，跳过");
         return;
       }
       isTaskRunning = true;
@@ -5315,8 +5588,8 @@ ${s}`);
 定时器设定时间：${setTime}
 当前触发时间：${(/* @__PURE__ */ new Date()).toLocaleString()}
 提示内容：${content}`;
-        await ai.context.systemUserIteration("定时器触发提示", s, []);
-        log("定时任务触发回复");
+        await ai.context.addSystemUserMessage("定时器触发提示", s, []);
+        logger.info("定时任务触发回复");
         await ai.chat(ctx, msg);
         AIManager.saveAI(id);
         timerQueue.splice(i, 1);
