@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.7.2
+// @version      4.7.3
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -484,6 +484,52 @@ ${attr}: ${value}=>${result}`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
+
+  // src/AI/logger.ts
+  var Logger = class {
+    constructor(name) {
+      this.name = name;
+    }
+    handleLog(...data) {
+      const { logLevel } = ConfigManager.log;
+      if (logLevel === "永不") {
+        return "";
+      } else if (logLevel === "简短") {
+        const s = data.map((item) => `${item}`).join(" ");
+        if (s.length > 1e3) {
+          return s.substring(0, 500) + "\n...\n" + s.substring(s.length - 500);
+        } else {
+          return s;
+        }
+      } else if (logLevel === "详细") {
+        return data.map((item) => `${item}`).join(" ");
+      } else {
+        return "";
+      }
+    }
+    info(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.log(`【${this.name}】: ${s}`);
+    }
+    warning(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.warn(`【${this.name}】: ${s}`);
+    }
+    error(...data) {
+      const s = this.handleLog(...data);
+      if (!s) {
+        return;
+      }
+      console.error(`【${this.name}】: ${s}`);
+    }
+  };
+  var logger = new Logger("aiplugin4");
 
   // src/tool/tool_ban.ts
   function registerBan() {
@@ -1585,52 +1631,6 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/AI/logger.ts
-  var Logger = class {
-    constructor(name) {
-      this.name = name;
-    }
-    handleLog(...data) {
-      const { logLevel } = ConfigManager.log;
-      if (logLevel === "永不") {
-        return "";
-      } else if (logLevel === "简短") {
-        const s = data.map((item) => `${item}`).join(" ");
-        if (s.length > 1e3) {
-          return s.substring(0, 500) + "\n...\n" + s.substring(s.length - 500);
-        } else {
-          return s;
-        }
-      } else if (logLevel === "详细") {
-        return data.map((item) => `${item}`).join(" ");
-      } else {
-        return "";
-      }
-    }
-    info(...data) {
-      const s = this.handleLog(...data);
-      if (!s) {
-        return;
-      }
-      console.log(`【${this.name}】: ${s}`);
-    }
-    warning(...data) {
-      const s = this.handleLog(...data);
-      if (!s) {
-        return;
-      }
-      console.warn(`【${this.name}】: ${s}`);
-    }
-    error(...data) {
-      const s = this.handleLog(...data);
-      if (!s) {
-        return;
-      }
-      console.error(`【${this.name}】: ${s}`);
-    }
-  };
-  var logger2 = new Logger("aiplugin4");
-
   // src/tool/tool_web_search.ts
   function registerWebSearch() {
     const info = {
@@ -1675,7 +1675,7 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
       }
       const url = `http://110.41.69.149:8080/search?q=${q}&format=json${pageno ? `&pageno=${pageno}` : ""}${categories ? `&categories=${categories}` : ""}${time_range ? `&time_range=${time_range}` : ""}`;
       try {
-        logger2.info(`使用搜索引擎搜索:${url}`);
+        logger.info(`使用搜索引擎搜索:${url}`);
         const response = await fetch(url, {
           method: "GET",
           headers: {
@@ -1701,7 +1701,7 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
         }).join("\n");
         return s;
       } catch (error) {
-        logger2.error("在web_search中请求出错：", error);
+        logger.error("在web_search中请求出错：", error);
         return `使用搜索引擎搜索失败:${error}`;
       }
     };
@@ -1850,7 +1850,7 @@ QQ等级: ${data.qqLevel}
             data: params
           });
         } else {
-          logger2.error(`无法解析CQ码：${segment}`);
+          logger.error(`无法解析CQ码：${segment}`);
         }
       } else {
         messageArray.push({ type: "text", data: { text: segment } });
@@ -1892,7 +1892,7 @@ QQ等级: ${data.qqLevel}
         const regex = new RegExp(item, "g");
         s = s.replace(regex, "");
       } catch (error) {
-        logger2.error(`正则表达式错误，内容:${item}，错误信息:${error}`);
+        logger.error(`正则表达式错误，内容:${item}，错误信息:${error}`);
       }
     });
     s = s.slice(0, maxChar).trim();
@@ -1907,7 +1907,7 @@ QQ等级: ${data.qqLevel}
         const regex = new RegExp(item, "g");
         reply = reply.replace(regex, "");
       } catch (error) {
-        logger2.error(`正则表达式错误，内容:${item}，错误信息:${error}`);
+        logger.error(`正则表达式错误，内容:${item}，错误信息:${error}`);
       }
     });
     const prefix = replymsg && msg.rawId ? `[CQ:reply,id=${msg.rawId}]` : ``;
@@ -1939,7 +1939,7 @@ QQ等级: ${data.qqLevel}
       if (message.role === "assistant" && !(message == null ? void 0 : message.tool_calls)) {
         const content = message.content;
         const similarity = calculateSimilarity(content.trim(), s.trim());
-        logger2.info(`复读相似度：${similarity}`);
+        logger.info(`复读相似度：${similarity}`);
         if (similarity > similarityLimit) {
           let start = i;
           let count = 1;
@@ -2056,7 +2056,7 @@ QQ等级: ${data.qqLevel}
     if (showMsgId) {
       const ext = seal.ext.find("HTTP依赖");
       if (!ext) {
-        logger2.error(`未找到HTTP依赖`);
+        logger.error(`未找到HTTP依赖`);
         ai.context.lastReply = s;
         seal.replyToSender(ctx, msg, s);
         return "";
@@ -2072,7 +2072,7 @@ QQ等级: ${data.qqLevel}
         };
         const result = await globalThis.http.getData(epId, "send_private_msg", data);
         if (result == null ? void 0 : result.message_id) {
-          logger2.info(`(${result.message_id})发送给QQ:${user_id}:${s}`);
+          logger.info(`(${result.message_id})发送给QQ:${user_id}:${s}`);
           return transformMsgId(result.message_id);
         } else {
           throw new Error(`在replyToSender中: 获取消息ID失败`);
@@ -2084,7 +2084,7 @@ QQ等级: ${data.qqLevel}
         };
         const result = await globalThis.http.getData(epId, "send_group_msg", data);
         if (result == null ? void 0 : result.message_id) {
-          logger2.info(`(${result.message_id})发送给QQ-Group:${group_id}:${s}`);
+          logger.info(`(${result.message_id})发送给QQ-Group:${group_id}:${s}`);
           return transformMsgId(result.message_id);
         } else {
           throw new Error(`在replyToSender中: 获取消息ID失败`);
@@ -2774,7 +2774,7 @@ QQ等级: ${data.qqLevel}
         }
       }
       try {
-        logger2.info(`搜索音乐: ${api}`);
+        logger.info(`搜索音乐: ${api}`);
         const response = await fetch(api, {
           method: "GET",
           headers: {
@@ -2821,7 +2821,7 @@ QQ等级: ${data.qqLevel}
           }
         }
       } catch (error) {
-        logger2.warning(`音乐搜索请求错误: ${error}`);
+        logger.warning(`音乐搜索请求错误: ${error}`);
         return `音乐搜索请求错误: ${error}`;
       }
     };
@@ -2887,7 +2887,7 @@ QQ等级: ${data.qqLevel}
       const tools = Object.keys(this.toolStatus).map((key) => {
         if (this.toolStatus[key]) {
           if (!_ToolManager.toolMap.hasOwnProperty(key)) {
-            logger2.error(`在getToolsInfo中找不到工具:${key}`);
+            logger.error(`在getToolsInfo中找不到工具:${key}`);
             return null;
           }
           const tool = _ToolManager.toolMap[key];
@@ -2964,7 +2964,7 @@ QQ等级: ${data.qqLevel}
       cmdArgs.cleanArgs = cmdArgs.args.join(" ");
       const ext = seal.ext.find(cmdInfo.ext);
       if (!ext.cmdMap.hasOwnProperty(cmdInfo.name)) {
-        logger2.warning(`扩展${cmdInfo.ext}中未找到指令:${cmdInfo.name}`);
+        logger.warning(`扩展${cmdInfo.ext}中未找到指令:${cmdInfo.name}`);
         return ["", false];
       }
       if (ai.tool.listen.timeoutId) {
@@ -2990,7 +2990,7 @@ QQ等级: ${data.qqLevel}
           ai.tool.listen.cleanup();
         }
       }).catch((err) => {
-        logger2.error(`在extensionSolve中: 调用函数失败:${err.message}`);
+        logger.error(`在extensionSolve中: 调用函数失败:${err.message}`);
         return ["", false];
       });
     }
@@ -3004,12 +3004,12 @@ QQ等级: ${data.qqLevel}
      */
     static async handleToolCalls(ctx, msg, ai, tool_calls) {
       if (tool_calls.length !== 0) {
-        logger2.info(`调用函数:`, tool_calls.map((item, i) => {
+        logger.info(`调用函数:`, tool_calls.map((item, i) => {
           return `(${i}) ${item.function.name}:${item.function.arguments}`;
         }).join("\n"));
       }
       if (tool_calls.length > 5) {
-        logger2.warning("一次性调用超过5个函数，将进行截断操作……");
+        logger.warning("一次性调用超过5个函数，将进行截断操作……");
         tool_calls.splice(5);
       }
       let tool_choice = "none";
@@ -3027,36 +3027,36 @@ QQ等级: ${data.qqLevel}
     static async handleToolCall(ctx, msg, ai, tool_call) {
       const name = tool_call.function.name;
       if (this.cmdArgs == null) {
-        logger2.warning(`暂时无法调用函数，请先使用任意海豹指令`);
+        logger.warning(`暂时无法调用函数，请先使用任意海豹指令`);
         await ai.context.addToolMessage(tool_call.id, `暂时无法调用函数，请先提示用户使用任意指令`);
         return "none";
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
-        logger2.warning(`调用函数失败:禁止调用的函数:${name}`);
+        logger.warning(`调用函数失败:禁止调用的函数:${name}`);
         await ai.context.addToolMessage(tool_call.id, `调用函数失败:禁止调用的函数:${name}`);
         return "none";
       }
       if (!this.toolMap.hasOwnProperty(name)) {
-        logger2.warning(`调用函数失败:未注册的函数:${name}`);
+        logger.warning(`调用函数失败:未注册的函数:${name}`);
         await ai.context.addToolMessage(tool_call.id, `调用函数失败:未注册的函数:${name}`);
         return "none";
       }
       const tool = this.toolMap[name];
       if (tool.type !== "all" && tool.type !== msg.messageType) {
-        logger2.warning(`调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`);
+        logger.warning(`调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`);
         await ai.context.addToolMessage(tool_call.id, `调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`);
         return "none";
       }
       try {
         const args = JSON.parse(tool_call.function.arguments);
         if (args !== null && typeof args !== "object") {
-          logger2.warning(`调用函数失败:arguement不是一个object`);
+          logger.warning(`调用函数失败:arguement不是一个object`);
           await ai.context.addToolMessage(tool_call.id, `调用函数失败:arguement不是一个object`);
           return "none";
         }
         for (const key of tool.info.function.parameters.required) {
           if (!args.hasOwnProperty(key)) {
-            logger2.warning(`调用函数失败:缺少必需参数 ${key}`);
+            logger.warning(`调用函数失败:缺少必需参数 ${key}`);
             await ai.context.addToolMessage(tool_call.id, `调用函数失败:缺少必需参数 ${key}`);
             return "none";
           }
@@ -3065,7 +3065,7 @@ QQ等级: ${data.qqLevel}
         await ai.context.addToolMessage(tool_call.id, s);
         return tool.tool_choice;
       } catch (e) {
-        logger2.error(`调用函数 (${name}:${tool_call.function.arguments}) 失败:${e.message}`);
+        logger.error(`调用函数 (${name}:${tool_call.function.arguments}) 失败:${e.message}`);
         await ai.context.addToolMessage(tool_call.id, `调用函数 (${name}:${tool_call.function.arguments}) 失败:${e.message}`);
         return "none";
       }
@@ -3075,45 +3075,45 @@ QQ等级: ${data.qqLevel}
       try {
         tool_call = JSON.parse(tool_call_str);
       } catch (e) {
-        logger2.error("解析tool_call时出现错误:", e);
+        logger.error("解析tool_call时出现错误:", e);
         await ai.context.addSystemUserMessage("调用函数返回", `解析tool_call时出现错误:${e.message}`, []);
       }
       if (!tool_call.hasOwnProperty("name") || !tool_call.hasOwnProperty("arguments")) {
-        logger2.warning(`调用函数失败:缺少name或arguments`);
+        logger.warning(`调用函数失败:缺少name或arguments`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:缺少name或arguments`, []);
       }
       const name = tool_call.name;
       if (this.cmdArgs == null) {
-        logger2.warning(`暂时无法调用函数，请先使用任意海豹指令`);
+        logger.warning(`暂时无法调用函数，请先使用任意海豹指令`);
         await ai.context.addSystemUserMessage("调用函数返回", `暂时无法调用函数，请先提示用户使用任意指令`, []);
         return;
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
-        logger2.warning(`调用函数失败:禁止调用的函数:${name}`);
+        logger.warning(`调用函数失败:禁止调用的函数:${name}`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:禁止调用的函数:${name}`, []);
         return;
       }
       if (!this.toolMap.hasOwnProperty(name)) {
-        logger2.warning(`调用函数失败:未注册的函数:${name}`);
+        logger.warning(`调用函数失败:未注册的函数:${name}`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:未注册的函数:${name}`, []);
         return;
       }
       const tool = this.toolMap[name];
       if (tool.type !== "all" && tool.type !== msg.messageType) {
-        logger2.warning(`调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`);
+        logger.warning(`调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:函数${name}可使用的场景类型为${tool.type}，当前场景类型为${msg.messageType}`, []);
         return;
       }
       try {
         const args = tool_call.arguments;
         if (args !== null && typeof args !== "object") {
-          logger2.warning(`调用函数失败:arguement不是一个object`);
+          logger.warning(`调用函数失败:arguement不是一个object`);
           await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:arguement不是一个object`, []);
           return;
         }
         for (const key of tool.info.function.parameters.required) {
           if (!args.hasOwnProperty(key)) {
-            logger2.warning(`调用函数失败:缺少必需参数 ${key}`);
+            logger.warning(`调用函数失败:缺少必需参数 ${key}`);
             await ai.context.addSystemUserMessage("调用函数返回", `调用函数失败:缺少必需参数 ${key}`, []);
             return;
           }
@@ -3121,7 +3121,7 @@ QQ等级: ${data.qqLevel}
         const s = await tool.solve(ctx, msg, ai, args);
         await ai.context.addSystemUserMessage("调用函数返回", s, []);
       } catch (e) {
-        logger2.error(`调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`);
+        logger.error(`调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`, []);
       }
     }
@@ -3327,10 +3327,10 @@ ${toolsPrompt}`;
         const message = data.choices[0].message;
         const finish_reason = data.choices[0].finish_reason;
         if (message.hasOwnProperty("reasoning_content")) {
-          logger2.info(`思维链内容:`, message.reasoning_content);
+          logger.info(`思维链内容:`, message.reasoning_content);
         }
         const reply = message.content || "";
-        logger2.info(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
+        logger.info(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
         if (isTool) {
           if (usePromptEngineering) {
             const match = reply.match(/<function_call>([\s\S]*)<\/function_call>/);
@@ -3342,7 +3342,7 @@ ${toolsPrompt}`;
             }
           } else {
             if (message.hasOwnProperty("tool_calls") && Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
-              logger2.info(`触发工具调用`);
+              logger.info(`触发工具调用`);
               ai.context.addToolCallsMessage(message.tool_calls);
               const tool_choice2 = await ToolManager.handleToolCalls(ctx, msg, ai, message.tool_calls);
               const messages2 = handleMessages(ctx, ai);
@@ -3356,7 +3356,7 @@ ${toolsPrompt}`;
 响应体:${JSON.stringify(data, null, 2)}`);
       }
     } catch (error) {
-      logger2.error("在sendChatRequest中出错：", error);
+      logger.error("在sendChatRequest中出错：", error);
       return "";
     }
   }
@@ -3370,16 +3370,16 @@ ${toolsPrompt}`;
         AIManager.updateUsage(data.model, data.usage);
         const message = data.choices[0].message;
         const reply = message.content || "";
-        logger2.info(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
+        logger.info(`响应内容:`, reply, "\nlatency", Date.now() - time, "ms");
         return reply;
       } else {
         throw new Error(`服务器响应中没有choices或choices为空
 响应体:${JSON.stringify(data, null, 2)}`);
       }
     } catch (error) {
-      logger2.error("在sendITTRequest中请求出错：", error);
+      logger.error("在sendITTRequest中请求出错：", error);
       if (urlToBase64 === "自动" && !useBase64) {
-        logger2.info(`自动尝试使用转换为base64`);
+        logger.info(`自动尝试使用转换为base64`);
         for (let i = 0; i < messages.length; i++) {
           const message = messages[i];
           for (let j = 0; j < message.content.length; j++) {
@@ -3387,7 +3387,7 @@ ${toolsPrompt}`;
             if (content.type === "image_url") {
               const { base64, format } = await ImageManager.imageUrlToBase64(content.image_url.url);
               if (!base64 || !format) {
-                logger2.warning(`转换为base64失败`);
+                logger.warning(`转换为base64失败`);
                 return "";
               }
               message.content[j].image_url.url = `data:image/${format};base64,${base64}`;
@@ -3408,7 +3408,7 @@ ${toolsPrompt}`;
       }
       return value;
     });
-    logger2.info(`请求发送前的上下文:
+    logger.info(`请求发送前的上下文:
 `, s);
     const response = await fetch(url, {
       method: "POST",
@@ -3450,7 +3450,7 @@ ${toolsPrompt}`;
         }
         return value;
       });
-      logger2.info(`请求发送前的上下文:
+      logger.info(`请求发送前的上下文:
 `, s);
       const response = await fetch(`${streamUrl}/start`, {
         method: "POST",
@@ -3486,7 +3486,7 @@ ${toolsPrompt}`;
 响应体:${text}`);
       }
     } catch (error) {
-      logger2.error("在startStream中出错：", error);
+      logger.error("在startStream中出错：", error);
       return "";
     }
   }
@@ -3525,7 +3525,7 @@ ${toolsPrompt}`;
 响应体:${text}`);
       }
     } catch (error) {
-      logger2.error("在pollStream中出错：", error);
+      logger.error("在pollStream中出错：", error);
       return { status: "failed", reply: "", nextAfter: 0 };
     }
   }
@@ -3554,7 +3554,7 @@ ${toolsPrompt}`;
         if (!data.status) {
           throw new Error("服务器响应中没有status字段");
         }
-        logger2.info("对话结束", data.status === "success" ? "成功" : "失败");
+        logger.info("对话结束", data.status === "success" ? "成功" : "失败");
         if (data.status === "success") {
           AIManager.updateUsage(data.model, data.usage);
         }
@@ -3564,7 +3564,7 @@ ${toolsPrompt}`;
 响应体:${text}`);
       }
     } catch (error) {
-      logger2.error("在endStream中出错：", error);
+      logger.error("在endStream中出错：", error);
       return "";
     }
   }
@@ -3610,7 +3610,7 @@ ${toolsPrompt}`;
           }
           acc[name] = path;
         } catch (e) {
-          logger2.error(e);
+          logger.error(e);
         }
         return acc;
       }, {});
@@ -3647,7 +3647,7 @@ ${toolsPrompt}`;
           }
           acc[name] = path;
         } catch (e) {
-          logger2.error(e);
+          logger.error(e);
         }
         return acc;
       }, {});
@@ -3696,7 +3696,7 @@ ${toolsPrompt}`;
             }
             images.push(image);
           } catch (error) {
-            logger2.error("在handleImageMessage中处理图片时出错:", error);
+            logger.error("在handleImageMessage中处理图片时出错:", error);
           }
         }
       }
@@ -3709,21 +3709,21 @@ ${toolsPrompt}`;
         if (response.ok) {
           const contentType = response.headers.get("Content-Type");
           if (contentType && contentType.startsWith("image")) {
-            logger2.info("URL有效且未过期");
+            logger.info("URL有效且未过期");
             isValid = true;
           } else {
-            logger2.warning(`URL有效但未返回图片 Content-Type: ${contentType}`);
+            logger.warning(`URL有效但未返回图片 Content-Type: ${contentType}`);
           }
         } else {
           if (response.status === 500) {
-            logger2.warning(`URL不知道有没有效 状态码: ${response.status}`);
+            logger.warning(`URL不知道有没有效 状态码: ${response.status}`);
             isValid = true;
           } else {
-            logger2.warning(`URL无效或过期 状态码: ${response.status}`);
+            logger.warning(`URL无效或过期 状态码: ${response.status}`);
           }
         }
       } catch (error) {
-        logger2.error("在checkImageUrl中请求出错:", error);
+        logger.error("在checkImageUrl中请求出错:", error);
       }
       return isValid;
     }
@@ -3737,7 +3737,7 @@ ${toolsPrompt}`;
       if (urlToBase64 == "总是") {
         const { base64, format } = await _ImageManager.imageUrlToBase64(imageUrl);
         if (!base64 || !format) {
-          logger2.warning(`转换为base64失败`);
+          logger.warning(`转换为base64失败`);
           return "";
         }
         useBase64 = true;
@@ -3792,7 +3792,7 @@ ${toolsPrompt}`;
 响应体:${text}`);
         }
       } catch (error) {
-        logger2.error("在imageUrlToBase64中请求出错：", error);
+        logger.error("在imageUrlToBase64中请求出错：", error);
         return { base64: "", format: "" };
       }
     }
@@ -3901,7 +3901,7 @@ ${toolsPrompt}`;
           return;
         }
       }
-      logger2.error(`在添加时找不到对应的 tool_call_id: ${tool_call_id}`);
+      logger.error(`在添加时找不到对应的 tool_call_id: ${tool_call_id}`);
     }
     async addSystemUserMessage(name, s, images) {
       const message = {
@@ -3978,7 +3978,7 @@ ${toolsPrompt}`;
           return ctx.player.userId;
         }
       }
-      logger2.warning(`未找到用户<${name}>`);
+      logger.warning(`未找到用户<${name}>`);
       return null;
     }
     async findGroupId(ctx, groupName) {
@@ -4034,7 +4034,7 @@ ${toolsPrompt}`;
           return ctx.group.groupId;
         }
       }
-      logger2.warning(`未找到群聊<${groupName}>`);
+      logger.warning(`未找到群聊<${groupName}>`);
       return null;
     }
     getNames() {
@@ -4217,11 +4217,11 @@ ${toolsPrompt}`;
           return;
         }
       } catch (err) {
-        logger2.error("解析body时出现错误:", err);
+        logger.error("解析body时出现错误:", err);
         return;
       }
       const timeout = setTimeout(() => {
-        logger2.warning(this.id, `处理消息超时`);
+        logger.warning(this.id, `处理消息超时`);
       }, 60 * 1e3);
       this.clearData();
       let result = {
@@ -4238,11 +4238,11 @@ ${toolsPrompt}`;
           break;
         }
         if (retry > MaxRetry) {
-          logger2.warning(`发现复读，已达到最大重试次数，清除AI上下文`);
+          logger.warning(`发现复读，已达到最大重试次数，清除AI上下文`);
           this.context.clearMessages("assistant", "tool");
           break;
         }
-        logger2.warning(`发现复读，一秒后进行重试:[${retry}/3]`);
+        logger.warning(`发现复读，一秒后进行重试:[${retry}/3]`);
         await new Promise((resolve) => setTimeout(resolve, 1e3));
       }
       const { s, reply, images } = result;
@@ -4285,10 +4285,10 @@ ${toolsPrompt}`;
           await new Promise((resolve) => setTimeout(resolve, interval));
           continue;
         }
-        logger2.info("接收到的回复:", raw_reply);
+        logger.info("接收到的回复:", raw_reply);
         if (isTool && usePromptEngineering) {
           if (!this.stream.toolCallStatus && /<function_call>/.test(this.stream.reply + raw_reply)) {
-            logger2.info("发现工具调用开始标签，拦截后续内容");
+            logger.info("发现工具调用开始标签，拦截后续内容");
             const match = raw_reply.match(/([\s\S]*)<function_call>/);
             if (match && match[1].trim() !== "") {
               const { s: s2, reply: reply2, images: images2 } = await handleReply(ctx, msg, match[1], this.context);
@@ -4306,7 +4306,7 @@ ${toolsPrompt}`;
           if (this.stream.toolCallStatus) {
             this.stream.reply += raw_reply;
             if (/<\/function_call>/.test(this.stream.reply)) {
-              logger2.info("发现工具调用结束标签，开始处理对应工具调用");
+              logger.info("发现工具调用结束标签，开始处理对应工具调用");
               const match = this.stream.reply.match(/<function_call>([\s\S]*)<\/function_call>/);
               if (match) {
                 this.stream.reply = "";
@@ -4316,7 +4316,7 @@ ${toolsPrompt}`;
                 await ToolManager.handlePromptToolCall(ctx, msg, this, match[1]);
                 await this.chatStream(ctx, msg);
               } else {
-                logger2.error("无法匹配到function_call");
+                logger.error("无法匹配到function_call");
                 await this.stopCurrentChatStream();
               }
               return;
@@ -4349,10 +4349,10 @@ ${toolsPrompt}`;
         toolCallStatus: false
       };
       if (id) {
-        logger2.info(`结束会话:`, id);
+        logger.info(`结束会话:`, id);
         if (reply) {
           if (toolCallStatus) {
-            logger2.warning(`工具调用未处理完成:`, reply);
+            logger.warning(`工具调用未处理完成:`, reply);
           }
         }
         await endStream(id);
@@ -4386,7 +4386,7 @@ ${toolsPrompt}`;
             return value;
           });
         } catch (error) {
-          logger2.error(`从数据库中获取${`AI_${id}`}失败:`, error);
+          logger.error(`从数据库中获取${`AI_${id}`}失败:`, error);
         }
         this.cache[id] = data;
       }
@@ -4439,7 +4439,7 @@ ${toolsPrompt}`;
         const usage = JSON.parse(ConfigManager.ext.storageGet("usageMap") || "{}");
         this.usageMap = usage;
       } catch (error) {
-        logger2.error(`从数据库中获取usageMap失败:`, error);
+        logger.error(`从数据库中获取usageMap失败:`, error);
       }
     }
     static saveUsageMap() {
@@ -4493,7 +4493,7 @@ ${toolsPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.7.2");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.7.3");
       seal.ext.register(ext);
     }
     try {
@@ -4501,7 +4501,7 @@ ${toolsPrompt}`;
         timerQueue.push(item);
       });
     } catch (e) {
-      logger2.error("在获取timerQueue时出错", e);
+      logger.error("在获取timerQueue时出错", e);
     }
     ConfigManager.ext = ext;
     ConfigManager.registerConfig();
@@ -4970,7 +4970,7 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
                 }, {});
                 for (const key of tool.info.function.parameters.required) {
                   if (!args.hasOwnProperty(key)) {
-                    logger2.warning(`调用函数失败:缺少必需参数 ${key}`);
+                    logger.warning(`调用函数失败:缺少必需参数 ${key}`);
                     seal.replyToSender(ctx, msg, `调用函数失败:缺少必需参数 ${key}`);
                     return ret;
                   }
@@ -5502,13 +5502,13 @@ ${s}`);
               continue;
             }
           } catch (error) {
-            logger2.error(`正则表达式错误，内容:${keyword}，错误信息:${error}`);
+            logger.error(`正则表达式错误，内容:${keyword}，错误信息:${error}`);
             continue;
           }
           const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
           if (fmtCondition === 1) {
             await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
-            logger2.info("非指令触发回复");
+            logger.info("非指令触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5526,7 +5526,7 @@ ${s}`);
             await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
             await ai.context.addSystemUserMessage("触发原因提示", condition2.reason, []);
             triggerConditionMap[id].splice(i, 1);
-            logger2.info("AI设定触发条件触发回复");
+            logger.info("AI设定触发条件触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5539,7 +5539,7 @@ ${s}`);
         if (pr.counter > -1) {
           ai.context.counter += 1;
           if (ai.context.counter >= pr.counter) {
-            logger2.info("计数器触发回复");
+            logger.info("计数器触发回复");
             ai.context.counter = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5549,7 +5549,7 @@ ${s}`);
         if (pr.prob > -1) {
           const ran = Math.random() * 100;
           if (ran <= pr.prob) {
-            logger2.info("概率触发回复");
+            logger.info("概率触发回复");
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5557,7 +5557,7 @@ ${s}`);
         }
         if (pr.timer > -1) {
           ai.context.timer = setTimeout(async () => {
-            logger2.info("计时器触发回复");
+            logger.info("计时器触发回复");
             ai.context.timer = null;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5623,7 +5623,7 @@ ${s}`);
         return;
       }
       if (isTaskRunning) {
-        logger2.info("定时器任务正在运行，跳过");
+        logger.info("定时器任务正在运行，跳过");
         return;
       }
       isTaskRunning = true;
@@ -5648,7 +5648,7 @@ ${s}`);
 当前触发时间：${(/* @__PURE__ */ new Date()).toLocaleString()}
 提示内容：${content}`;
         await ai.context.addSystemUserMessage("定时器触发提示", s, []);
-        logger2.info("定时任务触发回复");
+        logger.info("定时任务触发回复");
         await ai.chat(ctx, msg);
         AIManager.saveAI(id);
         timerQueue.splice(i, 1);
@@ -5695,7 +5695,7 @@ ${s}`);
 响应体:${text}`);
       }
     } catch (error) {
-      logger2.error("在get_chart_url中请求出错：", error);
+      logger.error("在get_chart_url中请求出错：", error);
       return "";
     }
   }
