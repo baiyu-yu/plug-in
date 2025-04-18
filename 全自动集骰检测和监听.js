@@ -37,7 +37,7 @@ if (!seal.ext.find("全自动集骰检测和监听")) {
     seal.ext.registerFloatConfig(ext, "暂时白名单时限/分钟", 720, "监听一次指令后会暂时加入白名单。不要低于计入时间，否则会清除掉");
     seal.ext.registerIntConfig(ext, "每n秒处理一次暂时白名单队列", 10, "该项修改并保存后请重载js");
 
-    const backendHost = "http://110.41.69.149:8889"; // 后端服务器地址，写死
+    const backendHost = "http://162.14.109.222:8889"; // 后端服务器地址，写死
     const whiteListGroup = JSON.parse(ext.storageGet("whiteListGroup") || '[]').map(String);
     const whiteListDice = JSON.parse(ext.storageGet("whiteListDice") || '[]').map(String);
     const whiteListMonitor = JSON.parse(ext.storageGet("whiteListMonitor") || '{}');
