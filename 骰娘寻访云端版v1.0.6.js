@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 const appID = "";
-const serverURL = "http://110.41.69.149:3518";
+const serverURL = "http://162.14.109.222:3518";
 const cooldownTime = 10 * 60 * 1000;
 
 class RequestTracker {
