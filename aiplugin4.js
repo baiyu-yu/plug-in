@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.7.3
+// @version      4.8.0
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.AI help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -12,6 +12,27 @@
 // ==/UserScript==
 
 (() => {
+  // src/config/config_backend.ts
+  var BackendConfig = class _BackendConfig {
+    static register() {
+      _BackendConfig.ext = ConfigManager.getExt("aiplugin4_6:后端");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "流式输出", "http://localhost:3010", "自行搭建或使用他人提供的后端");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "图片转base64", "https://urltobase64.白鱼.chat", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "联网搜索", "https://searxng.白鱼.chat", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "网页读取", "https://webread.白鱼.chat", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "用量图表", "http://error.白鱼.chat:3009", "可自行搭建");
+    }
+    static get() {
+      return {
+        streamUrl: seal.ext.getStringConfig(_BackendConfig.ext, "流式输出"),
+        imageTobase64Url: seal.ext.getStringConfig(_BackendConfig.ext, "图片转base64"),
+        webSearchUrl: seal.ext.getStringConfig(_BackendConfig.ext, "联网搜索"),
+        webReadUrl: seal.ext.getStringConfig(_BackendConfig.ext, "网页读取"),
+        usageChartUrl: seal.ext.getStringConfig(_BackendConfig.ext, "用量图表")
+      };
+    }
+  };
+
   // src/config/config_image.ts
   var ImageConfig = class _ImageConfig {
     static register() {
@@ -161,11 +182,11 @@
       seal.ext.registerBoolConfig(_ReplyConfig.ext, "禁止AI复读", false, "");
       seal.ext.registerFloatConfig(_ReplyConfig.ext, "视作复读的最低相似度", 0.8, "");
       seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤上下文正则表达式", [
-        "<\\s?[\\|│｜]from:?.*?[\\|│｜]?\\s?>",
+        "<\\s?[\\|│｜]from:?.*?(?:[\\|│｜]\\s?>|[\\|│｜]|\\s?>)",
         "<think>[\\s\\S]*?<\\/think>"
       ], "回复加入上下文时，将符合正则表达式的内容删掉");
       seal.ext.registerTemplateConfig(_ReplyConfig.ext, "过滤回复正则表达式", [
-        "<\\s?[\\|│｜].*?[\\|│｜]?\\s?>",
+        "<\\s?[\\|│｜].*?(?:[\\|│｜]\\s?>|[\\|│｜]|\\s?>)",
         "<think>[\\s\\S]*?<\\/think>",
         "<function_call>[\\s\\S]*?<\\/function_call>"
       ], "发送回复时，将符合正则表达式的内容删掉");
@@ -198,14 +219,12 @@
         `"temperature":1`,
         `"top_p":1`
       ], "messages,tools,tool_choice不存在时，将会自动替换。具体参数请参考你所使用模型的接口文档");
-      seal.ext.registerStringConfig(_RequestConfig.ext, "流式输出后端url", "http://localhost:3010", "自行搭建或使用他人提供的后端");
     }
     static get() {
       return {
         url: seal.ext.getStringConfig(_RequestConfig.ext, "url地址"),
         apiKey: seal.ext.getStringConfig(_RequestConfig.ext, "API Key"),
-        bodyTemplate: seal.ext.getTemplateConfig(_RequestConfig.ext, "body"),
-        streamUrl: seal.ext.getStringConfig(_RequestConfig.ext, "流式输出后端url")
+        bodyTemplate: seal.ext.getTemplateConfig(_RequestConfig.ext, "body")
       };
     }
   };
@@ -216,6 +235,7 @@
       _ToolConfig.ext = ConfigManager.getExt("aiplugin4_2:函数调用");
       seal.ext.registerBoolConfig(_ToolConfig.ext, "是否开启调用函数功能", true, "");
       seal.ext.registerBoolConfig(_ToolConfig.ext, "是否切换为提示词工程", false, "API在不支持function calling功能的时候开启");
+      seal.ext.registerIntConfig(_ToolConfig.ext, "允许连续调用函数次数", 5, "单次对话中允许连续调用函数的次数");
       seal.ext.registerTemplateConfig(_ToolConfig.ext, "不允许调用的函数", [
         "在这里填写你不允许AI调用的函数名称"
       ], "修改后保存并重载js");
@@ -258,6 +278,7 @@
       return {
         isTool: seal.ext.getBoolConfig(_ToolConfig.ext, "是否开启调用函数功能"),
         usePromptEngineering: seal.ext.getBoolConfig(_ToolConfig.ext, "是否切换为提示词工程"),
+        maxCallCount: seal.ext.getIntConfig(_ToolConfig.ext, "允许连续调用函数次数"),
         toolsNotAllow: seal.ext.getTemplateConfig(_ToolConfig.ext, "不允许调用的函数"),
         toolsDefaultClosed: seal.ext.getTemplateConfig(_ToolConfig.ext, "默认关闭的函数"),
         memoryLimit: seal.ext.getIntConfig(_ToolConfig.ext, "长期记忆上限"),
@@ -278,6 +299,7 @@
       ReceivedConfig.register();
       ReplyConfig.register();
       ImageConfig.register();
+      BackendConfig.register();
     }
     static getCache(key, getFunc) {
       var _a;
@@ -312,6 +334,9 @@
     }
     static get image() {
       return this.getCache("image", ImageConfig.get);
+    }
+    static get backend() {
+      return this.getCache("backend", BackendConfig.get);
     }
     static getExt(name) {
       if (name == "aiplugin4") {
@@ -586,6 +611,18 @@ ${attr}: ${value}=>${result}`;
         const epId = ctx.endPoint.userId;
         const group_id = ctx.group.groupId.replace(/\D+/g, "");
         const user_id = uid.replace(/\D+/g, "");
+        const result = await globalThis.http.getData(epId, `get_group_member_info?group_id=${group_id}&user_id=${user_id}&no_cache=true`);
+        if (result.role === "owner" || result.role === "admin") {
+          return `你无法禁言${result.role === "owner" ? "群主" : "管理员"}`;
+        }
+      } catch (e) {
+        logger.error(e);
+        return `获取权限信息失败`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = uid.replace(/\D+/g, "");
         await globalThis.http.getData(epId, `set_group_ban?group_id=${group_id}&user_id=${user_id}&duration=${duration}`);
         return `已禁言<${name}> ${duration}秒`;
       } catch (e) {
@@ -789,6 +826,9 @@ ${attr}: ${value}=>${result}`;
       const { id, content } = args;
       const image = ai.context.findImage(id);
       const text = content ? `请帮我用简短的语言概括这张图片中出现的:${content}` : ``;
+      if (!image) {
+        return `未找到图片${id}`;
+      }
       if (image.isUrl) {
         const reply = await ImageManager.imageToText(image.file, text);
         if (reply) {
@@ -1289,7 +1329,12 @@ ${attr}: ${value}=>${result}`;
       if (additional_dice) {
         args2.push(additional_dice);
       }
-      args2.push(rank + expression);
+      if (rank || /[\dDd+\-*/]/.test(expression)) {
+        args2.push(rank + expression);
+      } else {
+        const value = seal.vars.intGet(ctx, expression)[0];
+        args2.push(expression + (value === 0 ? "50" : ""));
+      }
       if (reason) {
         args2.push(reason);
       }
@@ -1667,13 +1712,14 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     const tool = new Tool(info);
     tool.solve = async (_, __, ___, args) => {
       const { q, page, categories, time_range = "" } = args;
+      const { webSearchUrl } = ConfigManager.backend;
       let part = 1;
       let pageno = "";
       if (page) {
         part = parseInt(page) % 2;
         pageno = page ? Math.ceil(parseInt(page) / 2).toString() : "";
       }
-      const url = `http://110.41.69.149:8080/search?q=${q}&format=json${pageno ? `&pageno=${pageno}` : ""}${categories ? `&categories=${categories}` : ""}${time_range ? `&time_range=${time_range}` : ""}`;
+      const url = `${webSearchUrl}/search?q=${q}&format=json${pageno ? `&pageno=${pageno}` : ""}${categories ? `&categories=${categories}` : ""}${time_range ? `&time_range=${time_range}` : ""}`;
       try {
         logger.info(`使用搜索引擎搜索:${url}`);
         const response = await fetch(url, {
@@ -1703,6 +1749,57 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
       } catch (error) {
         logger.error("在web_search中请求出错：", error);
         return `使用搜索引擎搜索失败:${error}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerWebRead() {
+    const info = {
+      type: "function",
+      function: {
+        name: "web_read",
+        description: `读取网页内容`,
+        parameters: {
+          type: "object",
+          properties: {
+            url: {
+              type: "string",
+              description: "需要读取内容的网页链接"
+            }
+          },
+          required: ["url"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ___, args) => {
+      const { url } = args;
+      const { webReadUrl } = ConfigManager.backend;
+      try {
+        logger.info(`读取网页内容: ${url}`);
+        const response = await fetch(`${webReadUrl}/scrape`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ url })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(`请求失败: ${JSON.stringify(data)}`);
+        }
+        const { title, content, links } = data;
+        if (!title && !content && (!links || links.length === 0)) {
+          return `未能从网页中提取到有效内容`;
+        }
+        const result = `标题: ${title || "无标题"}
+内容: ${content || "无内容"}
+网页包含链接:
+` + (links && links.length > 0 ? links.map((link, index) => `${index + 1}. ${link}`).join("\n") : "无链接");
+        return result;
+      } catch (error) {
+        logger.error("在web_read中请求出错：", error);
+        return `读取网页内容失败: ${error}`;
       }
     };
     ToolManager.toolMap[info.function.name] = tool;
@@ -1860,14 +1957,14 @@ QQ等级: ${data.qqLevel}
   }
   async function handleReply(ctx, msg, s, context) {
     const { maxChar, replymsg, filterContextTemplate, filterReplyTemplate } = ConfigManager.reply;
-    const segments = s.split(/(<\s?[\|│｜]from:?.*?[\|│｜]?\s?>)/).filter((item) => item.trim() !== "");
+    const segments = s.split(/(<\s?[\|│｜]from:?.*?(?:[\|│｜]\s?>|[\|│｜]|\s?>))/).filter((item) => item.trim() !== "");
     if (segments.length === 0) {
       return { s: "", reply: "", images: [] };
     }
     s = "";
     for (let i = 0; i < segments.length; i++) {
       const segment = segments[i];
-      const match = segment.match(/<\s?[\|│｜]from:?(.*?)[\|│｜]?\s?>/);
+      const match = segment.match(/<\s?[\|│｜]from:?(.*?)(?:[\|│｜]\s?>|[\|│｜]|\s?>)/);
       if (match) {
         const uid = await context.findUserId(ctx, match[1]);
         if (uid === ctx.endPoint.userId && i < segments.length - 1) {
@@ -1878,7 +1975,7 @@ QQ等级: ${data.qqLevel}
       }
     }
     if (!s.trim()) {
-      s = segments.find((segment) => !/<\s?[\|│｜]from:?.*?[\|│｜]?\s?>/.test(segment));
+      s = segments.find((segment) => !/<\s?[\|│｜]from:?.*?(?:[\|│｜]\s?>|[\|│｜]|\s?>)/.test(segment));
       if (!s || !s.trim()) {
         return { s: "", reply: "", images: [] };
       }
@@ -1961,10 +2058,10 @@ QQ等级: ${data.qqLevel}
     return false;
   }
   async function replaceMentions(ctx, context, reply) {
-    const match = reply.match(/<\s?[\|│｜]@(.+?)[\|│｜]?\s?>/g);
+    const match = reply.match(/<\s?[\|│｜]@(.+?)(?:[\|│｜]\s?>|[\|│｜]|\s?>)/g);
     if (match) {
       for (let i = 0; i < match.length; i++) {
-        const name = match[i].replace(/^<\s?[\|│｜]@|[\|│｜]?\s?>$/g, "");
+        const name = match[i].replace(/^<\s?[\|│｜]@|(?:[\|│｜]\s?>|[\|│｜]|\s?>)$/g, "");
         const uid = await context.findUserId(ctx, name);
         if (uid !== null) {
           reply = reply.replace(match[i], `[CQ:at,qq=${uid.replace(/\D+/g, "")}]`);
@@ -1978,10 +2075,10 @@ QQ等级: ${data.qqLevel}
   async function replaceImages(context, reply) {
     let result = reply;
     const images = [];
-    const match = reply.match(/<\s?[\|│｜]图片.+?[\|│｜]?\s?>/g);
+    const match = reply.match(/<\s?[\|│｜]图片.+?(?:[\|│｜]\s?>|[\|│｜]|\s?>)/g);
     if (match) {
       for (let i = 0; i < match.length; i++) {
-        const id = match[i].match(/<\s?[\|│｜]图片(.+?)[\|│｜]?\s?>/)[1].trim().slice(0, 6);
+        const id = match[i].match(/<\s?[\|│｜]图片(.+?)(?:[\|│｜]\s?>|[\|│｜]|\s?>)/)[1].trim().slice(0, 6);
         const image = context.findImage(id);
         if (image) {
           const file = image.file;
@@ -2050,7 +2147,7 @@ QQ等级: ${data.qqLevel}
   }
   async function replyToSender(ctx, msg, ai, s) {
     if (!s) {
-      return "";
+      return { msgId: "", error: null };
     }
     const { showMsgId } = ConfigManager.message;
     if (showMsgId) {
@@ -2059,43 +2156,50 @@ QQ等级: ${data.qqLevel}
         logger.error(`未找到HTTP依赖`);
         ai.context.lastReply = s;
         seal.replyToSender(ctx, msg, s);
-        return "";
+        return { msgId: "", error: new Error(`未找到HTTP依赖`) };
       }
-      const messageArray = parseText(s);
-      const epId = ctx.endPoint.userId;
-      const group_id = ctx.group.groupId.replace(/\D+/g, "");
-      const user_id = ctx.player.userId.replace(/\D+/g, "");
-      if (msg.messageType === "private") {
-        const data = {
-          user_id,
-          message: messageArray
-        };
-        const result = await globalThis.http.getData(epId, "send_private_msg", data);
-        if (result == null ? void 0 : result.message_id) {
-          logger.info(`(${result.message_id})发送给QQ:${user_id}:${s}`);
-          return transformMsgId(result.message_id);
+      try {
+        const messageArray = parseText(s);
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = ctx.player.userId.replace(/\D+/g, "");
+        if (msg.messageType === "private") {
+          const data = {
+            user_id,
+            message: messageArray
+          };
+          const result = await globalThis.http.getData(epId, "send_private_msg", data);
+          if (result == null ? void 0 : result.message_id) {
+            logger.info(`(${result.message_id})发送给QQ:${user_id}:${s}`);
+            return { msgId: transformMsgId(result.message_id), error: null };
+          } else {
+            throw new Error(`获取消息ID失败，可能未添加好友`);
+          }
+        } else if (msg.messageType === "group") {
+          const data = {
+            group_id,
+            message: messageArray
+          };
+          const result = await globalThis.http.getData(epId, "send_group_msg", data);
+          if (result == null ? void 0 : result.message_id) {
+            logger.info(`(${result.message_id})发送给QQ-Group:${group_id}:${s}`);
+            return { msgId: transformMsgId(result.message_id), error: null };
+          } else {
+            throw new Error(`获取消息ID失败，可能未加入群聊`);
+          }
         } else {
-          throw new Error(`在replyToSender中: 获取消息ID失败`);
+          throw new Error(`未知的消息类型`);
         }
-      } else if (msg.messageType === "group") {
-        const data = {
-          group_id,
-          message: messageArray
-        };
-        const result = await globalThis.http.getData(epId, "send_group_msg", data);
-        if (result == null ? void 0 : result.message_id) {
-          logger.info(`(${result.message_id})发送给QQ-Group:${group_id}:${s}`);
-          return transformMsgId(result.message_id);
-        } else {
-          throw new Error(`在replyToSender中: 获取消息ID失败`);
-        }
-      } else {
-        throw new Error(`在replyToSender中: 未知的消息类型`);
+      } catch (error) {
+        logger.error(`在replyToSender中: ${error}`);
+        ai.context.lastReply = s;
+        seal.replyToSender(ctx, msg, s);
+        return { msgId: "", error };
       }
     } else {
       ai.context.lastReply = s;
       seal.replyToSender(ctx, msg, s);
-      return "";
+      return { msgId: "", error: null };
     }
   }
 
@@ -2152,10 +2256,10 @@ QQ等级: ${data.qqLevel}
       const { showNumber } = ConfigManager.message;
       const source = ctx.isPrivate ? `来自<${ctx.player.name}>${showNumber ? `(${ctx.player.userId.replace(/\D+/g, "")})` : ``}` : `来自群聊<${ctx.group.groupName}>${showNumber ? `(${ctx.group.groupId.replace(/\D+/g, "")})` : ``}`;
       const originalImages = [];
-      const match = content.match(/<\s?[\|│｜]图片.+?[\|│｜]?\s?>/g);
+      const match = content.match(/<\s?[\|│｜]图片.+?(?:[\|│｜]\s?>|[\|│｜]|\s?>)/g);
       if (match) {
         for (let i = 0; i < match.length; i++) {
-          const id = match[i].match(/<\s?[\|│｜]图片(.+?)[\|│｜]?\s?>/)[1].trim().slice(0, 6);
+          const id = match[i].match(/<\s?[\|│｜]图片(.+?)(?:[\|│｜]\s?>|[\|│｜]|\s?>)/)[1].trim().slice(0, 6);
           const image = ai.context.findImage(id);
           if (image) {
             originalImages.push(image);
@@ -2192,51 +2296,60 @@ QQ等级: ${data.qqLevel}
       }
       await ai.context.addSystemUserMessage("来自其他对话的消息发送提示", `${source}: 原因: ${reason || "无"}`, originalImages);
       const { s, reply, images } = await handleReply(ctx, msg, content, ai.context);
-      const msgId = await replyToSender(ctx, msg, ai, reply);
-      await ai.context.addMessage(ctx, s, images, "assistant", msgId);
-      if (tool_call) {
-        if (ToolManager.cmdArgs == null) {
-          return `暂时无法调用函数，请先使用任意海豹指令`;
+      try {
+        const { msgId, error } = await replyToSender(ctx, msg, ai, reply);
+        if (error) {
+          throw error;
         }
-        if (ConfigManager.tool.toolsNotAllow.includes(tool_call.name)) {
-          return `调用函数失败:禁止调用的函数:${tool_call.name}`;
-        }
-        if (!ToolManager.toolMap.hasOwnProperty(tool_call.name)) {
-          return `调用函数失败:未注册的函数:${tool_call.name}`;
-        }
-        const tool2 = ToolManager.toolMap[tool_call.name];
-        if (tool2.type !== "all" && tool2.type !== msg.messageType) {
-          return `调用函数失败:函数${name}可使用的场景类型为${tool2.type}，当前场景类型为${msg.messageType}`;
-        }
-        try {
+        await ai.context.addMessage(ctx, s, images, "assistant", msgId);
+        if (tool_call) {
+          if (ToolManager.cmdArgs == null) {
+            return `暂时无法调用函数，请先使用任意海豹指令`;
+          }
+          if (ConfigManager.tool.toolsNotAllow.includes(tool_call.name)) {
+            return `调用函数失败:禁止调用的函数:${tool_call.name}`;
+          }
+          if (!ToolManager.toolMap.hasOwnProperty(tool_call.name)) {
+            return `调用函数失败:未注册的函数:${tool_call.name}`;
+          }
+          const tool2 = ToolManager.toolMap[tool_call.name];
+          if (tool2.type !== "all" && tool2.type !== msg.messageType) {
+            return `调用函数失败:函数${name}可使用的场景类型为${tool2.type}，当前场景类型为${msg.messageType}`;
+          }
           try {
-            tool_call.arguments = JSON.parse(tool_call.arguments);
-          } catch (e) {
-            return `调用函数失败:arguement不是一个合法的JSON字符串`;
-          }
-          const args2 = tool_call.arguments;
-          if (args2 !== null && typeof args2 !== "object") {
-            return `调用函数失败:arguement不是一个object`;
-          }
-          for (const key of tool2.info.function.parameters.required) {
-            if (!args2.hasOwnProperty(key)) {
-              return `调用函数失败:缺少必需参数 ${key}`;
+            try {
+              tool_call.arguments = JSON.parse(tool_call.arguments);
+            } catch (e) {
+              return `调用函数失败:arguement不是一个合法的JSON字符串`;
             }
+            const args2 = tool_call.arguments;
+            if (args2 !== null && typeof args2 !== "object") {
+              return `调用函数失败:arguement不是一个object`;
+            }
+            for (const key of tool2.info.function.parameters.required) {
+              if (!args2.hasOwnProperty(key)) {
+                return `调用函数失败:缺少必需参数 ${key}`;
+              }
+            }
+            const s2 = await tool2.solve(ctx, msg, ai, args2);
+            await ai.context.addSystemUserMessage("调用函数返回", s2, []);
+            ai.tool.toolCallCount++;
+            AIManager.saveAI(ai.id);
+            return `函数调用成功，返回值:${s2}`;
+          } catch (e) {
+            const s2 = `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`;
+            logger.error(s2);
+            await ai.context.addSystemUserMessage("调用函数返回", s2, []);
+            AIManager.saveAI(ai.id);
+            return s2;
           }
-          const s2 = await tool2.solve(ctx, msg, ai, args2);
-          await ai.context.addSystemUserMessage("调用函数返回", s2, []);
-          AIManager.saveAI(ai.id);
-          return `函数调用成功，返回值:${s2}`;
-        } catch (e) {
-          const s2 = `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`;
-          logger.error(s2);
-          await ai.context.addSystemUserMessage("调用函数返回", s2, []);
-          AIManager.saveAI(ai.id);
-          return s2;
         }
+        AIManager.saveAI(ai.id);
+        return "消息发送成功";
+      } catch (e) {
+        logger.error(e);
+        return `消息发送失败:${e.message}`;
       }
-      AIManager.saveAI(ai.id);
-      return "消息发送成功";
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -2328,12 +2441,66 @@ QQ等级: ${data.qqLevel}
       const { msg_id, content } = args;
       try {
         const { s, reply, images } = await handleReply(ctx, msg, content, ai.context);
-        const msgId = await replyToSender(ctx, msg, ai, `[CQ:reply,id=${transformMsgIdBack(msg_id)}]${reply}`);
+        const { msgId, error } = await replyToSender(ctx, msg, ai, `[CQ:reply,id=${transformMsgIdBack(msg_id)}]${reply}`);
+        if (error) {
+          throw error;
+        }
         await ai.context.addMessage(ctx, s, images, "assistant", msgId);
         return `已引用消息${msg_id}并回复`;
       } catch (e) {
         logger.error(e);
-        return `引用消息失败`;
+        return `引用消息失败:${e.message}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+
+  // src/tool/tool_essence_msg.ts
+  function registerSetEssenceMsg() {
+    const info = {
+      type: "function",
+      function: {
+        name: "set_essence_msg",
+        description: "设置指定消息为精华消息",
+        parameters: {
+          type: "object",
+          properties: {
+            msg_id: {
+              type: "string",
+              description: "消息ID"
+            }
+          },
+          required: ["msg_id"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (ctx, _, __, args) => {
+      const { msg_id } = args;
+      const ext = seal.ext.find("HTTP依赖");
+      if (!ext) {
+        logger.error(`未找到HTTP依赖`);
+        return `未找到HTTP依赖，请提示用户安装HTTP依赖`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        const group_id = ctx.group.groupId.replace(/\D+/g, "");
+        const user_id = epId.replace(/\D+/g, "");
+        const memberInfo = await globalThis.http.getData(epId, `get_group_member_info?group_id=${group_id}&user_id=${user_id}&no_cache=true`);
+        if (memberInfo.role !== "owner" && memberInfo.role !== "admin") {
+          return `你没有管理员权限`;
+        }
+      } catch (e) {
+        logger.error(e);
+        return `获取权限信息失败`;
+      }
+      try {
+        const epId = ctx.endPoint.userId;
+        await globalThis.http.getData(epId, `set_essence_msg?message_id=${transformMsgIdBack(msg_id)}`);
+        return `已将消息${msg_id}设置为精华消息`;
+      } catch (e) {
+        logger.error(e);
+        return `设置精华消息失败`;
       }
     };
     ToolManager.toolMap[info.function.name] = tool;
@@ -2849,6 +3016,7 @@ QQ等级: ${data.qqLevel}
         acc[key] = !toolsNotAllow.includes(key) && !toolsDefaultClosed.includes(key);
         return acc;
       }, {});
+      this.toolCallCount = 0;
       this.listen = {
         timeoutId: null,
         resolve: null,
@@ -2929,6 +3097,7 @@ QQ等级: ${data.qqLevel}
       registerShowTimerList();
       registerCancelTimer();
       registerWebSearch();
+      registerWebRead();
       registerFace();
       registerImageToText();
       registerCheckAvatar();
@@ -2938,6 +3107,7 @@ QQ等级: ${data.qqLevel}
       registerSendMsg();
       registerDeleteMsg();
       registerQuoteMsg();
+      registerSetEssenceMsg();
       registerGetContext();
       registerGetList();
       registerGetGroupMemberList();
@@ -2967,9 +3137,7 @@ QQ等级: ${data.qqLevel}
         logger.warning(`扩展${cmdInfo.ext}中未找到指令:${cmdInfo.name}`);
         return ["", false];
       }
-      if (ai.tool.listen.timeoutId) {
-        (_b = (_a = ai.tool.listen).reject) == null ? void 0 : _b.call(_a, new Error("中断当前监听"));
-      }
+      (_b = (_a = ai.tool.listen).reject) == null ? void 0 : _b.call(_a, new Error("中断当前监听"));
       return new Promise((resolve, reject) => {
         ai.tool.listen.timeoutId = setTimeout(() => {
           reject(new Error("监听消息超时"));
@@ -3003,14 +3171,23 @@ QQ等级: ${data.qqLevel}
      * @returns tool_choice
      */
     static async handleToolCalls(ctx, msg, ai, tool_calls) {
+      const { maxCallCount } = ConfigManager.tool;
       if (tool_calls.length !== 0) {
         logger.info(`调用函数:`, tool_calls.map((item, i) => {
           return `(${i}) ${item.function.name}:${item.function.arguments}`;
         }).join("\n"));
       }
-      if (tool_calls.length > 5) {
-        logger.warning("一次性调用超过5个函数，将进行截断操作……");
-        tool_calls.splice(5);
+      if (ai.tool.toolCallCount >= maxCallCount) {
+        logger.warning("连续调用函数次数超过上限");
+        for (let i = 0; i < tool_calls.length; i++) {
+          const tool_call = tool_calls[i];
+          await ai.context.addToolMessage(tool_call.id, `连续调用函数次数超过上限`);
+        }
+        return "none";
+      }
+      if (tool_calls.length + ai.tool.toolCallCount > maxCallCount) {
+        logger.warning("一次性调用超过上限，将进行截断操作……");
+        tool_calls.splice(maxCallCount - ai.tool.toolCallCount);
       }
       let tool_choice = "none";
       for (let i = 0; i < tool_calls.length; i++) {
@@ -3028,7 +3205,7 @@ QQ等级: ${data.qqLevel}
       const name = tool_call.function.name;
       if (this.cmdArgs == null) {
         logger.warning(`暂时无法调用函数，请先使用任意海豹指令`);
-        await ai.context.addToolMessage(tool_call.id, `暂时无法调用函数，请先提示用户使用任意指令`);
+        await ai.context.addToolMessage(tool_call.id, `暂时无法调用函数，请先提示用户使用任意海豹指令`);
         return "none";
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
@@ -3063,6 +3240,7 @@ QQ等级: ${data.qqLevel}
         }
         const s = await tool.solve(ctx, msg, ai, args);
         await ai.context.addToolMessage(tool_call.id, s);
+        ai.tool.toolCallCount++;
         return tool.tool_choice;
       } catch (e) {
         logger.error(`调用函数 (${name}:${tool_call.function.arguments}) 失败:${e.message}`);
@@ -3071,6 +3249,12 @@ QQ等级: ${data.qqLevel}
       }
     }
     static async handlePromptToolCall(ctx, msg, ai, tool_call_str) {
+      const { maxCallCount } = ConfigManager.tool;
+      if (ai.tool.toolCallCount >= maxCallCount) {
+        logger.warning("连续调用函数次数超过上限");
+        await ai.context.addSystemUserMessage("调用函数返回", `连续调用函数次数超过上限`, []);
+        return;
+      }
       let tool_call = null;
       try {
         tool_call = JSON.parse(tool_call_str);
@@ -3085,7 +3269,7 @@ QQ等级: ${data.qqLevel}
       const name = tool_call.name;
       if (this.cmdArgs == null) {
         logger.warning(`暂时无法调用函数，请先使用任意海豹指令`);
-        await ai.context.addSystemUserMessage("调用函数返回", `暂时无法调用函数，请先提示用户使用任意指令`, []);
+        await ai.context.addSystemUserMessage("调用函数返回", `暂时无法调用函数，请先提示用户使用任意海豹指令`, []);
         return;
       }
       if (ConfigManager.tool.toolsNotAllow.includes(name)) {
@@ -3120,6 +3304,7 @@ QQ等级: ${data.qqLevel}
         }
         const s = await tool.solve(ctx, msg, ai, args);
         await ai.context.addSystemUserMessage("调用函数返回", s, []);
+        ai.tool.toolCallCount++;
       } catch (e) {
         logger.error(`调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`);
         await ai.context.addSystemUserMessage("调用函数返回", `调用函数 (${name}:${JSON.stringify(tool_call.arguments, null, 2)}) 失败:${e.message}`, []);
@@ -3439,7 +3624,8 @@ ${toolsPrompt}`;
     }
   }
   async function startStream(messages) {
-    const { url, apiKey, bodyTemplate, streamUrl } = ConfigManager.request;
+    const { url, apiKey, bodyTemplate } = ConfigManager.request;
+    const { streamUrl } = ConfigManager.backend;
     try {
       const bodyObject = parseBody(bodyTemplate, messages, null, null);
       const s = JSON.stringify(bodyObject.messages, (key, value) => {
@@ -3491,7 +3677,7 @@ ${toolsPrompt}`;
     }
   }
   async function pollStream(id, after) {
-    const { streamUrl } = ConfigManager.request;
+    const { streamUrl } = ConfigManager.backend;
     try {
       const response = await fetch(`${streamUrl}/poll?id=${id}&after=${after}`, {
         method: "GET",
@@ -3530,7 +3716,7 @@ ${toolsPrompt}`;
     }
   }
   async function endStream(id) {
-    const { streamUrl } = ConfigManager.request;
+    const { streamUrl } = ConfigManager.backend;
     try {
       const response = await fetch(`${streamUrl}/end?id=${id}`, {
         method: "GET",
@@ -3760,9 +3946,9 @@ ${toolsPrompt}`;
       return reply;
     }
     static async imageUrlToBase64(imageUrl) {
-      const url = "http://110.41.69.149:46678/image-to-base64";
+      const { imageTobase64Url } = ConfigManager.backend;
       try {
-        const response = await fetch(url, {
+        const response = await fetch(`${imageTobase64Url}/image-to-base64`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -4246,7 +4432,7 @@ ${toolsPrompt}`;
         await new Promise((resolve) => setTimeout(resolve, 1e3));
       }
       const { s, reply, images } = result;
-      const msgId = await replyToSender(ctx, msg, this, reply);
+      const { msgId } = await replyToSender(ctx, msg, this, reply);
       await this.context.addMessage(ctx, s, images, "assistant", msgId);
       const { p } = ConfigManager.image;
       if (Math.random() * 100 <= p) {
@@ -4295,7 +4481,7 @@ ${toolsPrompt}`;
               if (this.stream.id !== id) {
                 return;
               }
-              const msgId2 = await replyToSender(ctx, msg, this, reply2);
+              const { msgId: msgId2 } = await replyToSender(ctx, msg, this, reply2);
               await this.context.addMessage(ctx, s2, images2, "assistant", msgId2);
             }
             this.stream.toolCallStatus = true;
@@ -4315,6 +4501,7 @@ ${toolsPrompt}`;
                 this.context.addMessage(ctx, match[0], [], "assistant", "");
                 await ToolManager.handlePromptToolCall(ctx, msg, this, match[1]);
                 await this.chatStream(ctx, msg);
+                return;
               } else {
                 logger.error("无法匹配到function_call");
                 await this.stopCurrentChatStream();
@@ -4331,7 +4518,7 @@ ${toolsPrompt}`;
         if (this.stream.id !== id) {
           return;
         }
-        const msgId = await replyToSender(ctx, msg, this, reply);
+        const { msgId } = await replyToSender(ctx, msg, this, reply);
         await this.context.addMessage(ctx, s, images, "assistant", msgId);
         after = result.nextAfter;
         await new Promise((resolve) => setTimeout(resolve, interval));
@@ -4493,7 +4680,7 @@ ${toolsPrompt}`;
   function main() {
     let ext = seal.ext.find("aiplugin4");
     if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.7.3");
+      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.8.0");
       seal.ext.register(ext);
     }
     try {
@@ -4554,7 +4741,7 @@ ${toolsPrompt}`;
 【50】群管理员
 【60】群主
 【100】骰主
-不填写时默认为0`;
+不填写时默认为100`;
             seal.replyToSender(ctx, msg, s);
             return ret;
           }
@@ -5482,14 +5669,6 @@ ${s}`);
       const ai = AIManager.getAI(id);
       const CQTypes = parseText(message).filter((item) => item.type !== "text").map((item) => item.type);
       if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
-        if (CQTypes.includes("image")) {
-          const result = await ImageManager.handleImageMessage(ctx, message);
-          message = result.message;
-          images = result.images;
-          if (ai.image.stealStatus) {
-            ai.image.updateImageList(images);
-          }
-        }
         clearTimeout(ai.context.timer);
         ai.context.timer = null;
         for (const keyword of keyWords) {
@@ -5507,8 +5686,17 @@ ${s}`);
           }
           const fmtCondition = parseInt(seal.format(ctx, `{${condition}}`));
           if (fmtCondition === 1) {
+            if (CQTypes.includes("image")) {
+              const result = await ImageManager.handleImageMessage(ctx, message);
+              message = result.message;
+              images = result.images;
+              if (ai.image.stealStatus) {
+                ai.image.updateImageList(images);
+              }
+            }
             await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
             logger.info("非指令触发回复");
+            ai.tool.toolCallCount = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5523,10 +5711,19 @@ ${s}`);
             if (condition2.uid && condition2.uid !== userId) {
               continue;
             }
+            if (CQTypes.includes("image")) {
+              const result = await ImageManager.handleImageMessage(ctx, message);
+              message = result.message;
+              images = result.images;
+              if (ai.image.stealStatus) {
+                ai.image.updateImageList(images);
+              }
+            }
             await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
             await ai.context.addSystemUserMessage("触发原因提示", condition2.reason, []);
             triggerConditionMap[id].splice(i, 1);
             logger.info("AI设定触发条件触发回复");
+            ai.tool.toolCallCount = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5534,12 +5731,21 @@ ${s}`);
         }
         const pr = ai.privilege;
         if (pr.standby) {
+          if (CQTypes.includes("image")) {
+            const result = await ImageManager.handleImageMessage(ctx, message);
+            message = result.message;
+            images = result.images;
+            if (ai.image.stealStatus) {
+              ai.image.updateImageList(images);
+            }
+          }
           await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
         }
         if (pr.counter > -1) {
           ai.context.counter += 1;
           if (ai.context.counter >= pr.counter) {
             logger.info("计数器触发回复");
+            ai.tool.toolCallCount = 0;
             ai.context.counter = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5550,6 +5756,7 @@ ${s}`);
           const ran = Math.random() * 100;
           if (ran <= pr.prob) {
             logger.info("概率触发回复");
+            ai.tool.toolCallCount = 0;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
             return;
@@ -5558,6 +5765,7 @@ ${s}`);
         if (pr.timer > -1) {
           ai.context.timer = setTimeout(async () => {
             logger.info("计时器触发回复");
+            ai.tool.toolCallCount = 0;
             ai.context.timer = null;
             await ai.chat(ctx, msg);
             AIManager.saveAI(id);
@@ -5581,9 +5789,14 @@ ${s}`);
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
-            const result = await ImageManager.handleImageMessage(ctx, message);
-            message = result.message;
-            images = result.images;
+            if (CQTypes.includes("image")) {
+              const result = await ImageManager.handleImageMessage(ctx, message);
+              message = result.message;
+              images = result.images;
+              if (ai.image.stealStatus) {
+                ai.image.updateImageList(images);
+              }
+            }
             await ai.context.addMessage(ctx, message, images, "user", transformMsgId(msg.rawId));
           }
         }
@@ -5608,9 +5821,14 @@ ${s}`);
         if (CQTypes.length === 0 || CQTypes.every((item) => CQTypesAllow.includes(item))) {
           const pr = ai.privilege;
           if (pr.standby) {
-            const result = await ImageManager.handleImageMessage(ctx, message);
-            message = result.message;
-            images = result.images;
+            if (CQTypes.includes("image")) {
+              const result = await ImageManager.handleImageMessage(ctx, message);
+              message = result.message;
+              images = result.images;
+              if (ai.image.stealStatus) {
+                ai.image.updateImageList(images);
+              }
+            }
             await ai.context.addMessage(ctx, message, images, "assistant", transformMsgId(msg.rawId));
             return;
           }
@@ -5649,6 +5867,7 @@ ${s}`);
 提示内容：${content}`;
         await ai.context.addSystemUserMessage("定时器触发提示", s, []);
         logger.info("定时任务触发回复");
+        ai.tool.toolCallCount = 0;
         await ai.chat(ctx, msg);
         AIManager.saveAI(id);
         timerQueue.splice(i, 1);
@@ -5663,9 +5882,9 @@ ${s}`);
     });
   }
   async function get_chart_url(chart_type, usage_data) {
+    const { usageChartUrl } = ConfigManager.backend;
     try {
-      const chart_url = "http://42.193.236.17:3009/chart";
-      const response = await fetch(chart_url, {
+      const response = await fetch(`${usageChartUrl}/chart`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
