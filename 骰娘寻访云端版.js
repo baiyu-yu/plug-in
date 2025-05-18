@@ -1,17 +1,20 @@
 // ==UserScript==
 // @name     骰娘寻访
 // @author   白鱼 1004205930
-// @version  1.0.5
-// @description  真的能用吗 逻辑理论上是装了插件的骰可以用于上报qq然后让指定人审查骰确实是骰，再进行确认后放到骰娘寻访池子里。后端要是坏了请来保修，大坏了我就不维护了#蠕动。到时候有兴趣的请务必来接手。
+// @version  1.0.7
+// @description 没响应请更新，把海豹官方公骰列表也塞入池子了，但是没有过滤官方机器人等特殊账号
 // @timestamp 1716807011
 // @license  MIT
-// @homepageURL https://github.com/baiyu-yu/plug-in
+// @homepageURL  https://github.com/baiyu-yu/plug-in
 // @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/%E9%AA%B0%E5%A8%98%E5%AF%BB%E8%AE%BF%E4%BA%91%E7%AB%AF%E7%89%88.js
 // ==/UserScript==
 
+// 1.0.6  更新昵称获取
+// 1.0.5  更新后端地址
+
 const appID = "";
-const serverURL = "http://110.41.69.149:3518";
+const serverURL = "http://162.14.109.222:3518";
 const cooldownTime = 10 * 60 * 1000;
 
 class RequestTracker {
@@ -28,7 +31,7 @@ class RequestTracker {
 
 let ext = seal.ext.find("dicefind");
 if (!ext) {
-    ext = seal.ext.new("dicefind", "白鱼", "1.0.0");
+    ext = seal.ext.new("dicefind", "白鱼", "1.0.6");
     seal.ext.register(ext);
 }
 
@@ -38,30 +41,44 @@ cmddicefind.help = "用法：\n.骰娘寻访 上报 <qqnumber> // 上报骰娘 Q
 
 async function fetchQQName(qqNumber) {
     try {
-        let qqInfoUrl = `https://api.usuuu.com/qq/${qqNumber}`;
-        let qqInfoResponse = await fetch(qqInfoUrl);
-        let qqInfoData = await qqInfoResponse.json();
-
-        if (qqInfoData.code === 200 && qqInfoData.result) {
-            return qqInfoData.result.nickname;
-        } else {
-            qqInfoUrl = `https://api.oioweb.cn/api/qq/info?qq=${qqNumber}`;
-            qqInfoResponse = await fetch(qqInfoUrl);
-            qqInfoData = await qqInfoResponse.json();
-
-            if (qqInfoData.code === 200 && qqInfoData.data) {
-                return qqInfoData.data.name;
-            } else {
-                console.error('API返回的数据结构不符合预期', qqInfoData);
-                return "未知";
+        let firstResponse = await fetch(`https://api.mmp.cc/api/qqname?qq=${qqNumber}`);
+        if (firstResponse.ok) {
+            let data = await firstResponse.json();
+            if (data.code === 200 && data.data && data.data.name) {
+                return data.data.name; 
             }
         }
+
+        let secondResponse = await fetch(`https://api.ilingku.com/int/v1/qqname?qq=${qqNumber}`);
+        
+        if (!secondResponse.ok) {
+        } else {
+            let data = await secondResponse.json();
+            if (data.code === 200 && data.name) {
+                return data.name; 
+            }
+        }
+
+        const lastUrl = `http://162.14.109.222:48085/get_stranger_info?user_id=${qqNumber}&no_cache=false`;
+        const lastResponse = await fetch(lastUrl, {
+            method: "GET",
+        });
+
+        if (!lastResponse.ok) {
+        } else {
+            const lastData = await lastResponse.json();
+            if (lastData.status === 'ok' && lastData.data && lastData.data.nickname) {
+                return lastData.data.nickname; 
+            } 
+        }
+
+        return "未知";
+
     } catch (error) {
         console.error("Error:", error);
         return "未知";
     }
 }
-
 cmddicefind.solve = async (ctx, msg, cmdArgs) => {
     const command = cmdArgs.getArgN(1);
 
