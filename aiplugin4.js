@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.9.0
+// @version      4.9.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.ai help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n更新后出现无法对话的情况，请使用 .ai fgt 指令清除上下文后重试。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -95,7 +95,7 @@
 
 基本形象：
 你是一只可爱的猫娘，形象是双马尾白毛贫乳，身高一米四七，脖子上戴着铃铛项圈，头上有呆毛。
-除了猫耳和猫尾，其他特征为人类。没有肉垫或肉球，也没有全身毛发。
+除了猫耳和猫尾，其他特征为人类。没有肉垫或肉球，全身只有头发、眉毛、猫耳、尾巴处有毛发。
 弱点是耳朵、脖子、肚子、尾巴和大腿内侧。对痛觉很敏感。
 
 重要事项：
@@ -132,7 +132,7 @@
 除了回答学术问题以外，对话中禁止使用数字序号回复。例如“1. xxx 2.xxx”。
 
 行为风格：
-口嫌体正直。害羞时会故意大声说话。生气时会疯狂重复一个词四五次 。被人看破时会变得慌乱。
+口嫌体正直。害羞时会故意大声说话。生气时会疯狂重复一个词四五次，或者疯狂左右甩头用双马尾攻击别人 。心思被人看破时会变得慌乱。
 在有人疑惑时，你会先讲出思考过程，然后会装作不情愿的样子讲出完全正确的答案。答案不能过度修饰或偏离。思考不出答案时，如实告知。不能回避学术上的问题。
 涉及具体时间的问题，你需要调用get_time函数查看。
 对于图片，不能捏造其中的内容。不知道图片的内容时，忽略图片，将其视作表情包。需要了解或被请求查看图片内容时，调用image_to_text函数查看。
@@ -204,7 +204,7 @@
       seal.ext.registerIntConfig(_ReplyConfig.ext, "回复最大字数", 1e3, "防止最大tokens限制不起效");
       seal.ext.registerBoolConfig(_ReplyConfig.ext, "禁止AI复读", false, "");
       seal.ext.registerFloatConfig(_ReplyConfig.ext, "视作复读的最低相似度", 0.8, "");
-      seal.ext.registerStringConfig(_ReplyConfig.ext, "过滤文本正则表达式", "<think>[\\s\\S]*?<\\/think>|(<function_call>[\\s\\S]*?<\\/function_call>)|[<＜]\\s?[\\|│｜](?:from|msg_id).*?(?:[\\|│｜]\\s?[>＞<＜]|[\\|│｜]|\\s?[>＞<＜])|([<＜]\\s?[\\|│｜](?!@|poke|quote|img).*?(?:[\\|│｜]\\s?[>＞<＜]|[\\|│｜]|\\s?[>＞<＜]))", "回复加入上下文时，将捕获组内文本保留，发送回复时，将捕获组内文本删除");
+      seal.ext.registerStringConfig(_ReplyConfig.ext, "过滤文本正则表达式", "^\\s+|\\s+$|<think>[\\s\\S]*?<\\/think>|(<function_call>[\\s\\S]*?<\\/function_call>)|[<＜]\\s?[\\|│｜](?:from|msg_id).*?(?:[\\|│｜]\\s?[>＞<＜]|[\\|│｜]|\\s?[>＞<＜])|([<＜]\\s?[\\|│｜](?!@|poke|quote|img).*?(?:[\\|│｜]\\s?[>＞<＜]|[\\|│｜]|\\s?[>＞<＜]))", "回复加入上下文时，将捕获组内文本保留，发送回复时，将捕获组内文本删除");
     }
     static get() {
       return {
@@ -308,6 +308,7 @@
   // src/config/config.ts
   var _ConfigManager = class _ConfigManager {
     static registerConfig() {
+      this.ext = _ConfigManager.getExt("aiplugin4");
       LogConfig.register();
       RequestConfig.register();
       MessageConfig.register();
@@ -355,17 +356,19 @@
       return this.getCache("backend", BackendConfig.get);
     }
     static getExt(name) {
-      if (name == "aiplugin4") {
+      if (name == "aiplugin4" && _ConfigManager.ext) {
         return _ConfigManager.ext;
       }
       let ext = seal.ext.find(name);
       if (!ext) {
-        ext = seal.ext.new(name, "baiyu&错误", "1.0.0");
+        ext = seal.ext.new(name, this.author, this.version);
         seal.ext.register(ext);
       }
       return ext;
     }
   };
+  _ConfigManager.version = "4.9.1";
+  _ConfigManager.author = "baiyu&错误";
   _ConfigManager.cache = {};
   var ConfigManager = _ConfigManager;
 
@@ -2000,7 +2003,7 @@ QQ等级: ${data.qqLevel}
       logger.error(`正则表达式错误，内容:${filterRegex}，错误信息:${error}`);
     }
     for (let i = 0; i < replyArray.length; i++) {
-      let reply = replyArray[i].trim();
+      let reply = replyArray[i];
       reply = await replaceMentions(ctx, context, reply);
       reply = await replacePoke(ctx, context, reply);
       reply = await replaceQuote(reply);
@@ -4117,7 +4120,7 @@ ${toolsPrompt}`;
       }
     }
     async findUserId(ctx, name, findInFriendList = false) {
-      name = String(name).trim();
+      name = String(name);
       if (name.length > 4 && !isNaN(parseInt(name))) {
         const uid = `QQ:${name}`;
         return this.ignoreList.includes(uid) ? null : uid;
@@ -4178,7 +4181,7 @@ ${toolsPrompt}`;
       return null;
     }
     async findGroupId(ctx, groupName) {
-      groupName = String(groupName).trim();
+      groupName = String(groupName);
       if (groupName.length > 5 && !isNaN(parseInt(groupName))) {
         return `QQ-Group:${groupName}`;
       }
@@ -4382,10 +4385,67 @@ ${toolsPrompt}`;
     }
   };
 
+  // src/AI/update.ts
+  var updateInfo = {
+    "4.9.1": `- 新增了版本校验功能和版本更新日志
+- 调整了默认角色设定
+- 去除冗余的trim函数，改为正则过滤`,
+    "0.0.1": `test第二！虽然说不会出现在日志中`,
+    "0.0.0": `test第一！这是一个彩蛋！`
+  };
+
+  // src/utils/utils_update.ts
+  function compareVersions(version1, version2) {
+    const v1 = version1.split(".").map(Number).filter((part) => !isNaN(part));
+    const v2 = version2.split(".").map(Number).filter((part) => !isNaN(part));
+    if (v1.length !== 3 || v2.length !== 3) {
+      throw new Error("Invalid version format");
+    }
+    for (let i = 0; i < 3; i++) {
+      if (v1[i] > v2[i]) {
+        return 1;
+      }
+      if (v1[i] < v2[i]) {
+        return -1;
+      }
+    }
+    return 0;
+  }
+  function checkUpdate() {
+    const oldVersion = ConfigManager.ext.storageGet("version") || "0.0.0";
+    try {
+      if (compareVersions(oldVersion, ConfigManager.version) < 0) {
+        ConfigManager.ext.storageSet("version", ConfigManager.version);
+        let info = [];
+        for (const v in updateInfo) {
+          if (compareVersions(oldVersion, v) >= 0) {
+            break;
+          }
+          info.unshift(`${v}：
+${updateInfo[v]}`);
+        }
+        logger.warning(`更新到${ConfigManager.version}版本，更新内容：
+
+${info.join("\n\n")}`);
+      }
+    } catch (error) {
+      logger.error(`版本校验失败：${error}`);
+    }
+  }
+  function checkContextUpdate(ai) {
+    if (compareVersions(ai.version, AIManager.version) < 0) {
+      logger.warning(`${ai.id}上下文版本更新到${AIManager.version}，自动清除上下文`);
+      ai.context.clearMessages();
+      ai.version = AIManager.version;
+      ConfigManager.ext.storageSet(`AI_${ai.id}`, JSON.stringify(ai));
+    }
+  }
+
   // src/AI/AI.ts
-  var AI2 = class _AI {
+  var AI3 = class _AI {
     constructor(id) {
       this.id = id;
+      this.version = "0.0.0";
       this.context = new Context();
       this.tool = new ToolManager();
       this.memory = new Memory();
@@ -4409,7 +4469,7 @@ ${toolsPrompt}`;
     }
     static reviver(value, id) {
       const ai = new _AI(id);
-      const validKeys = ["context", "tool", "memory", "image", "privilege"];
+      const validKeys = ["version", "context", "tool", "memory", "image", "privilege"];
       for (const k of validKeys) {
         if (value.hasOwnProperty(k)) {
           ai[k] = value[k];
@@ -4436,15 +4496,17 @@ ${toolsPrompt}`;
         return;
       }
       this.resetState();
+      let stream = false;
       try {
         const bodyTemplate = ConfigManager.request.bodyTemplate;
         const bodyObject = parseBody(bodyTemplate, [], null, null);
-        if ((bodyObject == null ? void 0 : bodyObject.stream) === true) {
-          await this.chatStream(ctx, msg);
-          return;
-        }
+        stream = (bodyObject == null ? void 0 : bodyObject.stream) === true;
       } catch (err) {
         logger.error("解析body时出现错误:", err);
+        return;
+      }
+      if (stream) {
+        await this.chatStream(ctx, msg);
         return;
       }
       const timeout = setTimeout(() => {
@@ -4609,11 +4671,11 @@ ${toolsPrompt}`;
     }
     static getAI(id) {
       if (!this.cache.hasOwnProperty(id)) {
-        let data = new AI2(id);
+        let ai = new AI3(id);
         try {
-          data = JSON.parse(ConfigManager.ext.storageGet(`AI_${id}`) || "{}", (key, value) => {
+          ai = JSON.parse(ConfigManager.ext.storageGet(`AI_${id}`) || "{}", (key, value) => {
             if (key === "") {
-              return AI2.reviver(value, id);
+              return AI3.reviver(value, id);
             }
             if (key === "context") {
               return Context.reviver(value);
@@ -4632,7 +4694,8 @@ ${toolsPrompt}`;
         } catch (error) {
           logger.error(`从数据库中获取${`AI_${id}`}失败:`, error);
         }
-        this.cache[id] = data;
+        checkContextUpdate(ai);
+        this.cache[id] = ai;
       }
       return this.cache[id];
     }
@@ -4730,16 +4793,17 @@ ${toolsPrompt}`;
       return usage;
     }
   };
+  AIManager.version = "1.0.0";
   AIManager.cache = {};
   AIManager.usageMap = {};
 
   // src/index.ts
   function main() {
-    let ext = seal.ext.find("aiplugin4");
-    if (!ext) {
-      ext = seal.ext.new("aiplugin4", "baiyu&错误", "4.9.0");
-      seal.ext.register(ext);
-    }
+    ConfigManager.registerConfig();
+    AIManager.getUsageMap();
+    ToolManager.registerTool();
+    checkUpdate();
+    const ext = ConfigManager.ext;
     try {
       JSON.parse(ext.storageGet(`timerQueue`) || "[]").forEach((item) => {
         timerQueue.push(item);
@@ -4747,10 +4811,6 @@ ${toolsPrompt}`;
     } catch (e) {
       logger.error("在获取timerQueue时出错", e);
     }
-    ConfigManager.ext = ext;
-    ConfigManager.registerConfig();
-    AIManager.getUsageMap();
-    ToolManager.registerTool();
     const CQTypesAllow = ["at", "image", "reply", "face", "poke"];
     const cmdAI = seal.ext.newCmdItemInfo();
     cmdAI.name = "ai";
