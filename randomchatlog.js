@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼
-// @version      1.0.1
+// @version      1.1.0
 // @description  随机记录群友发言并且储存在数据库里，然后随机放出一条的插件。使用.chatlog on/off控制开启关闭，可以在配置项配置一些东西。记录时间太长队列会很大可能难以抽出，数据库也会很大，请定时到插件数据库删除对应数据库（\data\default\extensions\randomChatLogger）（TODO：指令清空，虽然不能缓解数据库大的问题）。第一条会很快发出来，后面的就正常了，表情包图片可能过期会出现消息无法显示之类的，不管了。
 // @timestamp    1724394115
 // @license      MIT
@@ -33,13 +33,20 @@ if (!seal.ext.find('randomChatLogger')) {
     configKeys.forEach((key, index) => {
         seal.ext.registerStringConfig(ext, key, configDefaults[index]);
     });
+    seal.ext.registerTemplateConfig(
+        ext,
+        "消息内容正则过滤",
+        [
+            "\\[CQ:at,qq=[^\\]]*\\]",
+            "\\[CQ:reply,id=[^\\]]*\\]",
+            "\\[CQ:image,[^\\]]*\\]"
+        ],"替换匹配到的文本为空字符串"
+    );
 
-    // 定义全局变量
     let logStateMap = {};
     let lastRecordTimeMap = {};
     let lastSendTimeMap = {};
 
-    // 尝试从存储加载 logStateMap, lastRecordTimeMap, lastSendTimeMap
     const storedLogStateMap = ext.storageGet("logStateMap");
     if (storedLogStateMap) logStateMap = JSON.parse(storedLogStateMap);
     const storedLastRecordTimeMap = ext.storageGet("lastRecordTimeMap");
@@ -47,7 +54,6 @@ if (!seal.ext.find('randomChatLogger')) {
     const storedLastSendTimeMap = ext.storageGet("lastSendTimeMap");
     if (storedLastSendTimeMap) lastSendTimeMap = JSON.parse(storedLastSendTimeMap);
 
-    // 命令定义
     const cmdRandomChatLogger = seal.ext.newCmdItemInfo();
     cmdRandomChatLogger.name = 'chatlog';
     cmdRandomChatLogger.help = '随机记录群友发言并且储存在数据库里，然后随机放出一条\n用法：.chatlog on/off';
@@ -104,24 +110,19 @@ if (!seal.ext.find('randomChatLogger')) {
 
         const now = Date.now();
 
-        // 检查是否达到记录频率
         if (!lastRecordTimeMap[contextKey] || now - lastRecordTimeMap[contextKey] >= recordFrequency * 1000) {
-            // 加载或初始化日志队列
             const storedLogQueue = ext.storageGet(`logQueue_${contextKey}`);
             let logQueue = storedLogQueue ? JSON.parse(storedLogQueue) : [];
 
             logQueue.push({ nickname: msg.sender.nickname, message: msg.message });
 
-            // 保存更新后的日志队列
             ext.storageSet(`logQueue_${contextKey}`, JSON.stringify(logQueue));
 
             lastRecordTimeMap[contextKey] = now;
             ext.storageSet(`lastRecordTimeMap_${contextKey}`, JSON.stringify(lastRecordTimeMap[contextKey]));
         }
 
-        // 检查是否达到发送频率
         if (!lastSendTimeMap[contextKey] || now - lastSendTimeMap[contextKey] >= sendFrequency * 1000) {
-            // 加载日志队列
             const storedLogQueue = ext.storageGet(`logQueue_${contextKey}`);
             const logQueue = storedLogQueue ? JSON.parse(storedLogQueue) : [];
 
@@ -129,13 +130,23 @@ if (!seal.ext.find('randomChatLogger')) {
                 const randomIndex = Math.floor(Math.random() * logQueue.length);
                 const randomLog = logQueue.splice(randomIndex, 1)[0];
 
-                // 获取自定义前缀
                 const prefix = seal.ext.getStringConfig(ext, configKeys[4]);
 
-                // 发送带有前缀的消息
-                seal.replyToSender(ctx, msg, `${prefix}${randomLog.nickname}: ${randomLog.message}`);
+                let filteredMsg = randomLog.message;
+                const regexConfigs = seal.ext.getTemplateConfig(ext, "消息内容正则过滤");
+                if (Array.isArray(regexConfigs)) {
+                    regexConfigs.forEach(cfg => {
+                        try {
+                            const reg = new RegExp(cfg, "g");
+                            filteredMsg = filteredMsg.replace(reg, "");
+                        } catch (e) {
+                            console.error(`正则表达式错误`);
+                        }
+                    });
+                }
 
-                // 更新日志队列
+                seal.replyToSender(ctx, msg, `${prefix}${randomLog.nickname}: ${filteredMsg}`);
+
                 ext.storageSet(`logQueue_${contextKey}`, JSON.stringify(logQueue));
 
                 lastSendTimeMap[contextKey] = now;
