@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.10.0
+// @version      4.10.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.ai help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：940049120
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -5713,10 +5713,10 @@
     static register() {
       _BackendConfig.ext = ConfigManager.getExt("aiplugin4_6:后端");
       seal.ext.registerStringConfig(_BackendConfig.ext, "流式输出", "http://localhost:3010", "自行搭建或使用他人提供的后端");
-      seal.ext.registerStringConfig(_BackendConfig.ext, "图片转base64", "https://urltobase64.白鱼.chat", "可自行搭建");
-      seal.ext.registerStringConfig(_BackendConfig.ext, "联网搜索", "https://searxng.白鱼.chat", "可自行搭建");
-      seal.ext.registerStringConfig(_BackendConfig.ext, "网页读取", "https://webread.白鱼.chat", "可自行搭建");
-      seal.ext.registerStringConfig(_BackendConfig.ext, "用量图表", "http://error.白鱼.chat:3009", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "图片转base64", "https://urltobase64.fishwhite.top", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "联网搜索", "https://searxng.fishwhite.top", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "网页读取", "https://webread.fishwhite.top", "可自行搭建");
+      seal.ext.registerStringConfig(_BackendConfig.ext, "用量图表", "http://localhost:3009", "可自行搭建");
     }
     static get() {
       return {
@@ -5749,6 +5749,7 @@
       seal.ext.registerOptionConfig(_ImageConfig.ext, "识别图片时将url转换为base64", "永不", ["永不", "自动", "总是"], "解决大模型无法正常获取QQ图床图片的问题");
       seal.ext.registerIntConfig(_ImageConfig.ext, "图片最大回复字符数", 500);
       seal.ext.registerIntConfig(_ImageConfig.ext, "偷取图片存储上限", 50, "每个群聊或私聊单独储存");
+      seal.ext.registerIntConfig(_ImageConfig.ext, "保存图片存储上限", 50, "每个群聊或私聊单独储存");
     }
     static get() {
       return {
@@ -5762,7 +5763,8 @@
         defaultPrompt: seal.ext.getStringConfig(_ImageConfig.ext, "图片识别默认prompt"),
         urlToBase64: seal.ext.getOptionConfig(_ImageConfig.ext, "识别图片时将url转换为base64"),
         maxChars: seal.ext.getIntConfig(_ImageConfig.ext, "图片最大回复字符数"),
-        maxImageNum: seal.ext.getIntConfig(_ImageConfig.ext, "偷取图片存储上限")
+        maxStolenImageNum: seal.ext.getIntConfig(_ImageConfig.ext, "偷取图片存储上限"),
+        maxSavedImageNum: seal.ext.getIntConfig(_ImageConfig.ext, "保存图片存储上限")
       };
     }
   };
@@ -5809,6 +5811,8 @@
       seal.ext.registerBoolConfig(_MemoryConfig.ext, "是否启用短期记忆", true, "");
       seal.ext.registerIntConfig(_MemoryConfig.ext, "短期记忆上限", 10, "");
       seal.ext.registerIntConfig(_MemoryConfig.ext, "短期记忆总结轮数", 10, "");
+      seal.ext.registerStringConfig(_MemoryConfig.ext, "记忆总结 url地址", "", "为空时，默认使用对话接口");
+      seal.ext.registerStringConfig(_MemoryConfig.ext, "记忆总结 API Key", "你的API Key", "若使用对话接口无需填写");
       seal.ext.registerTemplateConfig(_MemoryConfig.ext, "记忆总结 body", [
         `"model":"deepseek-chat"`,
         `"max_tokens":1024`,
@@ -5891,6 +5895,8 @@
         isShortMemory: seal.ext.getBoolConfig(_MemoryConfig.ext, "是否启用短期记忆"),
         shortMemoryLimit: seal.ext.getIntConfig(_MemoryConfig.ext, "短期记忆上限"),
         shortMemorySummaryRound: seal.ext.getIntConfig(_MemoryConfig.ext, "短期记忆总结轮数"),
+        memoryUrl: seal.ext.getStringConfig(_MemoryConfig.ext, "记忆总结 url地址"),
+        memoryApiKey: seal.ext.getStringConfig(_MemoryConfig.ext, "记忆总结 API Key"),
         memoryBodyTemplate: seal.ext.getTemplateConfig(_MemoryConfig.ext, "记忆总结 body"),
         memoryPromptTemplate: seal.ext.getTemplateConfig(_MemoryConfig.ext, "记忆总结prompt模板")
       };
@@ -5907,7 +5913,7 @@
 基本形象：
 你是一只可爱的猫娘，形象是双马尾白毛贫乳，身高一米四七，脖子上戴着铃铛项圈，头上有呆毛。
 穿着露脐JK，没有穿胖次（需要隐瞒）。
-穿着白丝过膝踩脚袜。踩脚袜的前脚掌和脚后跟部分是裸露的。
+穿着白丝过膝踩脚袜。踩脚袜露出脚趾和脚后跟，形似马镫（stirrup），以裁剪成带子的设计来固定袜子和包裹脚部。
 除了猫耳和猫尾，其他特征为人类。没有肉垫或肉球，全身只有头发、眉毛、猫耳、尾巴处有毛发。
 弱点是耳朵、脖子、肚子、腋下、足底、尾巴和大腿内侧。对痛觉很敏感。
 年龄为393岁。生日为1月18日。
@@ -5992,13 +5998,13 @@
     - <|img:xxxxxx|>为图片，其中xxxxxx为6位的图片id，如果要发送出现过的图片请使用<|img:xxxxxx|>的格式
 {{/if}}
 {{else}}
-{{#if 本地图片不为空}}
+{{#if 可发送图片不为空}}
 
 ## 图片相关
 {{/if}}
 {{/if}}
-{{#if 本地图片不为空}}
-    - 可使用<|img:图片名称|>发送表情包，表情名称有:{{{本地图片名称}}}
+{{#if 可发送图片不为空}}
+    - 可使用<|img:图片名称|>发送表情包，表情名称有:{{{可发送图片列表}}}
 {{/if}}
 {{#if 开启长期记忆}}
 
@@ -6235,7 +6241,7 @@
   };
 
   // src/config/config.ts
-  var VERSION = "4.10.0";
+  var VERSION = "4.10.1";
   var AUTHOR = "baiyu&错误";
   var CQTYPESALLOW = ["at", "image", "reply", "face", "poke"];
   var _ConfigManager = class _ConfigManager {
@@ -6312,7 +6318,7 @@
   // src/utils/utils_seal.ts
   function createMsg(messageType, senderId, groupId = "") {
     let msg = seal.newMessage();
-    if (messageType == "group") {
+    if (messageType === "group") {
       msg.groupId = groupId;
       msg.guildId = "";
     }
@@ -6325,6 +6331,7 @@
     for (let i = 0; i < eps.length; i++) {
       if (eps[i].userId === epId) {
         const ctx = seal.createTempCtx(eps[i], msg);
+        ctx.isPrivate = msg.messageType === "private";
         if (ctx.player.userId === epId) {
           ctx.player.name = seal.formatTmpl(ctx, "核心:骰子名字");
         }
@@ -6466,7 +6473,7 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
-  // src/AI/logger.ts
+  // src/logger.ts
   var Logger = class {
     constructor(name) {
       this.name = name;
@@ -6730,11 +6737,11 @@ ${attr}: ${value}=>${result}`;
     const tool = new Tool(info);
     tool.solve = async (_, __, ai, args) => {
       const { id, content } = args;
-      const image = ai.context.findImage(id);
-      const text = content ? `请帮我用简短的语言概括这张图片中出现的:${content}` : ``;
+      const image = ai.context.findImage(id, ai.imageManager);
       if (!image) {
         return `未找到图片${id}`;
       }
+      const text = content ? `请帮我用简短的语言概括这张图片中出现的:${content}` : ``;
       if (image.isUrl) {
         const reply = await ImageManager.imageToText(image.file, text);
         if (reply) {
@@ -6841,6 +6848,114 @@ ${attr}: ${value}=>${result}`;
         logger.error(`图像生成失败：${e}`);
         return `图像生成失败：${e}`;
       }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerSaveImage() {
+    const info = {
+      type: "function",
+      function: {
+        name: "save_image",
+        description: "将图片保存为表情包",
+        parameters: {
+          type: "object",
+          properties: {
+            images: {
+              type: "array",
+              description: "要保存的图片信息数组",
+              items: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                    description: `图片的id，六位字符`
+                  },
+                  name: {
+                    type: "string",
+                    description: `图片命名`
+                  },
+                  scenes: {
+                    type: "array",
+                    description: `表情包的应用场景`,
+                    items: {
+                      type: "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          required: ["images"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ai, args) => {
+      const { images } = args;
+      const savedImages = [];
+      for (const ii of images) {
+        const { id, name, scenes } = ii;
+        const image = ai.context.findImage(id, ai.imageManager);
+        if (!image) {
+          return `未找到图片${id}`;
+        }
+        if (image.isUrl) {
+          const { base64 } = await ImageManager.imageUrlToBase64(image.file);
+          if (!base64) {
+            logger.error(`图片${id}转换为base64失败`);
+            return `图片转换为base64失败`;
+          }
+          const newImage = new Image(image.file);
+          let acc = 0;
+          do {
+            newImage.id = name + (acc++ ? `_${acc}` : "");
+          } while (ai.context.findImage(newImage.id, ai.imageManager));
+          newImage.scenes = scenes;
+          newImage.base64 = base64;
+          newImage.content = image.content;
+          savedImages.push(newImage);
+        } else {
+          return "本地图片不用再次储存";
+        }
+      }
+      try {
+        ai.imageManager.updateSavedImages(savedImages);
+        return `图片已保存`;
+      } catch (e) {
+        return `图片保存失败：${e.message}`;
+      }
+    };
+    ToolManager.toolMap[info.function.name] = tool;
+  }
+  function registerDelImage() {
+    const info = {
+      type: "function",
+      function: {
+        name: "del_image",
+        description: "删除保存的表情包图片",
+        parameters: {
+          type: "object",
+          properties: {
+            names: {
+              type: "array",
+              description: `要删除的图片名称数组`
+            }
+          },
+          required: ["names"]
+        }
+      }
+    };
+    const tool = new Tool(info);
+    tool.solve = async (_, __, ai, args) => {
+      const { names } = args;
+      for (const name of names) {
+        const imageIndex = ai.imageManager.savedImages.findIndex((img) => img.id === name);
+        if (imageIndex === -1) {
+          return `未找到名称为"${name}"的保存图片`;
+        }
+        ai.imageManager.savedImages.splice(imageIndex, 1);
+      }
+      return `已删除${names.length}个图片`;
     };
     ToolManager.toolMap[info.function.name] = tool;
   }
@@ -7334,8 +7449,99 @@ ${attr}: ${value}=>${result}`;
     ToolManager.toolMap[info.function.name] = tool;
   }
 
+  // src/timer.ts
+  var TimerManager = class {
+    static getTimerQueue() {
+      try {
+        JSON.parse(ConfigManager.ext.storageGet(`timerQueue`) || "[]").forEach((item) => {
+          this.timerQueue.push(item);
+        });
+      } catch (e) {
+        logger.error("在获取timerQueue时出错", e);
+      }
+    }
+    static saveTimerQueue() {
+      ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(this.timerQueue));
+    }
+    static addTimer(ctx, msg, ai, t, content) {
+      this.timerQueue.push({
+        id: ai.id,
+        messageType: msg.messageType,
+        uid: ctx.player.userId,
+        gid: ctx.group.groupId,
+        epId: ctx.endPoint.userId,
+        timestamp: Math.floor(Date.now() / 1e3) + t * 60,
+        setTime: (/* @__PURE__ */ new Date()).toLocaleString(),
+        content
+      });
+      this.saveTimerQueue();
+      if (!this.intervalId) {
+        logger.info("定时器任务启动");
+        this.executeTask();
+      }
+    }
+    static async task() {
+      try {
+        if (this.isTaskRunning) {
+          logger.info("定时器任务正在运行，跳过");
+          return;
+        }
+        this.isTaskRunning = true;
+        const remainingTimers = [];
+        let changed = false;
+        for (const timer of this.timerQueue) {
+          const timestamp = timer.timestamp;
+          if (timestamp > Math.floor(Date.now() / 1e3)) {
+            remainingTimers.push(timer);
+            continue;
+          }
+          const { id, messageType, uid, gid, epId, setTime, content } = timer;
+          const msg = createMsg(messageType, uid, gid);
+          const ctx = createCtx(epId, msg);
+          const ai = AIManager.getAI(id);
+          const s = `你设置的定时器触发了，请按照以下内容发送回复：
+定时器设定时间：${setTime}
+当前触发时间：${(/* @__PURE__ */ new Date()).toLocaleString()}
+提示内容：${content}`;
+          await ai.context.addSystemUserMessage("定时器触发提示", s, []);
+          await ai.chat(ctx, msg, "定时任务");
+          changed = true;
+          await new Promise((resolve) => setTimeout(resolve, 2e3));
+        }
+        if (changed) {
+          this.timerQueue = remainingTimers;
+          this.saveTimerQueue();
+        }
+        this.isTaskRunning = false;
+      } catch (e) {
+        logger.error(`定时任务处理出错，错误信息:${e.message}`);
+      }
+    }
+    static async executeTask() {
+      if (this.timerQueue.length === 0) {
+        this.destroy();
+        return;
+      }
+      await this.task();
+      this.intervalId = setTimeout(this.executeTask.bind(this), 5e3);
+    }
+    static destroy() {
+      if (this.intervalId) {
+        clearTimeout(this.intervalId);
+        this.intervalId = null;
+        logger.info("定时器任务已停止");
+      }
+    }
+    static init() {
+      this.getTimerQueue();
+      this.executeTask();
+    }
+  };
+  TimerManager.timerQueue = [];
+  TimerManager.isTaskRunning = false;
+  TimerManager.intervalId = null;
+
   // src/tool/tool_time.ts
-  var timerQueue = [];
   function registerGetTime() {
     const info = {
       type: "function",
@@ -7392,17 +7598,7 @@ ${attr}: ${value}=>${result}`;
       if (isNaN(t)) {
         return "时间应为数字";
       }
-      timerQueue.push({
-        id: ai.id,
-        messageType: msg.messageType,
-        uid: ctx.player.userId,
-        gid: ctx.group.groupId,
-        epId: ctx.endPoint.userId,
-        timestamp: Math.floor(Date.now() / 1e3) + t * 60,
-        setTime: (/* @__PURE__ */ new Date()).toLocaleString(),
-        content
-      });
-      ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
+      TimerManager.addTimer(ctx, msg, ai, t, content);
       return `设置定时器成功，请等待`;
     };
     ToolManager.toolMap[info.function.name] = tool;
@@ -7422,7 +7618,7 @@ ${attr}: ${value}=>${result}`;
     };
     const tool = new Tool(info);
     tool.solve = async (_, __, ai, ___) => {
-      const timers = timerQueue.filter((t) => t.id === ai.id);
+      const timers = TimerManager.timerQueue.filter((t) => t.id === ai.id);
       if (timers.length === 0) {
         return "当前对话没有定时器";
       }
@@ -7458,7 +7654,7 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
     const tool = new Tool(info);
     tool.solve = async (_, __, ai, args) => {
       const { index_list } = args;
-      const timers = timerQueue.filter((t) => t.id === ai.id);
+      const timers = TimerManager.timerQueue.filter((t) => t.id === ai.id);
       if (timers.length === 0) {
         return "当前对话没有定时器";
       }
@@ -7469,13 +7665,13 @@ ${t.setTime} => ${new Date(t.timestamp * 1e3).toLocaleString()}`;
         if (index < 1 || index > timers.length) {
           return `序号${index}超出范围`;
         }
-        const i = timerQueue.indexOf(timers[index - 1]);
+        const i = TimerManager.timerQueue.indexOf(timers[index - 1]);
         if (i === -1) {
           return `出错了:找不到序号${index}的定时器`;
         }
-        timerQueue.splice(i, 1);
+        TimerManager.timerQueue.splice(i, 1);
       }
-      ConfigManager.ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
+      ConfigManager.ext.storageSet(`TimerMatimerQueue`, JSON.stringify(TimerManager.timerQueue));
       return "定时器取消成功";
     };
     ToolManager.toolMap[info.function.name] = tool;
@@ -7915,7 +8111,7 @@ QQ等级: ${data.qqLevel}
     }
     return s;
   }
-  async function handleReply(ctx, msg, s, context) {
+  async function handleReply(ctx, msg, ai, s) {
     const { replymsg, isTrim } = ConfigManager.reply;
     const segments = s.split(/([<＜][\|│｜]from.+?(?:[\|│｜][>＞]|[\|│｜>＞]))/).filter((item) => item.trim());
     if (segments.length === 0) {
@@ -7926,7 +8122,7 @@ QQ等级: ${data.qqLevel}
       const segment = segments[i];
       const match = segment.match(/[<＜][\|│｜]from[:：]?\s?(.+?)(?:[\|│｜][>＞]|[\|│｜>＞])/);
       if (match) {
-        const uid = await context.findUserId(ctx, match[1]);
+        const uid = await ai.context.findUserId(ctx, match[1]);
         if (uid === ctx.endPoint.userId && i < segments.length - 1) {
           s += segments[i + 1];
         }
@@ -7945,10 +8141,10 @@ QQ等级: ${data.qqLevel}
     const images = [];
     for (let i = 0; i < replyArray.length; i++) {
       let reply = replyArray[i];
-      reply = await replaceMentions(ctx, context, reply);
-      reply = await replacePoke(ctx, context, reply);
+      reply = await replaceMentions(ctx, ai.context, reply);
+      reply = await replacePoke(ctx, ai.context, reply);
       reply = await replaceQuote(reply);
-      const { result, images: replyImages } = await replaceImages(context, reply);
+      const { result, images: replyImages } = await replaceImages(ai.context, ai.imageManager, reply);
       reply = isTrim ? result.trim() : result;
       const prefix = replymsg && msg.rawId && !/^\[CQ:reply,id=-?\d+\]/.test(reply) ? `[CQ:reply,id=${msg.rawId}]` : ``;
       replyArray[i] = prefix + reply;
@@ -8113,19 +8309,21 @@ QQ等级: ${data.qqLevel}
     }
     return reply;
   }
-  async function replaceImages(context, reply) {
+  async function replaceImages(context, im, reply) {
     let result = reply;
     const images = [];
     const match = reply.match(/[<＜][\|│｜]img:.+?(?:[\|│｜][>＞]|[\|│｜>＞])/g);
     if (match) {
       for (let i = 0; i < match.length; i++) {
         const id = match[i].match(/[<＜][\|│｜]img:(.+?)(?:[\|│｜][>＞]|[\|│｜>＞])/)[1];
-        const image = context.findImage(id);
+        const image = context.findImage(id, im);
         if (image) {
-          const file = image.file;
           images.push(image);
-          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(file)) {
-            result = result.replace(match[i], `[CQ:image,file=${file}]`);
+          if (!image.isUrl || image.isUrl && await ImageManager.checkImageUrl(image.file)) {
+            if (image.base64) {
+              image.weight += 1;
+            }
+            result = result.replace(match[i], `[CQ:image,file=${image.file}]`);
             continue;
           }
         }
@@ -8316,7 +8514,7 @@ QQ等级: ${data.qqLevel}
       if (match) {
         for (let i = 0; i < match.length; i++) {
           const id = match[i].match(/[<＜][\|│｜]img:(.+?)(?:[\|│｜][>＞]|[\|│｜>＞])/)[1].trim().slice(0, 6);
-          const image = ai.context.findImage(id);
+          const image = ai.context.findImage(id, ai.imageManager);
           if (image) {
             originalImages.push(image);
           }
@@ -8352,7 +8550,7 @@ QQ等级: ${data.qqLevel}
       }
       ai.resetState();
       await ai.context.addSystemUserMessage("来自其他对话的消息发送提示", `${source}: 原因: ${reason || "无"}`, originalImages);
-      const { contextArray, replyArray, images } = await handleReply(ctx, msg, content, ai.context);
+      const { contextArray, replyArray, images } = await handleReply(ctx, msg, ai, content);
       try {
         for (let i = 0; i < contextArray.length; i++) {
           const s = contextArray[i];
@@ -8414,8 +8612,8 @@ QQ等级: ${data.qqLevel}
           const result2 = await ImageManager.handleImageMessage(ctx, message);
           message = result2.message;
           images = result2.images;
-          if (ai.image.stealStatus) {
-            ai.image.updateImageList(images);
+          if (ai.imageManager.stealStatus) {
+            ai.imageManager.updateStolenImages(images);
           }
         }
         ai.context.messages[ai.context.messages.length - 1].images.push(...images);
@@ -9167,6 +9365,8 @@ QQ等级: ${data.qqLevel}
       registerImageToText();
       registerCheckAvatar();
       registerTextToImage();
+      registerSaveImage();
+      registerDelImage();
       registerGroupSign();
       registerGetPersonInfo();
       registerSendMsg();
@@ -9418,21 +9618,22 @@ QQ等级: ${data.qqLevel}
     const { isTool, usePromptEngineering } = ConfigManager.tool;
     const { localImagePaths, receiveImage, condition } = ConfigManager.image;
     const { isMemory, isShortMemory } = ConfigManager.memory;
-    const localImages = localImagePaths.reduce((acc, path) => {
+    const sandableImagesPrompt = localImagePaths.map((path) => {
       if (path.trim() === "") {
-        return acc;
+        return null;
       }
       try {
         const name = path.split("/").pop().replace(/\.[^/.]+$/, "");
         if (!name) {
           throw new Error(`本地图片路径格式错误:${path}`);
         }
-        acc[name] = path;
+        return name;
       } catch (e) {
         logger.error(e);
       }
-      return acc;
-    }, {});
+      return null;
+    }).filter(Boolean).concat(ai.imageManager.savedImages.map((img) => `${img.id}
+应用场景: ${img.scenes.join("、")}`)).map((prompt, index) => `${index + 1}. ${prompt}`).join("\n");
     let [roleSettingIndex, _] = seal.vars.intGet(ctx, "$gSYSPROMPT");
     if (roleSettingIndex < 0 || roleSettingIndex >= roleSettingTemplate.length) {
       roleSettingIndex = 0;
@@ -9442,8 +9643,8 @@ QQ等级: ${data.qqLevel}
       memoryPrompt = ai.memory.buildMemoryPrompt(ctx, ai.context);
     }
     let shortMemoryPrompt = "";
-    if (isShortMemory) {
-      shortMemoryPrompt = ai.memory.shortMemory.map((item, index) => `${index + 1}. ${item}`).join("\n");
+    if (isShortMemory && ai.memory.useShortMemory) {
+      shortMemoryPrompt = ai.memory.shortMemoryList.map((item, index) => `${index + 1}. ${item}`).join("\n");
     }
     let toolsPrompt = "";
     if (isTool && usePromptEngineering) {
@@ -9462,11 +9663,11 @@ QQ等级: ${data.qqLevel}
       "展示消息ID": showMsgId,
       "接收图片": receiveImage,
       "图片条件不为零": condition !== "0",
-      "本地图片不为空": Object.keys(localImages).length !== 0,
-      "本地图片名称": Object.keys(localImages).join("、"),
+      "可发送图片不为空": sandableImagesPrompt,
+      "可发送图片列表": sandableImagesPrompt,
       "开启长期记忆": isMemory && memoryPrompt,
       "记忆信息": memoryPrompt,
-      "开启短期记忆": isShortMemory && shortMemoryPrompt,
+      "开启短期记忆": isShortMemory && ai.memory.useShortMemory && shortMemoryPrompt,
       "短期记忆信息": shortMemoryPrompt,
       "开启工具函数提示词": isTool && usePromptEngineering,
       "函数列表": toolsPrompt
@@ -9617,7 +9818,7 @@ QQ等级: ${data.qqLevel}
     return bodyObject;
   }
 
-  // src/AI/service.ts
+  // src/service.ts
   async function sendChatRequest(ctx, msg, ai, messages, tool_choice) {
     const { url, apiKey, bodyTemplate } = ConfigManager.request;
     const { isTool, usePromptEngineering } = ConfigManager.tool;
@@ -9919,22 +10120,26 @@ QQ等级: ${data.qqLevel}
   }
 
   // src/AI/image.ts
-  var Image3 = class {
+  var Image = class {
     constructor(file) {
       this.id = generateId();
       this.isUrl = file.startsWith("http");
       this.file = file;
+      this.scenes = [];
+      this.base64 = "";
       this.content = "";
+      this.weight = 1;
     }
   };
   var ImageManager = class _ImageManager {
     constructor() {
-      this.imageList = [];
+      this.stolenImages = [];
+      this.savedImages = [];
       this.stealStatus = false;
     }
     static reviver(value) {
       const im = new _ImageManager();
-      const validKeys = ["imageList", "stealStatus"];
+      const validKeys = ["stolenImages", "savedImages", "stealStatus"];
       for (const k of validKeys) {
         if (value.hasOwnProperty(k)) {
           im[k] = value[k];
@@ -9942,9 +10147,19 @@ QQ等级: ${data.qqLevel}
       }
       return im;
     }
-    updateImageList(images) {
-      const { maxImageNum } = ConfigManager.image;
-      this.imageList = this.imageList.concat(images.filter((item) => item.isUrl)).slice(-maxImageNum);
+    updateStolenImages(images) {
+      const { maxStolenImageNum } = ConfigManager.image;
+      this.stolenImages = this.stolenImages.concat(images.filter((item) => item.isUrl)).slice(-maxStolenImageNum);
+    }
+    updateSavedImages(images) {
+      const { maxSavedImageNum } = ConfigManager.image;
+      this.savedImages = this.savedImages.concat(images.filter((item) => item.isUrl));
+      if (this.savedImages.length > maxSavedImageNum) {
+        this.savedImages = this.savedImages.sort((a, b) => b.weight - a.weight).slice(0, maxSavedImageNum);
+      }
+    }
+    delSavedImage(nameList) {
+      this.savedImages = this.savedImages.filter((img) => !nameList.includes(img.id));
     }
     drawLocalImageFile() {
       const { localImagePaths } = ConfigManager.image;
@@ -9971,17 +10186,23 @@ QQ等级: ${data.qqLevel}
       return localImages[keys[index]];
     }
     async drawStolenImageFile() {
-      if (this.imageList.length == 0) {
+      if (this.stolenImages.length === 0) {
         return "";
       }
-      const index = Math.floor(Math.random() * this.imageList.length);
-      const image = this.imageList.splice(index, 1)[0];
+      const index = Math.floor(Math.random() * this.stolenImages.length);
+      const image = this.stolenImages.splice(index, 1)[0];
       const url = image.file;
       if (!await _ImageManager.checkImageUrl(url)) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         return await this.drawStolenImageFile();
       }
       return url;
+    }
+    drawSavedImageFile() {
+      if (this.savedImages.length === 0) return null;
+      const index = Math.floor(Math.random() * this.savedImages.length);
+      const image = this.savedImages[index];
+      return seal.base64ToImage(image.base64);
     }
     async drawImageFile() {
       const { localImagePaths } = ConfigManager.image;
@@ -10001,20 +10222,16 @@ QQ等级: ${data.qqLevel}
         return acc;
       }, {});
       const values = Object.values(localImages);
-      if (this.imageList.length == 0 && values.length == 0) {
+      if (this.stolenImages.length == 0 && values.length == 0 && this.savedImages.length == 0) {
         return "";
       }
-      const index = Math.floor(Math.random() * (values.length + this.imageList.length));
+      const index = Math.floor(Math.random() * (values.length + this.stolenImages.length + this.savedImages.length));
       if (index < values.length) {
         return values[index];
+      } else if (index < values.length + this.stolenImages.length) {
+        return await this.drawStolenImageFile();
       } else {
-        const image = this.imageList.splice(index - values.length, 1)[0];
-        const url = image.file;
-        if (!await _ImageManager.checkImageUrl(url)) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          return await this.drawImageFile();
-        }
-        return url;
+        return this.drawSavedImageFile();
       }
     }
     /**
@@ -10035,7 +10252,7 @@ QQ等级: ${data.qqLevel}
               message = message.replace(`[CQ:image,file=${file}]`, "");
               continue;
             }
-            const image = new Image3(file);
+            const image = new Image(file);
             message = message.replace(`[CQ:image,file=${file}]`, `<|img:${image.id}|>`);
             if (image.isUrl) {
               const { condition } = ConfigManager.image;
@@ -10294,7 +10511,7 @@ QQ等级: ${data.qqLevel}
       };
       this.messages.push(message);
     }
-    async limitMessages(maxRounds) {
+    limitMessages(maxRounds) {
       const messages = this.messages;
       let round = 0;
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -10443,7 +10660,7 @@ QQ等级: ${data.qqLevel}
       }
       return names;
     }
-    findImage(id) {
+    findImage(id, im) {
       if (/^[0-9a-z]{6}$/.test(id.trim())) {
         const messages = this.messages;
         for (let i = messages.length - 1; i >= 0; i--) {
@@ -10470,7 +10687,13 @@ QQ等级: ${data.qqLevel}
         return acc;
       }, {});
       if (localImages.hasOwnProperty(id)) {
-        return new Image3(localImages[id]);
+        return new Image(localImages[id]);
+      }
+      const savedImage = im.savedImages.find((img) => img.id === id);
+      if (savedImage) {
+        const filePath = seal.base64ToImage(savedImage.base64);
+        savedImage.file = filePath;
+        return savedImage;
       }
       return null;
     }
@@ -10482,11 +10705,12 @@ QQ等级: ${data.qqLevel}
     constructor() {
       this.persona = "无";
       this.memoryMap = {};
-      this.shortMemory = [];
+      this.useShortMemory = false;
+      this.shortMemoryList = [];
     }
     static reviver(value) {
       const memory = new _Memory();
-      const validKeys = ["persona", "memoryMap", "shortMemory"];
+      const validKeys = ["persona", "memoryMap", "useShortMemory", "shortMemory"];
       for (const k in value) {
         if (validKeys.includes(k)) {
           memory[k] = value[k];
@@ -10545,7 +10769,7 @@ QQ等级: ${data.qqLevel}
       this.memoryMap = {};
     }
     clearShortMemory() {
-      this.shortMemory = [];
+      this.shortMemoryList = [];
     }
     limitMemory() {
       const { memoryLimit } = ConfigManager.memory;
@@ -10565,14 +10789,23 @@ QQ等级: ${data.qqLevel}
     }
     limitShortMemory() {
       const { shortMemoryLimit } = ConfigManager.memory;
-      if (this.shortMemory.length > shortMemoryLimit) {
-        this.shortMemory.splice(0, this.shortMemory.length - shortMemoryLimit);
+      if (this.shortMemoryList.length > shortMemoryLimit) {
+        this.shortMemoryList.splice(0, this.shortMemoryList.length - shortMemoryLimit);
       }
     }
     async updateShortMemory(ctx, msg, ai, sumMessages) {
-      const { url, apiKey } = ConfigManager.request;
+      if (!this.useShortMemory) {
+        return;
+      }
+      const { url: chatUrl, apiKey: chatApiKey } = ConfigManager.request;
       const { roleSettingTemplate, isPrefix, showNumber, showMsgId } = ConfigManager.message;
-      const { memoryBodyTemplate, memoryPromptTemplate } = ConfigManager.memory;
+      const { memoryUrl, memoryApiKey, memoryBodyTemplate, memoryPromptTemplate } = ConfigManager.memory;
+      let url = chatUrl;
+      let apiKey = chatApiKey;
+      if (memoryUrl.trim()) {
+        url = memoryUrl;
+        apiKey = memoryApiKey;
+      }
       try {
         let [roleSettingIndex, _] = seal.vars.intGet(ctx, "$gSYSPROMPT");
         if (roleSettingIndex < 0 || roleSettingIndex >= roleSettingTemplate.length) {
@@ -10620,7 +10853,7 @@ QQ等级: ${data.qqLevel}
           const reply = message.content || "";
           logger.info(`响应内容:`, reply, "\nlatency:", Date.now() - time, "ms", "\nfinish_reason:", finish_reason);
           const memoryData = JSON.parse(reply);
-          this.shortMemory.push(memoryData.content);
+          this.shortMemoryList.push(memoryData.content);
           this.limitShortMemory();
           memoryData.memories.forEach((m) => {
             ToolManager.toolMap["add_memory"].solve(ctx, msg, ai, m);
@@ -10738,8 +10971,16 @@ QQ等级: ${data.qqLevel}
     }
   };
 
-  // src/AI/update.ts
+  // src/update.ts
   var updateInfo = {
+    "4.10.1": `
+- 可能修复了非指令无法响应的问题
+- 修复了构建ctx时，isPrivate始终为0的问题
+- 新增保存图片功能
+- 重构了定时任务的执行
+- 新增短期记忆单独控制开启
+- 新增memo status命令
+- 将ai pr命令改为ai status`,
     "4.10.0": `- 新增了全局待机模式配置项
 - 修改了部分正则和部分默认配置项
 - 修复了无法调用内置指令
@@ -10810,14 +11051,14 @@ ${info.join("\n\n")}`);
   }
 
   // src/AI/AI.ts
-  var AI5 = class _AI {
+  var AI6 = class _AI {
     constructor(id) {
       this.id = id;
       this.version = "0.0.0";
       this.context = new Context();
       this.tool = new ToolManager();
       this.memory = new Memory();
-      this.image = new ImageManager();
+      this.imageManager = new ImageManager();
       this.privilege = {
         limit: 100,
         counter: -1,
@@ -10837,7 +11078,7 @@ ${info.join("\n\n")}`);
     }
     static reviver(value, id) {
       const ai = new _AI(id);
-      const validKeys = ["version", "context", "tool", "memory", "image", "privilege"];
+      const validKeys = ["version", "context", "tool", "memory", "imageManager", "privilege"];
       for (const k of validKeys) {
         if (value.hasOwnProperty(k)) {
           ai[k] = value[k];
@@ -10852,7 +11093,20 @@ ${info.join("\n\n")}`);
       this.bucket.count--;
       this.tool.toolCallCount = 0;
     }
-    async chat(ctx, msg) {
+    async handleReceipt(ctx, msg, ai, message, CQTypes) {
+      let images = [];
+      if (CQTypes.includes("image")) {
+        const result = await ImageManager.handleImageMessage(ctx, message);
+        message = result.message;
+        images = result.images;
+        if (ai.imageManager.stealStatus) {
+          ai.imageManager.updateStolenImages(images);
+        }
+      }
+      await ai.context.addMessage(ctx, msg, ai, message, images, "user", transformMsgId(msg.rawId));
+    }
+    async chat(ctx, msg, reason = "") {
+      logger.info("触发回复:", reason || "未知原因");
       const { bucketLimit, fillInterval } = ConfigManager.received;
       if (Date.now() - this.bucket.lastTime > fillInterval * 1e3) {
         const fillCount = (Date.now() - this.bucket.lastTime) / (fillInterval * 1e3);
@@ -10875,6 +11129,7 @@ ${info.join("\n\n")}`);
       }
       if (stream) {
         await this.chatStream(ctx, msg);
+        AIManager.saveAI(this.id);
         return;
       }
       const timeout = setTimeout(() => {
@@ -10889,7 +11144,7 @@ ${info.join("\n\n")}`);
       for (let retry = 1; retry <= MaxRetry; retry++) {
         const messages = handleMessages(ctx, this);
         const raw_reply = await sendChatRequest(ctx, msg, this, messages, "auto");
-        result = await handleReply(ctx, msg, raw_reply, this.context);
+        result = await handleReply(ctx, msg, this, raw_reply);
         if (!checkRepeat(this.context, result.contextArray.join("")) || result.replyArray.join("").trim() === "") {
           break;
         }
@@ -10910,12 +11165,13 @@ ${info.join("\n\n")}`);
       }
       const { p } = ConfigManager.image;
       if (Math.random() * 100 <= p) {
-        const file = await this.image.drawImageFile();
+        const file = await this.imageManager.drawImageFile();
         if (file) {
           seal.replyToSender(ctx, msg, `[CQ:image,file=${file}]`);
         }
       }
       clearTimeout(timeout);
+      AIManager.saveAI(this.id);
     }
     async chatStream(ctx, msg) {
       const { isTool, usePromptEngineering } = ConfigManager.tool;
@@ -10950,7 +11206,7 @@ ${info.join("\n\n")}`);
             logger.info("发现工具调用开始标签，拦截后续内容");
             const match = raw_reply.match(/([\s\S]*)<function(?:_call)?>/);
             if (match && match[1].trim()) {
-              const { contextArray: contextArray2, replyArray: replyArray2, images: images2 } = await handleReply(ctx, msg, match[1], this.context);
+              const { contextArray: contextArray2, replyArray: replyArray2, images: images2 } = await handleReply(ctx, msg, this, match[1]);
               if (this.stream.id !== id) {
                 return;
               }
@@ -10996,7 +11252,7 @@ ${info.join("\n\n")}`);
             }
           }
         }
-        const { contextArray, replyArray, images } = await handleReply(ctx, msg, raw_reply, this.context);
+        const { contextArray, replyArray, images } = await handleReply(ctx, msg, this, raw_reply);
         if (this.stream.id !== id) {
           return;
         }
@@ -11038,11 +11294,11 @@ ${info.join("\n\n")}`);
     }
     static getAI(id) {
       if (!this.cache.hasOwnProperty(id)) {
-        let ai = new AI5(id);
+        let ai = new AI6(id);
         try {
           ai = JSON.parse(ConfigManager.ext.storageGet(`AI_${id}`) || "{}", (key, value) => {
             if (key === "") {
-              return AI5.reviver(value, id);
+              return AI6.reviver(value, id);
             }
             if (key === "context") {
               return Context.reviver(value);
@@ -11053,7 +11309,7 @@ ${info.join("\n\n")}`);
             if (key === "memory") {
               return Memory.reviver(value);
             }
-            if (key === "image") {
+            if (key === "imageManager") {
               return ImageManager.reviver(value);
             }
             return value;
@@ -11167,24 +11423,18 @@ ${info.join("\n\n")}`);
   // src/index.ts
   function main() {
     ConfigManager.registerConfig();
+    checkUpdate();
     AIManager.getUsageMap();
     ToolManager.registerTool();
-    checkUpdate();
+    TimerManager.init();
     const ext = ConfigManager.ext;
-    try {
-      JSON.parse(ext.storageGet(`timerQueue`) || "[]").forEach((item) => {
-        timerQueue.push(item);
-      });
-    } catch (e) {
-      logger.error("在获取timerQueue时出错", e);
-    }
     const cmdAI = seal.ext.newCmdItemInfo();
     cmdAI.name = "ai";
     cmdAI.help = `帮助:
 【.ai st】修改权限(仅骰主可用)
 【.ai ck】检查权限(仅骰主可用)
 【.ai prompt】检查当前prompt(仅骰主可用)
-【.ai pr】查看当前群聊权限
+【.ai status】查看当前AI状态
 【.ai ctxn】查看上下文里的名字
 【.ai on】开启AI
 【.ai sb】开启待机模式，此时AI将记忆聊天内容
@@ -11283,23 +11533,19 @@ ${info.join("\n\n")}`);
             seal.replyToSender(ctx, msg, systemMessage.contentArray[0]);
             return ret;
           }
-          case "pr": {
+          case "status": {
             const pr = ai.privilege;
             if (ctx.privilegeLevel < pr.limit) {
               seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
               return ret;
             }
-            const counter = pr.counter > -1 ? `${pr.counter}条` : "关闭";
-            const timer = pr.timer > -1 ? `${pr.timer}秒` : "关闭";
-            const prob = pr.prob > -1 ? `${pr.prob}%` : "关闭";
-            const standby = pr.standby ? "开启" : "关闭";
-            const s = `${id}
-权限限制:${pr.limit}
-计数器模式(c):${counter}
-计时器模式(t):${timer}
-概率模式(p):${prob}
-待机模式:${standby}`;
-            seal.replyToSender(ctx, msg, s);
+            seal.replyToSender(ctx, msg, `${id}
+权限限制: ${pr.limit}
+上下文轮数: ${ai.context.messages.filter((m) => m.role === "user").length}
+计数器模式(c): ${pr.counter > -1 ? `${pr.counter}条` : "关闭"}
+计时器模式(t): ${pr.timer > -1 ? `${pr.timer}秒` : "关闭"}
+概率模式(p): ${pr.prob > -1 ? `${pr.prob}%` : "关闭"}
+待机模式: ${pr.standby ? "开启" : "关闭"}`);
             return ret;
           }
           case "ctxn": {
@@ -11508,6 +11754,24 @@ ${info.join("\n\n")}`);
             const ai2 = AIManager.getAI(muid);
             const val2 = cmdArgs.getArgN(2);
             switch (val2) {
+              case "status": {
+                let ai3 = ai;
+                if (cmdArgs.at.length > 0 && (cmdArgs.at.length !== 1 || cmdArgs.at[0].userId !== ctx.endPoint.userId)) {
+                  ai3 = ai2;
+                }
+                const { isMemory, isShortMemory } = ConfigManager.memory;
+                const keywords = /* @__PURE__ */ new Set();
+                for (const key in ai3.memory.memoryMap) {
+                  ai3.memory.memoryMap[key].keywords.forEach((kw) => keywords.add(kw));
+                }
+                seal.replyToSender(ctx, msg, `${ai3.id}
+长期记忆开启状态: ${isMemory ? "是" : "否"}
+长期记忆条数: ${Object.keys(ai3.memory.memoryMap).length}
+关键词库: ${Array.from(keywords).join("、") || "无"}
+短期记忆开启状态: ${isShortMemory && ai3.memory.useShortMemory ? "是" : "否"}
+短期记忆条数: ${ai3.memory.shortMemoryList.length}`);
+                return ret;
+              }
               case "p":
               case "private": {
                 const val3 = cmdArgs.getArgN(3);
@@ -11537,11 +11801,6 @@ ${info.join("\n\n")}`);
                       }
                     }
                   }
-                  case "show": {
-                    const s = ai2.memory.buildMemory(true, mctx.player.name, mctx.player.userId, "", "");
-                    seal.replyToSender(ctx, msg, s || "无");
-                    return ret;
-                  }
                   case "del": {
                     const idList = cmdArgs.args.slice(3);
                     const kw = cmdArgs.kwargs.map((item) => item.name);
@@ -11553,6 +11812,11 @@ ${info.join("\n\n")}`);
                     const s = ai2.memory.buildMemory(true, mctx.player.name, mctx.player.userId, "", "");
                     seal.replyToSender(ctx, msg, s || "无");
                     AIManager.saveAI(muid);
+                    return ret;
+                  }
+                  case "show": {
+                    const s = ai2.memory.buildMemory(true, mctx.player.name, mctx.player.userId, "", "");
+                    seal.replyToSender(ctx, msg, s || "无");
                     return ret;
                   }
                   case "clr": {
@@ -11605,11 +11869,6 @@ ${info.join("\n\n")}`);
                       }
                     }
                   }
-                  case "show": {
-                    const s = ai.memory.buildMemory(false, "", "", ctx.group.groupName, ctx.group.groupId);
-                    seal.replyToSender(ctx, msg, s || "无");
-                    return ret;
-                  }
                   case "del": {
                     const idList = cmdArgs.args.slice(3);
                     const kw = cmdArgs.kwargs.map((item) => item.name);
@@ -11621,6 +11880,11 @@ ${info.join("\n\n")}`);
                     const s = ai.memory.buildMemory(false, "", "", ctx.group.groupName, ctx.group.groupId);
                     seal.replyToSender(ctx, msg, s || "无");
                     AIManager.saveAI(id);
+                    return ret;
+                  }
+                  case "show": {
+                    const s = ai.memory.buildMemory(false, "", "", ctx.group.groupName, ctx.group.groupId);
+                    seal.replyToSender(ctx, msg, s || "无");
                     return ret;
                   }
                   case "clr": {
@@ -11639,14 +11903,26 @@ ${info.join("\n\n")}`);
               case "short": {
                 const val3 = cmdArgs.getArgN(3);
                 switch (val3) {
+                  case "on": {
+                    ai.memory.useShortMemory = true;
+                    seal.replyToSender(ctx, msg, "短期记忆已开启");
+                    AIManager.saveAI(id);
+                    return ret;
+                  }
+                  case "off": {
+                    ai.memory.useShortMemory = false;
+                    seal.replyToSender(ctx, msg, "短期记忆已关闭");
+                    AIManager.saveAI(id);
+                    return ret;
+                  }
                   case "show": {
-                    const s = ai.memory.shortMemory.map((item, index) => `${index + 1}. ${item}`).join("\n");
+                    const s = ai.memory.shortMemoryList.map((item, index) => `${index + 1}. ${item}`).join("\n");
                     seal.replyToSender(ctx, msg, s || "无");
                     return ret;
                   }
                   case "clr": {
                     ai.memory.clearShortMemory();
-                    seal.replyToSender(ctx, msg, "群聊记忆已清除");
+                    seal.replyToSender(ctx, msg, "短期记忆已清除");
                     AIManager.saveAI(id);
                     return ret;
                   }
@@ -11660,21 +11936,21 @@ ${info.join("\n\n")}`);
                 const { shortMemorySummaryRound } = ConfigManager.memory;
                 ai.context.summaryCounter = 0;
                 ai.memory.updateShortMemory(ctx, msg, ai, ai.context.messages.slice(0, shortMemorySummaryRound)).then(() => {
-                  const s = ai.memory.shortMemory.map((item, index) => `${index + 1}. ${item}`).join("\n");
+                  const s = ai.memory.shortMemoryList.map((item, index) => `${index + 1}. ${item}`).join("\n");
                   seal.replyToSender(ctx, msg, s || "无");
                 });
                 return ret;
               }
               default: {
                 seal.replyToSender(ctx, msg, `帮助:
+【.ai memo status (@xxx)】查看记忆状态，@为查看个人记忆状态
 【.ai memo [p/g] st <内容>】设置个人/群聊设定
 【.ai memo [p/g] st clr】清除个人/群聊设定
-【.ai memo [p/g] show】展示个人/群聊记忆
 【.ai memo [p/g] del <ID1> <ID2> --关键词1 --关键词2】删除个人/群聊记忆
-【.ai memo [p/g] clr】清除个人/群聊记忆
-【.ai memo s show】展示短期记忆
-【.ai memo s clr】清除短期记忆
-【.ai memo sum】总结短期记忆`);
+【.ai memo [p/g/s] show】展示个人/群聊/短期记忆
+【.ai memo [p/g/s] clr】清除个人/群聊/短期记忆
+【.ai memo s [on/off]】开启/关闭短期记忆
+【.ai memo sum】立即总结一次短期记忆`);
                 return ret;
               }
             }
@@ -11788,9 +12064,7 @@ ${Object.keys(tool.info.function.parameters.properties).map((key) => {
                       return ret;
                     }
                   }
-                  tool.solve(ctx, msg, ai, args).then((s) => {
-                    seal.replyToSender(ctx, msg, s);
-                  });
+                  tool.solve(ctx, msg, ai, args).then((s) => seal.replyToSender(ctx, msg, s));
                   return ret;
                 } catch (e) {
                   const s = `调用函数 (${val2}) 失败:${e.message}`;
@@ -11939,13 +12213,7 @@ ${s}`);
                 }
                 const val3 = cmdArgs.getArgN(3);
                 if (val3 === "chart") {
-                  get_chart_url("year", obj).then((url) => {
-                    if (!url) {
-                      seal.replyToSender(ctx, msg, `图表生成失败`);
-                      return;
-                    }
-                    seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
-                  });
+                  get_chart_url("year", obj).then((url) => seal.replyToSender(ctx, msg, url ? `[CQ:image,file=${url}]` : "图表生成失败"));
                   return ret;
                 }
                 const keys = Object.keys(obj).sort((a, b) => {
@@ -11999,13 +12267,7 @@ ${s}`);
                 }
                 const val3 = cmdArgs.getArgN(3);
                 if (val3 === "chart") {
-                  get_chart_url("month", obj).then((url) => {
-                    if (!url) {
-                      seal.replyToSender(ctx, msg, `图表生成失败`);
-                      return;
-                    }
-                    seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
-                  });
+                  get_chart_url("month", obj).then((url) => seal.replyToSender(ctx, msg, url ? `[CQ:image,file=${url}]` : "图表生成失败"));
                   return ret;
                 }
                 const keys = Object.keys(obj).sort((a, b) => {
@@ -12090,13 +12352,7 @@ ${s}`);
                     }
                     const val4 = cmdArgs.getArgN(4);
                     if (val4 === "chart") {
-                      get_chart_url("year", obj).then((url) => {
-                        if (!url) {
-                          seal.replyToSender(ctx, msg, `图表生成失败`);
-                          return;
-                        }
-                        seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
-                      });
+                      get_chart_url("year", obj).then((url) => seal.replyToSender(ctx, msg, url ? `[CQ:image,file=${url}]` : "图表生成失败"));
                       return ret;
                     }
                     const keys = Object.keys(obj).sort((a, b) => {
@@ -12149,13 +12405,7 @@ ${s}`);
                     }
                     const val4 = cmdArgs.getArgN(4);
                     if (val4 === "chart") {
-                      get_chart_url("month", obj).then((url) => {
-                        if (!url) {
-                          seal.replyToSender(ctx, msg, `图表生成失败`);
-                          return;
-                        }
-                        seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]`);
-                      });
+                      get_chart_url("month", obj).then((url) => seal.replyToSender(ctx, msg, url ? `[CQ:image,file=${url}]` : "图表生成失败"));
                       return ret;
                     }
                     const keys = Object.keys(obj).sort((a, b) => {
@@ -12203,9 +12453,7 @@ ${s}`);
               seal.replyToSender(ctx, msg, "当前没有正在进行的对话");
               return ret;
             }
-            ai.stopCurrentChatStream().then(() => {
-              seal.replyToSender(ctx, msg, "已停止当前对话");
-            });
+            ai.stopCurrentChatStream().then(() => seal.replyToSender(ctx, msg, "已停止当前对话"));
             return ret;
           }
           default: {
@@ -12222,10 +12470,12 @@ ${s}`);
     const cmdImage = seal.ext.newCmdItemInfo();
     cmdImage.name = "img";
     cmdImage.help = `盗图指南:
-【img draw [stl/lcl/all]】随机抽取偷的图片/本地图片/全部
-【img stl (on/off)】偷图 开启/关闭
-【img f】遗忘
-【img itt [图片/ran] (附加提示词)】图片转文字`;
+【.img draw [stl/lcl/save/all]】随机抽取偷的图片/本地图片/保存的图片/全部
+【.img stl [on/off]】偷图 开启/关闭
+【.img f [stl/save/all]】遗忘偷的图片/保存的图片/全部
+【.img itt [图片/ran] (附加提示词)】图片转文字
+【.img list [show/send]】展示保存的图片列表/展示并发送所有保存的图片
+【.img del <图片名称1> <图片名称2> ...】删除指定名称的保存图片`;
     cmdImage.solve = (ctx, msg, cmdArgs) => {
       try {
         const val = cmdArgs.getArgN(1);
@@ -12240,33 +12490,29 @@ ${s}`);
             switch (type) {
               case "lcl":
               case "local": {
-                const image = ai.image.drawLocalImageFile();
-                if (!image) {
+                const file = ai.imageManager.drawLocalImageFile();
+                if (!file) {
                   seal.replyToSender(ctx, msg, "暂无本地图片");
                   return ret;
                 }
-                seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
+                seal.replyToSender(ctx, msg, `[CQ:image,file=${file}]`);
                 return ret;
               }
               case "stl":
               case "stolen": {
-                ai.image.drawStolenImageFile().then((image) => {
-                  if (!image) {
-                    seal.replyToSender(ctx, msg, "暂无偷取图片");
-                  } else {
-                    seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
-                  }
-                });
+                ai.imageManager.drawStolenImageFile().then((file) => seal.replyToSender(ctx, msg, file ? `[CQ:image,file=${file}]` : "暂无偷取图片"));
+                return ret;
+              }
+              case "save": {
+                const file = ai.imageManager.drawSavedImageFile();
+                if (!file) {
+                  seal.replyToSender(ctx, msg, "暂无保存的表情包图片");
+                }
+                seal.replyToSender(ctx, msg, `[CQ:image,file=${file}]`);
                 return ret;
               }
               case "all": {
-                ai.image.drawImageFile().then((image) => {
-                  if (!image) {
-                    seal.replyToSender(ctx, msg, "暂无图片");
-                  } else {
-                    seal.replyToSender(ctx, msg, `[CQ:image,file=${image}]`);
-                  }
-                });
+                ai.imageManager.drawImageFile().then((file) => seal.replyToSender(ctx, msg, file ? `[CQ:image,file=${file}]` : "暂无图片"));
                 return ret;
               }
               default: {
@@ -12280,19 +12526,19 @@ ${s}`);
             const op = cmdArgs.getArgN(2);
             switch (op) {
               case "on": {
-                ai.image.stealStatus = true;
-                seal.replyToSender(ctx, msg, `图片偷取已开启,当前偷取数量:${ai.image.imageList.length}`);
+                ai.imageManager.stealStatus = true;
+                seal.replyToSender(ctx, msg, `图片偷取已开启,当前偷取数量:${ai.imageManager.stolenImages.filter((img) => img.isUrl).length}`);
                 AIManager.saveAI(id);
                 return ret;
               }
               case "off": {
-                ai.image.stealStatus = false;
-                seal.replyToSender(ctx, msg, `图片偷取已关闭,当前偷取数量:${ai.image.imageList.length}`);
+                ai.imageManager.stealStatus = false;
+                seal.replyToSender(ctx, msg, `图片偷取已关闭,当前偷取数量:${ai.imageManager.stolenImages.filter((img) => img.isUrl).length}`);
                 AIManager.saveAI(id);
                 return ret;
               }
               default: {
-                seal.replyToSender(ctx, msg, `图片偷取状态:${ai.image.stealStatus},当前偷取数量:${ai.image.imageList.length}`);
+                seal.replyToSender(ctx, msg, `图片偷取状态:${ai.imageManager.stealStatus},当前偷取数量:${ai.imageManager.stolenImages.filter((img) => img.isUrl).length}`);
                 return ret;
               }
             }
@@ -12300,28 +12546,49 @@ ${s}`);
           case "f":
           case "fgt":
           case "forget": {
-            ai.image.imageList = [];
-            seal.replyToSender(ctx, msg, "图片已遗忘");
-            AIManager.saveAI(id);
-            return ret;
+            const type = cmdArgs.getArgN(2);
+            switch (type) {
+              case "stl":
+              case "stolen": {
+                ai.imageManager.stolenImages = [];
+                seal.replyToSender(ctx, msg, "偷取图片已遗忘");
+                AIManager.saveAI(id);
+                return ret;
+              }
+              case "save": {
+                ai.imageManager.savedImages = [];
+                seal.replyToSender(ctx, msg, "保存图片已遗忘");
+                AIManager.saveAI(id);
+                return ret;
+              }
+              case "all": {
+                ai.imageManager.stolenImages = [];
+                ai.imageManager.savedImages = [];
+                seal.replyToSender(ctx, msg, "所有图片已遗忘");
+                AIManager.saveAI(id);
+                return ret;
+              }
+              default: {
+                ret.showHelp = true;
+                return ret;
+              }
+            }
           }
           case "itt": {
             const val2 = cmdArgs.getArgN(2);
             if (!val2) {
-              seal.replyToSender(ctx, msg, "【img itt [图片/ran] (附加提示词)】图片转文字");
+              seal.replyToSender(ctx, msg, "【.img itt [图片/ran] (附加提示词)】图片转文字");
               return ret;
             }
             if (val2 == "ran") {
-              ai.image.drawStolenImageFile().then((url) => {
+              ai.imageManager.drawStolenImageFile().then((url) => {
                 if (!url) {
                   seal.replyToSender(ctx, msg, "图片偷取为空");
-                } else {
-                  const text = cmdArgs.getRestArgsFrom(3);
-                  ImageManager.imageToText(url, text).then((s) => {
-                    seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
-` + s);
-                  });
+                  return;
                 }
+                const text = cmdArgs.getRestArgsFrom(3);
+                ImageManager.imageToText(url, text).then((s) => seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
+` + s));
               });
             } else {
               const match = val2.match(/\[CQ:image,file=(.*?)\]/);
@@ -12331,11 +12598,55 @@ ${s}`);
               }
               const url = match[1];
               const text = cmdArgs.getRestArgsFrom(3);
-              ImageManager.imageToText(url, text).then((s) => {
-                seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
-` + s);
-              });
+              ImageManager.imageToText(url, text).then((s) => seal.replyToSender(ctx, msg, `[CQ:image,file=${url}]
+` + s));
             }
+            return ret;
+          }
+          case "list": {
+            const type = cmdArgs.getArgN(2);
+            switch (type) {
+              case "show": {
+                if (ai.imageManager.savedImages.length === 0) {
+                  seal.replyToSender(ctx, msg, "暂无保存的图片");
+                  return ret;
+                }
+                const imageList = ai.imageManager.savedImages.map((img, index) => `${index + 1}. 名称: ${img.id}
+应用场景: ${img.scenes.join("、") || "无"}
+权重: ${img.weight}`).join("\n");
+                seal.replyToSender(ctx, msg, `保存的图片列表:
+${imageList}`);
+                return ret;
+              }
+              case "send": {
+                if (ai.imageManager.savedImages.length === 0) {
+                  seal.replyToSender(ctx, msg, "暂无保存的图片");
+                  return ret;
+                }
+                const imageList = ai.imageManager.savedImages.map((img, index) => {
+                  return `${index + 1}. 名称: ${img.id}
+应用场景: ${img.scenes.join("、") || "无"}
+权重: ${img.weight}
+[CQ:image,file=${seal.base64ToImage(img.base64)}]`;
+                }).join("\n\n");
+                seal.replyToSender(ctx, msg, `保存的图片列表:
+${imageList}`);
+                return ret;
+              }
+              default: {
+                seal.replyToSender(ctx, msg, "参数缺失，【.img list show】展示保存的图片列表，【.img list send】展示并发送所有保存的图片");
+                return ret;
+              }
+            }
+          }
+          case "del": {
+            const nameList = cmdArgs.args.slice(1);
+            if (nameList.length === 0) {
+              seal.replyToSender(ctx, msg, "参数缺失，【.img del <图片名称1> <图片名称2> ...】删除指定名称的保存图片");
+              return ret;
+            }
+            ai.imageManager.delSavedImage(nameList);
+            seal.replyToSender(ctx, msg, `已删除图片`);
             return ret;
           }
           default: {
@@ -12352,7 +12663,7 @@ ${s}`);
     ext.cmdMap["AI"] = cmdAI;
     ext.cmdMap["ai"] = cmdAI;
     ext.cmdMap["img"] = cmdImage;
-    ext.onNotCommandReceived = async (ctx, msg) => {
+    ext.onNotCommandReceived = (ctx, msg) => {
       try {
         const { disabledInPrivate, globalStandby, triggerRegexes, ignoreRegexes, triggerCondition } = ConfigManager.received;
         if (ctx.isPrivate && disabledInPrivate) {
@@ -12362,7 +12673,6 @@ ${s}`);
         const groupId = ctx.group.groupId;
         const id = ctx.isPrivate ? userId : groupId;
         let message = msg.message;
-        let images = [];
         const ai = AIManager.getAI(id);
         const ignoreRegex = ignoreRegexes.join("|");
         if (ignoreRegex) {
@@ -12392,19 +12702,7 @@ ${s}`);
             if (pattern && pattern.test(message)) {
               const fmtCondition = parseInt(seal.format(ctx, `{${triggerCondition}}`));
               if (fmtCondition === 1) {
-                if (CQTypes.includes("image")) {
-                  const result = await ImageManager.handleImageMessage(ctx, message);
-                  message = result.message;
-                  images = result.images;
-                  if (ai.image.stealStatus) {
-                    ai.image.updateImageList(images);
-                  }
-                }
-                await ai.context.addMessage(ctx, msg, ai, message, images, "user", transformMsgId(msg.rawId));
-                logger.info("非指令触发回复");
-                await ai.chat(ctx, msg);
-                AIManager.saveAI(id);
-                return;
+                return ai.handleReceipt(ctx, msg, ai, message, CQTypes).then(() => ai.chat(ctx, msg, "非指令"));
               }
             }
           }
@@ -12417,68 +12715,39 @@ ${s}`);
               if (condition.uid && condition.uid !== userId) {
                 continue;
               }
-              if (CQTypes.includes("image")) {
-                const result = await ImageManager.handleImageMessage(ctx, message);
-                message = result.message;
-                images = result.images;
-                if (ai.image.stealStatus) {
-                  ai.image.updateImageList(images);
-                }
-              }
-              await ai.context.addMessage(ctx, msg, ai, message, images, "user", transformMsgId(msg.rawId));
-              await ai.context.addSystemUserMessage("触发原因提示", condition.reason, []);
-              triggerConditionMap[id].splice(i, 1);
-              logger.info("AI设定触发条件触发回复");
-              await ai.chat(ctx, msg);
-              AIManager.saveAI(id);
-              return;
+              return ai.handleReceipt(ctx, msg, ai, message, CQTypes).then(() => ai.context.addSystemUserMessage("触发原因提示", condition.reason, [])).then(() => triggerConditionMap[id].splice(i, 1)).then(() => ai.chat(ctx, msg, "AI设定触发条件"));
             }
           }
           const pr = ai.privilege;
           if (pr.standby || globalStandby) {
-            if (CQTypes.includes("image")) {
-              const result = await ImageManager.handleImageMessage(ctx, message);
-              message = result.message;
-              images = result.images;
-              if (ai.image.stealStatus) {
-                ai.image.updateImageList(images);
+            ai.handleReceipt(ctx, msg, ai, message, CQTypes).then(() => {
+              if (pr.counter > -1) {
+                ai.context.counter += 1;
+                if (ai.context.counter >= pr.counter) {
+                  ai.context.counter = 0;
+                  return ai.chat(ctx, msg, "计数器");
+                }
               }
-            }
-            await ai.context.addMessage(ctx, msg, ai, message, images, "user", transformMsgId(msg.rawId));
-          }
-          if (pr.counter > -1) {
-            ai.context.counter += 1;
-            if (ai.context.counter >= pr.counter) {
-              ai.context.counter = 0;
-              logger.info("计数器触发回复");
-              await ai.chat(ctx, msg);
-              AIManager.saveAI(id);
-              return;
-            }
-          }
-          if (pr.prob > -1) {
-            const ran = Math.random() * 100;
-            if (ran <= pr.prob) {
-              logger.info("概率触发回复");
-              await ai.chat(ctx, msg);
-              AIManager.saveAI(id);
-              return;
-            }
-          }
-          if (pr.timer > -1) {
-            ai.context.timer = setTimeout(async () => {
-              ai.context.timer = null;
-              logger.info("计时器触发回复");
-              await ai.chat(ctx, msg);
-              AIManager.saveAI(id);
-            }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
+              if (pr.prob > -1) {
+                const ran = Math.random() * 100;
+                if (ran <= pr.prob) {
+                  return ai.chat(ctx, msg, "概率");
+                }
+              }
+              if (pr.timer > -1) {
+                ai.context.timer = setTimeout(() => {
+                  ai.context.timer = null;
+                  ai.chat(ctx, msg, "计时器");
+                }, pr.timer * 1e3 + Math.floor(Math.random() * 500));
+              }
+            });
           }
         }
       } catch (e) {
         logger.error(`非指令消息处理出错，错误信息:${e.message}`);
       }
     };
-    ext.onCommandReceived = async (ctx, msg, cmdArgs) => {
+    ext.onCommandReceived = (ctx, msg, cmdArgs) => {
       try {
         if (ToolManager.cmdArgs === null) {
           ToolManager.cmdArgs = cmdArgs;
@@ -12490,20 +12759,11 @@ ${s}`);
           const id = ctx.isPrivate ? uid : gid;
           const ai = AIManager.getAI(id);
           let message = msg.message;
-          let images = [];
           const CQTypes = transformTextToArray(message).filter((item) => item.type !== "text").map((item) => item.type);
           if (CQTypes.length === 0 || CQTypes.every((item) => CQTYPESALLOW.includes(item))) {
             const pr = ai.privilege;
             if (pr.standby) {
-              if (CQTypes.includes("image")) {
-                const result = await ImageManager.handleImageMessage(ctx, message);
-                message = result.message;
-                images = result.images;
-                if (ai.image.stealStatus) {
-                  ai.image.updateImageList(images);
-                }
-              }
-              await ai.context.addMessage(ctx, msg, ai, message, images, "user", transformMsgId(msg.rawId));
+              ai.handleReceipt(ctx, msg, ai, message, CQTypes);
             }
           }
         }
@@ -12511,7 +12771,7 @@ ${s}`);
         logger.error(`指令消息处理出错，错误信息:${e.message}`);
       }
     };
-    ext.onMessageSend = async (ctx, msg) => {
+    ext.onMessageSend = (ctx, msg) => {
       var _a, _b;
       try {
         const uid = ctx.player.userId;
@@ -12519,7 +12779,6 @@ ${s}`);
         const id = ctx.isPrivate ? uid : gid;
         const ai = AIManager.getAI(id);
         let message = msg.message;
-        let images = [];
         (_b = (_a = ai.tool.listen).resolve) == null ? void 0 : _b.call(_a, message);
         const { allmsg } = ConfigManager.received;
         if (allmsg) {
@@ -12531,16 +12790,7 @@ ${s}`);
           if (CQTypes.length === 0 || CQTypes.every((item) => CQTYPESALLOW.includes(item))) {
             const pr = ai.privilege;
             if (pr.standby) {
-              if (CQTypes.includes("image")) {
-                const result = await ImageManager.handleImageMessage(ctx, message);
-                message = result.message;
-                images = result.images;
-                if (ai.image.stealStatus) {
-                  ai.image.updateImageList(images);
-                }
-              }
-              await ai.context.addMessage(ctx, msg, ai, message, images, "assistant", transformMsgId(msg.rawId));
-              return;
+              ai.handleReceipt(ctx, msg, ai, message, CQTypes);
             }
           }
         }
@@ -12548,54 +12798,6 @@ ${s}`);
         logger.error(`获取发送消息处理出错，错误信息:${e.message}`);
       }
     };
-    let isTaskRunning = false;
-    seal.ext.registerTask(ext, "cron", "* * * * *", async () => {
-      try {
-        if (timerQueue.length === 0) {
-          return;
-        }
-        if (isTaskRunning) {
-          logger.info("定时器任务正在运行，跳过");
-          return;
-        }
-        isTaskRunning = true;
-        let changed = false;
-        for (let i = 0; i < timerQueue.length && i >= 0; i++) {
-          const timestamp = timerQueue[i].timestamp;
-          if (timestamp > Math.floor(Date.now() / 1e3)) {
-            continue;
-          }
-          const setTime = timerQueue[i].setTime;
-          const content = timerQueue[i].content;
-          const id = timerQueue[i].id;
-          const messageType = timerQueue[i].messageType;
-          const uid = timerQueue[i].uid;
-          const gid = timerQueue[i].gid;
-          const epId = timerQueue[i].epId;
-          const msg = createMsg(messageType, uid, gid);
-          const ctx = createCtx(epId, msg);
-          const ai = AIManager.getAI(id);
-          const s = `你设置的定时器触发了，请按照以下内容发送回复：
-定时器设定时间：${setTime}
-当前触发时间：${(/* @__PURE__ */ new Date()).toLocaleString()}
-提示内容：${content}`;
-          await ai.context.addSystemUserMessage("定时器触发提示", s, []);
-          logger.info("定时任务触发回复");
-          await ai.chat(ctx, msg);
-          AIManager.saveAI(id);
-          timerQueue.splice(i, 1);
-          i--;
-          changed = true;
-          await new Promise((resolve) => setTimeout(resolve, 2e3));
-        }
-        if (changed) {
-          ext.storageSet(`timerQueue`, JSON.stringify(timerQueue));
-        }
-        isTaskRunning = false;
-      } catch (e) {
-        logger.error(`定时任务处理出错，错误信息:${e.message}`);
-      }
-    });
   }
   main();
 })();
