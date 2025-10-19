@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI骰娘4
 // @author       错误、白鱼
-// @version      4.11.0
+// @version      4.11.1
 // @description  适用于大部分OpenAI API兼容格式AI的模型插件，测试环境为 Deepseek AI (https://platform.deepseek.com/)，用于与 AI 进行对话，并根据特定关键词触发回复。使用.ai help查看使用方法。具体配置查看插件配置项。\nopenai标准下的function calling功能已进行适配，选用模型若不支持该功能，可以开启迁移到提示词工程的开关，即可使用调用函数功能。\n交流答疑QQ群：143412516
 // @timestamp    1733387279
 // 2024-12-05 16:27:59
@@ -6195,7 +6195,7 @@
   };
 
   // src/config/config.ts
-  var VERSION = "4.11.0";
+  var VERSION = "4.11.1";
   var AUTHOR = "baiyu&错误";
   var NAME = "aiplugin4";
   var CQTYPESALLOW = ["at", "image", "reply", "face", "poke"];
@@ -6499,7 +6499,19 @@ ${attr}: ${value}=>${result}`, images: [] };
         return "";
       }
       try {
-        const messageArray = transformTextToArray(s);
+        const rawMessageArray = transformTextToArray(s);
+        const messageArray = rawMessageArray.filter((item) => item.type !== "poke");
+        const pokeMsgArr = rawMessageArray.filter((item) => item.type === "poke");
+        if (pokeMsgArr.length > 0) {
+          pokeMsgArr.forEach((item) => {
+            const s2 = `[CQ:poke,qq=${item.data.qq}]`;
+            ai.context.lastReply = s2;
+            seal.replyToSender(ctx, msg, s2);
+          });
+        }
+        if (messageArray.length === 0) {
+          return "";
+        }
         const epId = ctx.endPoint.userId;
         const group_id = ctx.group.groupId.replace(/^.+:/, "");
         const user_id = ctx.player.userId.replace(/^.+:/, "");
@@ -11439,6 +11451,7 @@ QQ等级: ${data.qqLevel}
 
   // src/update.ts
   var updateInfo = {
+    "4.11.1": `- 修复了戳戳、权限检查、权限设置、帮助文本等相关问题`,
     "4.11.0": `- 新增请求超时相关
 - 修复addMemory时，keywords可以为null的问题
 - 新增表情包制作工具
@@ -12012,7 +12025,8 @@ ${info.join("\n\n")}`);
                   cmd: ["st"],
                   priv: [0, 0, 0],
                   args: [
-                    { cmd: ["clr"], priv: [0, 0, 0] }
+                    { cmd: ["clr"], priv: [0, 0, 0] },
+                    { cmd: ["*"], priv: [0, 0, 0] }
                   ]
                 },
                 { cmd: ["del"], priv: [0, 0, 0] },
@@ -12028,7 +12042,8 @@ ${info.join("\n\n")}`);
                   cmd: ["st"],
                   priv: [0, 0, 0],
                   args: [
-                    { cmd: ["clr"], priv: [0, 0, 0] }
+                    { cmd: ["clr"], priv: [0, 0, 0] },
+                    { cmd: ["*"], priv: [0, 0, 0] }
                   ]
                 },
                 { cmd: ["del"], priv: [0, 0, 0] },
@@ -12203,7 +12218,7 @@ ${info.join("\n\n")}`);
       if (!cpi) {
         return null;
       }
-      if (cpi.args) {
+      if (cpi.args && cmdChain.length > 1) {
         return this.getCmdPriv(cmdChain.slice(1), cpi.args);
       }
       return cpi;
@@ -12285,10 +12300,10 @@ ${info.join("\n\n")}`);
                 const val3 = cmdArgs.getArgN(3);
                 switch (val3) {
                   case "st": {
-                    const val32 = cmdArgs.getArgN(3);
-                    if (!val32 || val32 == "help") {
+                    const val4 = cmdArgs.getArgN(4);
+                    if (!val4 || val4 == "help") {
                       seal.replyToSender(ctx, msg, `帮助:
-【.ai s st <ID> <会话权限>】修改会话权限
+【.ai priv s st <ID> <会话权限>】修改会话权限
 
 <ID>:
 【QQ:1234567890】 私聊窗口
@@ -12298,13 +12313,13 @@ ${info.join("\n\n")}`);
 <会话权限>:任意数字，越大权限越高`);
                       return ret;
                     }
-                    const val4 = cmdArgs.getArgN(4);
-                    const limit = parseInt(val4);
+                    const val5 = cmdArgs.getArgN(5);
+                    const limit = parseInt(val5);
                     if (isNaN(limit)) {
                       seal.replyToSender(ctx, msg, "权限值必须为数字");
                       return ret;
                     }
-                    const id2 = val32 === "now" ? id : val32;
+                    const id2 = val4 === "now" ? id : val4;
                     const ai2 = AIManager.getAI(id2);
                     ai2.setting.priv = limit;
                     seal.replyToSender(ctx, msg, "权限修改完成");
@@ -12312,10 +12327,10 @@ ${info.join("\n\n")}`);
                     return ret;
                   }
                   case "ck": {
-                    const val32 = cmdArgs.getArgN(3);
-                    if (!val32 || val32 == "help") {
+                    const val4 = cmdArgs.getArgN(4);
+                    if (!val4 || val4 == "help") {
                       seal.replyToSender(ctx, msg, `帮助:
-【.ai s ck <ID>】检查会话权限
+【.ai priv s ck <ID>】检查会话权限
 
 <ID>:
 【QQ:1234567890】 私聊窗口
@@ -12323,7 +12338,7 @@ ${info.join("\n\n")}`);
 【now】当前窗口`);
                       return ret;
                     }
-                    const id2 = val32 === "now" ? id : val32;
+                    const id2 = val4 === "now" ? id : val4;
                     const ai2 = AIManager.getAI(id2);
                     const setting = ai2.setting;
                     const counter = setting.counter > -1 ? `${setting.counter}条` : "关闭";
@@ -12341,8 +12356,8 @@ ${info.join("\n\n")}`);
                   }
                   default: {
                     seal.replyToSender(ctx, msg, `帮助:
-【.ai s st <ID> <会话权限>】修改会话权限
-【.ai s ck <ID>】检查会话权限
+【.ai priv s st <ID> <会话权限>】修改会话权限
+【.ai priv s ck <ID>】检查会话权限
 
 <ID>:
 【QQ:1234567890】 私聊窗口
@@ -12358,7 +12373,7 @@ ${info.join("\n\n")}`);
                 const val3 = cmdArgs.getArgN(3);
                 if (!val3 || val3 == "help") {
                   seal.replyToSender(ctx, msg, `帮助:
-【.ai st <指令> <权限限制>】修改指令权限
+【.ai priv st <指令> <权限限制>】修改指令权限
 
 <指令>:指令名称和参数，多个指令用-连接，如ai-sb
 <权限限制>:数字0-数字1-数字2，如0-0-0，含义如下:
@@ -12403,7 +12418,7 @@ ${info.join("\n\n")}`);
                 const val3 = cmdArgs.getArgN(3);
                 if (!val3 || val3 == "help") {
                   seal.replyToSender(ctx, msg, `帮助:
-【.ai s show <指令>】检查指令权限
+【.ai priv show <指令>】检查指令权限
 
 <指令>:指令名称和参数，多个指令用-连接，如ai-sb`);
                   return ret;
@@ -12424,11 +12439,11 @@ ${info.join("\n\n")}`);
               }
               default: {
                 seal.replyToSender(ctx, msg, `帮助:
-【.ai s st <ID> <会话权限>】修改会话权限
-【.ai s ck <ID>】检查会话权限
-【.ai st <指令> <权限限制>】修改指令权限
-【.ai show <指令>】检查指令权限
-【.ai reset】重置指令权限
+【.ai priv s st <ID> <会话权限>】修改会话权限
+【.ai priv s ck <ID>】检查会话权限
+【.ai priv st <指令> <权限限制>】修改指令权限
+【.ai priv show <指令>】检查指令权限
+【.ai priv reset】重置指令权限
 
 <ID>:
 【QQ:1234567890】 私聊窗口
