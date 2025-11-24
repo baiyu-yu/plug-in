@@ -95,7 +95,7 @@ function AIPlugin:chat(text, ctx, msg)
 
   -- 检查请求是否出错
   if not err then
-    log("HTTP请求出错：" .. tostring(err))
+    log("HTTP请求出错：" .. tostring(response))
     return
   end
 

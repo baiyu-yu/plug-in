@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         群管理和名片点赞http版
 // @author       白鱼（and 星辰）
-// @version      1.1.0
+// @version      1.1.1
 // @description  群管理和名片点赞这些onebot部分功能实现，需要配置http客户端，在插件设置修改http地址。适用Lagrange，nc和llonebot，内置客户端不可用，是在星尘佬群公告插件的基础上改的，将星辰佬原有的群公告发布部分也合并加入了。使用.群管帮助查看所有命令。
 // @timestamp    1717406830
 // @license      MIT
@@ -15,6 +15,7 @@ if (!seal.ext.find("GroupManagement")) {
   // 注册扩展
   seal.ext.register(ext);
   seal.ext.registerStringConfig(ext, "http地址", "http://127.0.0.1:8096");
+  let whiteList = 0;
 
   const cmdHelp = seal.ext.newCmdItemInfo();
   cmdHelp.name = "群管帮助";
@@ -537,16 +538,12 @@ if (!seal.ext.find("GroupManagement")) {
       default: {
         if (!val) {
           seal.replyToSender(ctx, msg, `没有输入任何信息`);
-          return;
+          return seal.ext.newCmdExecuteResult(true);
         }
         if (val == "权限切换" && ctx.privilegeLevel > 45) {
-          whiteList = -whiteList;
-          if (whiteList == 1) {
-            seal.replyToSender(ctx, msg, `权限已切换为管理员与群主可发布`);
-          } else {
-            seal.replyToSender(ctx, msg, `权限已切换为所有人可发布`);
-          }
-          return;
+          whiteList = whiteList === 1 ? 0 : 1;
+          seal.replyToSender(ctx, msg, whiteList === 1 ? `权限已切换为管理员与群主可更改` : `权限已切换为所有人可更改`);
+          return seal.ext.newCmdExecuteResult(true);
         }
 
         if (ctx.privilegeLevel < 45 && whiteList == 1) {
@@ -555,7 +552,7 @@ if (!seal.ext.find("GroupManagement")) {
             msg,
             `权限不足，无法发布群公告,当前只有管理员与群主可发布群公告`
           );
-          return;
+          return seal.ext.newCmdExecuteResult(true);
         }
 
         let groupContent = msg.message.substring(8);

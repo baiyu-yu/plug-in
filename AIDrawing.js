@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIDrawing依赖
 // @description  适配多种AI绘图平台，支持自定义请求体和二次请求。讯飞太特殊了不想支持。.generateimage 你的描述 [负面描述]。
-// @version      1.0.2
+// @version      1.1.0
 // @author       白鱼
 // @timestamp    1741422937
 // @license      MIT
@@ -47,8 +47,10 @@ if (!seal.ext.find("AIDrawing")) {
   );
 
   class AIDrawing {
+
+    // 删除 taskIdCache，不再需要
     constructor() {
-      this.taskIdCache = {};
+      // 移除 this.taskIdCache = {};
     }
 
     formatRequestBody(params, prompt, negativePrompt = "") {
@@ -97,9 +99,8 @@ if (!seal.ext.find("AIDrawing")) {
         throw new Error("请求头格式不正确，请检查配置");
       }
     }
-    // 发送请求生成图像
-    async generateImage(prompt, ctx, msg, negativePrompt = "") {
-      let response;
+    // 发送图像请求，内部处理轮询，直接返回 URL 或错误
+    async sendImageRequest(prompt, negativePrompt = "") {
       try {
         const endpoint = seal.ext.getStringConfig(ext, "API端点");
         const params = seal.ext.getTemplateConfig(ext, "自定义_请求体");
@@ -107,12 +108,12 @@ if (!seal.ext.find("AIDrawing")) {
         const body = this.formatRequestBody(params, prompt, negativePrompt);
         const requestHeaders = this.formatRequestHeaders(headers);
 
-        console.log("===== 开始请求 =====");
+        console.log("===== sendImageRequest 开始请求 =====");
         console.log("请求地址:", endpoint);
         console.log("请求头:", JSON.stringify(requestHeaders, null, 2));
         console.log("请求体:", body);
 
-        // fetch 可能在这里就抛出错误（网络问题、CORS等）
+        let response;
         try {
           response = await fetch(endpoint, {
             method: "POST",
@@ -120,47 +121,32 @@ if (!seal.ext.find("AIDrawing")) {
             body: body,
           });
         } catch (fetchError) {
-          // 捕获 fetch 本身的错误
-          console.error("===== Fetch 错误 =====");
-          console.error("错误类型:", fetchError.constructor.name);
-          console.error("错误消息:", fetchError.message);
-          console.error("错误堆栈:", fetchError.stack);
-          console.error("完整错误对象:", JSON.stringify(fetchError, Object.getOwnPropertyNames(fetchError)));
+          console.error("sendImageRequest Fetch 错误:", fetchError);
           throw new Error(`网络请求失败: ${fetchError.message || '未知错误'}`);
         }
 
-        console.log("===== 收到响应 =====");
-        console.log("响应状态码:", response.status);
-        console.log("响应状态文本:", response.statusText);
+        console.log("sendImageRequest 响应状态码:", response.status, response.statusText);
 
-        // 先获取响应文本
         let responseText;
         try {
           responseText = await response.text();
-          console.log("响应体原文:", responseText);
+          console.log("sendImageRequest 响应体原文:", responseText);
         } catch (textError) {
-          console.error("读取响应体失败:", textError);
+          console.error("sendImageRequest 读取响应体失败:", textError);
           throw new Error(`无法读取响应内容: ${textError.message}`);
         }
 
-        // 尝试解析 JSON
         let data;
         try {
           data = JSON.parse(responseText);
-          console.log("解析后的 JSON:", JSON.stringify(data, null, 2));
+          console.log("sendImageRequest 解析后的 JSON:", JSON.stringify(data, null, 2));
         } catch (parseError) {
-          console.error("===== JSON 解析失败 =====");
-          console.error("解析错误:", parseError.message);
-          console.error("响应内容前500字符:", responseText.substring(0, 500));
-          throw new Error(`服务器返回了无效的 JSON。状态码: ${response.status}\n内容预览: ${responseText.substring(0, 200)}`);
+          console.error("sendImageRequest JSON 解析失败:", parseError.message);
+          throw new Error(`服务器返回了无效的 JSON。状态码: ${response.status}\n内容预览: ${responseText.substring(0,200)}`);
         }
 
-        // 检查响应状态
         if (!response.ok) {
-          console.error("===== HTTP 错误响应 =====");
           let errorMsg = `HTTP ${response.status} ${response.statusText}`;
-          
-          // 尝试多种错误信息格式
           if (data.error) {
             if (typeof data.error === 'string') {
               errorMsg += `\n错误: ${data.error}`;
@@ -170,135 +156,119 @@ if (!seal.ext.find("AIDrawing")) {
               errorMsg += `\n错误: ${JSON.stringify(data.error)}`;
             }
           }
-          if (data.message) {
-            errorMsg += `\n消息: ${data.message}`;
-          }
-          if (data.msg) {
-            errorMsg += `\n消息: ${data.msg}`;
-          }
-          
-          console.error("完整错误响应:", JSON.stringify(data, null, 2));
+          if (data.message) errorMsg += `\n消息: ${data.message}`;
+          if (data.msg) errorMsg += `\n消息: ${data.msg}`;
+          console.error("sendImageRequest HTTP 错误响应:", JSON.stringify(data, null, 2));
           throw new Error(errorMsg);
         }
 
-        // 处理成功响应
-        console.log("===== 处理成功响应 =====");
+        // 处理立即返回 URL 的情况
+        if (data.url) {
+          return data.url;
+        } else if (data.images && data.images[0] && data.images[0].url) {
+          return data.images[0].url;
+        }
+
+        // 处理需要轮询的情况
         if (data.output && data.output.task_status === "PENDING") {
           const taskId = data.output.task_id;
+          console.log("sendImageRequest 任务提交，taskId:", taskId);
+          return await this.pollUntilComplete(taskId);
+        }
+
+        console.error("sendImageRequest 未知响应格式:", JSON.stringify(data, null, 2));
+        throw new Error(`无法从响应中提取图像URL`);
+      } catch (error) {
+        console.error("sendImageRequest 最终捕获的错误:", error);
+        throw error;
+      }
+    }
+
+    // 轮询直到任务完成，返回图像 URL
+    async pollUntilComplete(taskId, maxRetries = 20) {
+      for (let retry = 0; retry < maxRetries; retry++) {
+        try {
+          const endpoint = seal.ext
+            .getStringConfig(ext, "二次请求API端点")
+            .replace("{task_id}", taskId);
+          const headers = seal.ext.getTemplateConfig(ext, "自定义_请求头");
+          const requestHeaders = this.formatRequestHeaders(headers);
+
+          console.log(`===== 轮询任务状态 [${retry + 1}/${maxRetries}] =====`);
           console.log("任务ID:", taskId);
-          this.taskIdCache[taskId] = { ctx, msg };
-          setTimeout(() => this.pollTaskStatus(taskId), 15000);
-          seal.replyToSender(ctx, msg, "任务已提交，正在生成图像，请稍候...");
-        } else if (data.url) {
-          const imageUrl = data.url;
-          console.log("图像URL:", imageUrl);
-          seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
-        } else if (data.images && data.images[0] && data.images[0].url) {
-          const imageUrl = data.images[0].url;
-          console.log("图像URL:", imageUrl);
-          seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
-        } else {
-          console.error("===== 未知响应格式 =====");
-          console.error("完整响应:", JSON.stringify(data, null, 2));
-          throw new Error(`无法从响应中提取图像URL`);
-        }
-      } catch (error) {
-        console.error("===== 最终捕获的错误 =====");
-        console.error("错误类型:", error.constructor.name);
-        console.error("错误消息:", error.message);
-        console.error("错误堆栈:", error.stack);
-        console.error("完整错误:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        
-        // 给用户的友好提示
-        let userMessage = "图像生成失败";
-        if (error.message) {
-          userMessage += `: ${error.message}`;
-        }
-        seal.replyToSender(ctx, msg, userMessage);
-      }
-    }
+          console.log("请求地址:", endpoint);
 
-    // 轮询任务状态
-    async pollTaskStatus(taskId) {
-      let response;
-      try {
-        const endpoint = seal.ext
-          .getStringConfig(ext, "二次请求API端点")
-          .replace("{task_id}", taskId);
-        const headers = seal.ext.getTemplateConfig(ext, "自定义_请求头");
-        const requestHeaders = this.formatRequestHeaders(headers);
-
-        console.log("===== 轮询任务状态 =====");
-        console.log("任务ID:", taskId);
-        console.log("请求地址:", endpoint);
-
-        try {
-          response = await fetch(endpoint, {
-            method: "GET",
-            headers: requestHeaders,
-          });
-        } catch (fetchError) {
-          console.error("===== 轮询 Fetch 错误 =====");
-          console.error("错误消息:", fetchError.message);
-          console.error("完整错误:", JSON.stringify(fetchError, Object.getOwnPropertyNames(fetchError)));
-          throw new Error(`网络请求失败: ${fetchError.message || '未知错误'}`);
-        }
-
-        console.log("轮询响应状态码:", response.status);
-
-        let responseText;
-        try {
-          responseText = await response.text();
-          console.log("轮询响应体:", responseText);
-        } catch (textError) {
-          throw new Error(`无法读取响应内容: ${textError.message}`);
-        }
-
-        let data;
-        try {
-          data = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error("轮询 JSON 解析失败:", parseError.message);
-          throw new Error(`服务器返回了无效的 JSON: ${responseText.substring(0, 200)}`);
-        }
-
-        if (!response.ok) {
-          let errorMsg = `HTTP ${response.status}`;
-          if (data.error) {
-            errorMsg += `: ${typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error)}`;
+          let response;
+          try {
+            response = await fetch(endpoint, {
+              method: "GET",
+              headers: requestHeaders,
+            });
+          } catch (fetchError) {
+            console.error("轮询 Fetch 错误:", fetchError);
+            throw new Error(`轮询网络请求失败: ${fetchError.message || '未知错误'}`);
           }
-          if (data.message) errorMsg += `: ${data.message}`;
-          throw new Error(errorMsg);
-        }
 
-        // 处理任务状态
-        if (data.output && data.output.task_status === "SUCCEEDED") {
-          const imageUrl = data.output.results[0].url;
-          console.log("任务完成，图像URL:", imageUrl);
-          const { ctx, msg } = this.taskIdCache[taskId];
-          seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
-          delete this.taskIdCache[taskId];
-        } else if (data.output && (data.output.task_status === "RUNNING" || data.output.task_status === "PENDING")) {
-          console.log("任务进行中，15秒后重试");
-          setTimeout(() => this.pollTaskStatus(taskId), 15000);
-        } else {
-          const status = data.output ? data.output.task_status : '未知';
-          console.error("任务状态异常:", status);
-          throw new Error(`任务失败，状态: ${status}`);
-        }
-      } catch (error) {
-        console.error("===== 轮询错误 =====");
-        console.error("错误类型:", error.constructor.name);
-        console.error("错误消息:", error.message);
-        console.error("完整错误:", JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        
-        if (this.taskIdCache[taskId]) {
-          const { ctx, msg } = this.taskIdCache[taskId];
-          seal.replyToSender(ctx, msg, `图像生成失败: ${error.message || '未知错误'}`);
-          delete this.taskIdCache[taskId];
+          console.log("轮询响应状态码:", response.status);
+
+          let responseText;
+          try {
+            responseText = await response.text();
+            console.log("轮询响应体:", responseText);
+          } catch (textError) {
+            throw new Error(`无法读取轮询响应内容: ${textError.message}`);
+          }
+
+          let data;
+          try {
+            data = JSON.parse(responseText);
+          } catch (parseError) {
+            console.error("轮询 JSON 解析失败:", parseError.message);
+            throw new Error(`服务器返回了无效的 JSON: ${responseText.substring(0, 200)}`);
+          }
+
+          if (!response.ok) {
+            let errorMsg = `HTTP ${response.status}`;
+            if (data.error) {
+              errorMsg += `: ${typeof data.error === 'string' ? data.error : data.error.message || JSON.stringify(data.error)}`;
+            }
+            if (data.message) errorMsg += `: ${data.message}`;
+            throw new Error(errorMsg);
+          }
+
+          if (data.output && data.output.task_status === "SUCCEEDED") {
+            const imageUrl = data.output.results[0].url;
+            console.log("任务完成，图像URL:", imageUrl);
+            return imageUrl;
+          } else if (data.output && (data.output.task_status === "RUNNING" || data.output.task_status === "PENDING")) {
+            console.log("任务进行中，15秒后重试");
+            await new Promise(resolve => setTimeout(resolve, 15000));
+            continue;
+          } else {
+            const status = data.output ? data.output.task_status : '未知';
+            console.error("任务状态异常:", status);
+            throw new Error(`任务失败，状态: ${status}`);
+          }
+        } catch (error) {
+          if (retry === maxRetries - 1) {
+            console.error("轮询最大重试次数已达，放弃轮询");
+            throw error;
+          }
         }
       }
+      throw new Error(`轮询超时：${maxRetries * 15}秒内未完成`);
     }
+    // 生成图像：发送请求，处理返回和错误
+    async generateImage(prompt, ctx, msg, negativePrompt = "") {
+      try {
+        const imageUrl = await this.sendImageRequest(prompt, negativePrompt);
+        seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
+      } catch (error) {
+        console.error("generateImage 捕获错误:", error);
+        seal.replyToSender(ctx, msg, `图像生成失败: ${error.message || String(error)}`);
+      }
+    }
+
 }
 
   globalThis.aiDrawing = new AIDrawing();
@@ -311,6 +281,7 @@ if (!seal.ext.find("AIDrawing")) {
     let text = cmdArgs.getArgN(1);
     if (text) {
       let negativePrompt = cmdArgs.getArgN(2) || "";
+      seal.replyToSender(ctx, msg, "正在生成图像，请稍候...");
       await globalThis.aiDrawing.generateImage(text, ctx, msg, negativePrompt);
     } else {
       seal.replyToSender(ctx, msg, `请输入描述`);

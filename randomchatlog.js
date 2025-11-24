@@ -1,157 +1,257 @@
 // ==UserScript==
 // @name         Random Chat Logger
-// @author       白鱼
-// @version      1.1.0
-// @description  随机记录群友发言并且储存在数据库里，然后随机放出一条的插件。使用.chatlog on/off控制开启关闭，可以在配置项配置一些东西。记录时间太长队列会很大可能难以抽出，数据库也会很大，请定时到插件数据库删除对应数据库（\data\default\extensions\randomChatLogger）（TODO：指令清空，虽然不能缓解数据库大的问题）。第一条会很快发出来，后面的就正常了，表情包图片可能过期会出现消息无法显示之类的，不管了。
-// @timestamp    1724394115
+// @author       白鱼 
+// @version      1.2.0
+// @description  随机记录群友发言。使用.chatlog help 查看帮助。
+// @timestamp    1763728841
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
-// @updateUrl    https://raw.gitmirror.com/baiyu-yu/plug-in/main/randomchatlog.js
 // @updateUrl    https://raw.githubusercontent.com/baiyu-yu/plug-in/main/randomchatlog.js
 // @sealVersion  1.4.5
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.0.1');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.2.0');
     seal.ext.register(ext);
 
-    // 注册配置项
-    const configKeys = [
-        "开启记录回复语",
-        "关闭记录回复语",
-        "记录频率（秒）",
-        "发送频率（秒）",
-        "消息前缀"
-    ];
-    const configDefaults = [
-        "记录已开启",
-        "记录已关闭",
-        "60", // 默认记录频率为 60 秒
-        "300", // 默认发送频率为 300 秒
-        "随机记录: " // 默认消息前缀
-    ];
-    configKeys.forEach((key, index) => {
-        seal.ext.registerStringConfig(ext, key, configDefaults[index]);
-    });
-    seal.ext.registerTemplateConfig(
-        ext,
-        "消息内容正则过滤",
-        [
-            "\\[CQ:at,qq=[^\\]]*\\]",
-            "\\[CQ:reply,id=[^\\]]*\\]",
-            "\\[CQ:image,[^\\]]*\\]"
-        ],"替换匹配到的文本为空字符串"
-    );
-
-    let logStateMap = {};
-    let lastRecordTimeMap = {};
-    let lastSendTimeMap = {};
-
-    const storedLogStateMap = ext.storageGet("logStateMap");
-    if (storedLogStateMap) logStateMap = JSON.parse(storedLogStateMap);
-    const storedLastRecordTimeMap = ext.storageGet("lastRecordTimeMap");
-    if (storedLastRecordTimeMap) lastRecordTimeMap = JSON.parse(storedLastRecordTimeMap);
-    const storedLastSendTimeMap = ext.storageGet("lastSendTimeMap");
-    if (storedLastSendTimeMap) lastSendTimeMap = JSON.parse(storedLastSendTimeMap);
-
-    const cmdRandomChatLogger = seal.ext.newCmdItemInfo();
-    cmdRandomChatLogger.name = 'chatlog';
-    cmdRandomChatLogger.help = '随机记录群友发言并且储存在数据库里，然后随机放出一条\n用法：.chatlog on/off';
-    cmdRandomChatLogger.solve = async (ctx, msg, cmdArgs) => {
-        let val = cmdArgs.getArgN(1);
-        const contextKey = msg.messageType === 'group' ? msg.groupId : ctx.player.userId;
-
-        switch (val) {
-            case 'help': {
-                const helpMessage = `随机记录群友发言并且储存在数据库里，然后随机放出一条\n用法：.chatlog on/off`;
-                seal.replyToSender(ctx, msg, helpMessage);
-                return seal.ext.newCmdExecuteResult(true);
-            }
-            case 'on': {
-                if (ctx.privilegeLevel >= 50) { 
-                    logStateMap[contextKey] = true;
-                    ext.storageSet("logStateMap", JSON.stringify(logStateMap));
-                    seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, configKeys[0]));
-                } else {
-                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                }
-                return seal.ext.newCmdExecuteResult(true);
-            }
-            case 'off': {
-                if (ctx.privilegeLevel >= 50) {
-                    logStateMap[contextKey] = false;
-                    ext.storageSet("logStateMap", JSON.stringify(logStateMap));
-                    seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, configKeys[1]));
-                } else {
-                    seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
-                }
-                return seal.ext.newCmdExecuteResult(true);
-            }
-            default: {
-                seal.replyToSender(ctx, msg, `未知命令，请使用 .chatlog help 查看帮助`);
-                return seal.ext.newCmdExecuteResult(true);
-            }
-        }
+    const CONFIG = {
+        MSG_ON: "开启记录回复语",
+        MSG_OFF: "关闭记录回复语",
+        REC_FREQ: "记录频率（秒）",
+        SEND_FREQ: "发送频率（秒）",
+        PREFIX: "消息前缀",
+        REGEX: "消息内容正则过滤"
     };
 
-    ext.cmdMap['chatlog'] = cmdRandomChatLogger;
+    seal.ext.registerStringConfig(ext, CONFIG.MSG_ON, "记录已开启");
+    seal.ext.registerStringConfig(ext, CONFIG.MSG_OFF, "记录已关闭");
+    seal.ext.registerStringConfig(ext, CONFIG.REC_FREQ, "60");
+    seal.ext.registerStringConfig(ext, CONFIG.SEND_FREQ, "300");
+    seal.ext.registerStringConfig(ext, CONFIG.PREFIX, "随机记录: ");
+    seal.ext.registerTemplateConfig(ext, CONFIG.REGEX, [
+        "\\[CQ:at,qq=[^\\]]*\\]",
+        "\\[CQ:reply,id=[^\\]]*\\]",
+        "\\[CQ:image,[^\\]]*\\]"
+    ], "替换匹配到的文本为空字符串");
 
-    ext.onNotCommandReceived = async (ctx, msg) => {
-        const contextKey = msg.messageType === 'group' ? msg.groupId : ctx.player.userId;
-
-        if (ctx.group.logOn) {
-            return;
+    class DataManager {
+        static getQueue(id) {
+            try {
+                const data = ext.storageGet(`logQueue_${id}`);
+                return data ? JSON.parse(data) : [];
+            } catch (e) { return []; }
         }
 
-        if (!logStateMap[contextKey]) return;
-
-        const recordFrequency = parseInt(seal.ext.getStringConfig(ext, configKeys[2]));
-        const sendFrequency = parseInt(seal.ext.getStringConfig(ext, configKeys[3]));
-
-        const now = Date.now();
-
-        if (!lastRecordTimeMap[contextKey] || now - lastRecordTimeMap[contextKey] >= recordFrequency * 1000) {
-            const storedLogQueue = ext.storageGet(`logQueue_${contextKey}`);
-            let logQueue = storedLogQueue ? JSON.parse(storedLogQueue) : [];
-
-            logQueue.push({ nickname: msg.sender.nickname, message: msg.message });
-
-            ext.storageSet(`logQueue_${contextKey}`, JSON.stringify(logQueue));
-
-            lastRecordTimeMap[contextKey] = now;
-            ext.storageSet(`lastRecordTimeMap_${contextKey}`, JSON.stringify(lastRecordTimeMap[contextKey]));
+        static saveQueue(id, queue) {
+            ext.storageSet(`logQueue_${id}`, JSON.stringify(queue));
         }
 
-        if (!lastSendTimeMap[contextKey] || now - lastSendTimeMap[contextKey] >= sendFrequency * 1000) {
-            const storedLogQueue = ext.storageGet(`logQueue_${contextKey}`);
-            const logQueue = storedLogQueue ? JSON.parse(storedLogQueue) : [];
+        static getStateMap() {
+            try {
+                const data = ext.storageGet("logStateMap");
+                return data ? JSON.parse(data) : {};
+            } catch (e) { return {}; }
+        }
 
-            if (logQueue && logQueue.length > 0) {
-                const randomIndex = Math.floor(Math.random() * logQueue.length);
-                const randomLog = logQueue.splice(randomIndex, 1)[0];
+        static saveStateMap(map) {
+            ext.storageSet("logStateMap", JSON.stringify(map));
+        }
 
-                const prefix = seal.ext.getStringConfig(ext, configKeys[4]);
+        static getGroupConfig(id) {
+            try {
+                const data = ext.storageGet(`groupConfig_${id}`);
+                return data ? JSON.parse(data) : {};
+            } catch (e) { return {}; }
+        }
 
-                let filteredMsg = randomLog.message;
-                const regexConfigs = seal.ext.getTemplateConfig(ext, "消息内容正则过滤");
-                if (Array.isArray(regexConfigs)) {
-                    regexConfigs.forEach(cfg => {
-                        try {
-                            const reg = new RegExp(cfg, "g");
-                            filteredMsg = filteredMsg.replace(reg, "");
-                        } catch (e) {
-                            console.error(`正则表达式错误`);
-                        }
-                    });
+        static setGroupConfig(id, config) {
+            const current = this.getGroupConfig(id);
+            const newConfig = { ...current, ...config };
+            ext.storageSet(`groupConfig_${id}`, JSON.stringify(newConfig));
+        }
+
+        static clearGroupConfig(id) {
+            ext.storageSet(`groupConfig_${id}`, "");
+        }
+    }
+
+
+    class PassiveTimer {
+        static stateMap = {}; 
+        static lastRecordMap = {};
+        static lastSendMap = {};
+
+        static init() {
+            this.stateMap = DataManager.getStateMap();
+
+            try {
+                this.lastRecordMap = JSON.parse(ext.storageGet("lastRecordTimeMap") || "{}");
+                this.lastSendMap = JSON.parse(ext.storageGet("lastSendTimeMap") || "{}");
+            } catch (e) {}
+        }
+
+        static saveState() {
+            DataManager.saveStateMap(this.stateMap);
+        }
+
+        static saveRecordTime(id) {
+            this.lastRecordMap[id] = Date.now();
+            ext.storageSet("lastRecordTimeMap", JSON.stringify(this.lastRecordMap));
+        }
+
+        static saveSendTime(id) {
+            this.lastSendMap[id] = Date.now();
+            ext.storageSet("lastSendTimeMap", JSON.stringify(this.lastSendMap));
+        }
+
+        static setEnable(id, bool) {
+            this.stateMap[id] = bool;
+            this.saveState();
+        }
+
+        static tick(ctx, msg, id) {
+            if (!this.stateMap[id]) return;
+
+            const now = Date.now();
+
+            const groupCfg = DataManager.getGroupConfig(id);
+            const defaultRecFreq = parseInt(seal.ext.getStringConfig(ext, CONFIG.REC_FREQ)) * 1000;
+            const recFreq = groupCfg.recFreq !== undefined ? parseInt(groupCfg.recFreq) * 1000 : defaultRecFreq;
+            
+            if (!this.lastRecordMap[id] || now - this.lastRecordMap[id] >= recFreq) {
+                const queue = DataManager.getQueue(id);
+                queue.push({ nickname: msg.sender.nickname, message: msg.message });
+                DataManager.saveQueue(id, queue);
+                
+                this.saveRecordTime(id);
+            }
+
+            if (ctx.group.logOn) {
+                return;
+            }
+
+            const defaultSendFreq = parseInt(seal.ext.getStringConfig(ext, CONFIG.SEND_FREQ)) * 1000;
+            const sendFreq = groupCfg.sendFreq !== undefined ? parseInt(groupCfg.sendFreq) * 1000 : defaultSendFreq;
+            if (!this.lastSendMap[id] || now - this.lastSendMap[id] >= sendFreq) {
+                const queue = DataManager.getQueue(id);
+                
+                if (queue && queue.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * queue.length);
+                    const logItem = queue[randomIndex];
+                    
+                    // 抽出后删除
+                    queue.splice(randomIndex, 1);
+                    DataManager.saveQueue(id, queue);
+
+                    this.sendResponse(ctx, msg, id, logItem);
+                    this.saveSendTime(id);
                 }
-
-                seal.replyToSender(ctx, msg, `${prefix}${randomLog.nickname}: ${filteredMsg}`);
-
-                ext.storageSet(`logQueue_${contextKey}`, JSON.stringify(logQueue));
-
-                lastSendTimeMap[contextKey] = now;
-                ext.storageSet(`lastSendTimeMap_${contextKey}`, JSON.stringify(lastSendTimeMap[contextKey]));
             }
         }
+
+        static sendResponse(ctx, msg, id, logItem) {
+            let filteredMsg = logItem.message;
+            const regexConfigs = seal.ext.getTemplateConfig(ext, CONFIG.REGEX);
+            if (Array.isArray(regexConfigs)) {
+                regexConfigs.forEach(cfg => {
+                    try { filteredMsg = filteredMsg.replace(new RegExp(cfg, "g"), ""); } catch (e) {}
+                });
+            }
+            if (!filteredMsg.trim()) return;
+
+            const globalPrefix = seal.ext.getStringConfig(ext, CONFIG.PREFIX);
+            const groupCfg = DataManager.getGroupConfig(id);
+            
+            const prefix = groupCfg.prefix !== undefined ? groupCfg.prefix : globalPrefix;
+            const showName = groupCfg.showName !== undefined ? groupCfg.showName : true;
+
+            const finalMsg = showName 
+                ? `${prefix}${logItem.nickname}: ${filteredMsg}` 
+                : `${prefix}${filteredMsg}`;
+
+            seal.replyToSender(ctx, msg, finalMsg);
+        }
+    }
+
+
+    PassiveTimer.init();
+
+    const cmd = seal.ext.newCmdItemInfo();
+    cmd.name = 'chatlog';
+    cmd.help = `随机复读机控制：
+.chatlog on/off  - 开启/关闭
+.chatlog clear   - 清空当前群记录
+.chatlog set prefix <内容> - 设置本群前缀
+.chatlog set name <on/off> - 是否显示昵称
+.chatlog set recfreq <秒> - 设置本群记录频率
+.chatlog set sendfreq <秒> - 设置本群发送频率
+.chatlog set default - 重置本群设置`;
+
+    cmd.solve = async (ctx, msg, cmdArgs) => {
+        const val = cmdArgs.getArgN(1);
+        const subVal = cmdArgs.getArgN(2);
+        const content = cmdArgs.getArgN(3);
+        const id = msg.messageType === 'group' ? msg.groupId : ctx.player.userId;
+
+        if (ctx.privilegeLevel < 50) {
+            seal.replyToSender(ctx, msg, seal.formatTmpl(ctx, "核心:提示_无权限"));
+            return seal.ext.newCmdExecuteResult(true);
+        }
+
+        switch (val) {
+            case 'help':
+                seal.replyToSender(ctx, msg, cmd.help);
+                break;
+            case 'on':
+                PassiveTimer.setEnable(id, true);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, CONFIG.MSG_ON));
+                break;
+            case 'off':
+                PassiveTimer.setEnable(id, false);
+                seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, CONFIG.MSG_OFF));
+                break;
+            case 'clear':
+                DataManager.saveQueue(id, []);
+                seal.replyToSender(ctx, msg, "已清空当前群的语料库。");
+                break;
+            case 'set':
+                if (subVal === 'prefix') {
+                    if (!content) return seal.replyToSender(ctx, msg, "请指定前缀，如: .chatlog set prefix 语录:");
+                    DataManager.setGroupConfig(id, { prefix: content });
+                    seal.replyToSender(ctx, msg, `本群前缀已设为: ${content}`);
+                } else if (subVal === 'name' || subVal === 'showname') {
+                    const isOn = content === 'on';
+                    if (content !== 'on' && content !== 'off') return seal.replyToSender(ctx, msg, "请指定 on 或 off");
+                    DataManager.setGroupConfig(id, { showName: isOn });
+                    seal.replyToSender(ctx, msg, `本群昵称显示已${isOn ? '开启' : '关闭'}`);
+                } else if (subVal === 'recfreq') {
+                    if (!content || isNaN(parseInt(content))) return seal.replyToSender(ctx, msg, "请指定数字秒数，如: .chatlog set recfreq 30");
+                    DataManager.setGroupConfig(id, { recFreq: parseInt(content) });
+                    seal.replyToSender(ctx, msg, `本群记录频率已设为: ${content}秒`);
+                } else if (subVal === 'sendfreq') {
+                    if (!content || isNaN(parseInt(content))) return seal.replyToSender(ctx, msg, "请指定数字秒数，如: .chatlog set sendfreq 60");
+                    DataManager.setGroupConfig(id, { sendFreq: parseInt(content) });
+                    seal.replyToSender(ctx, msg, `本群发送频率已设为: ${content}秒`);
+                } else if (subVal === 'default') {
+                    DataManager.clearGroupConfig(id);
+                    seal.replyToSender(ctx, msg, "本群配置已重置为默认。");
+                } else {
+                    seal.replyToSender(ctx, msg, "未知选项，请使用 .chatlog help");
+                }
+                break;
+            default:
+                seal.replyToSender(ctx, msg, "未知指令，请使用 .chatlog help");
+        }
+        return seal.ext.newCmdExecuteResult(true);
+    };
+    ext.cmdMap['chatlog'] = cmd;
+
+    ext.onNotCommandReceived = async (ctx, msg) => {
+        if (msg.messageType !== 'group' && msg.messageType !== 'private') return;
+        if (msg.sender.userId === ctx.endPoint.userId) return;
+
+        const id = msg.messageType === 'group' ? msg.groupId : ctx.player.userId;
+
+        PassiveTimer.tick(ctx, msg, id);
     };
 }
