@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼 
-// @version      1.2.0
+// @version      1.2.1
 // @description  随机记录群友发言。使用.chatlog help 查看帮助。
 // @timestamp    1763728841
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.2.0');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.2.1');
     seal.ext.register(ext);
 
     const CONFIG = {
@@ -181,7 +181,7 @@ if (!seal.ext.find('randomChatLogger')) {
     cmd.help = `随机复读机控制：
 .chatlog on/off  - 开启/关闭
 .chatlog clear   - 清空当前群记录
-.chatlog set prefix <内容> - 设置本群前缀
+.chatlog set prefix <内容> - 设置本群前缀（使用 on/off 开启/关闭前缀）
 .chatlog set name <on/off> - 是否显示昵称
 .chatlog set recfreq <秒> - 设置本群记录频率
 .chatlog set sendfreq <秒> - 设置本群发送频率
@@ -216,9 +216,31 @@ if (!seal.ext.find('randomChatLogger')) {
                 break;
             case 'set':
                 if (subVal === 'prefix') {
-                    if (!content) return seal.replyToSender(ctx, msg, "请指定前缀，如: .chatlog set prefix 语录:");
-                    DataManager.setGroupConfig(id, { prefix: content });
-                    seal.replyToSender(ctx, msg, `本群前缀已设为: ${content}`);
+                    const groupCfg = DataManager.getGroupConfig(id) || {};
+
+                    if (content === 'off' || content === '关闭') {
+                        const newCfg = { ...groupCfg };
+                        if (newCfg.prefix !== undefined && newCfg.prefix !== "") {
+                            newCfg.prevPrefix = newCfg.prefix;
+                        }
+                        newCfg.prefix = "";
+                        ext.storageSet(`groupConfig_${id}`, JSON.stringify(newCfg));
+                        seal.replyToSender(ctx, msg, `本群前缀已关闭`);
+                    } else if (content === 'on') {
+                        const newCfg = { ...groupCfg };
+                        if (newCfg.prevPrefix !== undefined) {
+                            newCfg.prefix = newCfg.prevPrefix;
+                            delete newCfg.prevPrefix;
+                        } else {
+                            if (newCfg.hasOwnProperty('prefix')) delete newCfg.prefix;
+                        }
+                        ext.storageSet(`groupConfig_${id}`, JSON.stringify(newCfg));
+                        seal.replyToSender(ctx, msg, `本群前缀已${newCfg.prefix !== undefined ? '恢复为本群设置' : '回退到全局设置'}`);
+                    } else {
+                        if (!content) return seal.replyToSender(ctx, msg, "请指定前缀或使用on/off 开启/关闭，如: .chatlog set prefix 语录:");
+                        DataManager.setGroupConfig(id, { prefix: content });
+                        seal.replyToSender(ctx, msg, `本群前缀已设为: ${content}`);
+                    }
                 } else if (subVal === 'name' || subVal === 'showname') {
                     const isOn = content === 'on';
                     if (content !== 'on' && content !== 'off') return seal.replyToSender(ctx, msg, "请指定 on 或 off");
