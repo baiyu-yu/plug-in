@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼 
-// @version      1.2.1
-// @description  随机记录群友发言。使用.chatlog help 查看帮助。
+// @version      1.2.2
+// @description  随机记录群友发言。使用.chatlog help 查看帮助。\nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
 // @timestamp    1763728841
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.2.1');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.2.2');
     seal.ext.register(ext);
 
     const CONFIG = {
@@ -119,11 +119,22 @@ if (!seal.ext.find('randomChatLogger')) {
             const recFreq = groupCfg.recFreq !== undefined ? parseInt(groupCfg.recFreq) * 1000 : defaultRecFreq;
             
             if (!this.lastRecordMap[id] || now - this.lastRecordMap[id] >= recFreq) {
-                const queue = DataManager.getQueue(id);
-                queue.push({ nickname: msg.sender.nickname, message: msg.message });
-                DataManager.saveQueue(id, queue);
-                
-                this.saveRecordTime(id);
+                // v1.2.2 修改为抓取时过滤
+                let filtered = msg.message || "";
+                const regexConfigs = seal.ext.getTemplateConfig(ext, CONFIG.REGEX);
+                if (Array.isArray(regexConfigs)) {
+                    regexConfigs.forEach(cfg => {
+                        try { filtered = filtered.replace(new RegExp(cfg, "g"), ""); } catch (e) {}
+                    });
+                }
+
+                if (filtered && filtered.trim()) {
+                    const queue = DataManager.getQueue(id);
+                    queue.push({ nickname: msg.sender.nickname, message: filtered });
+                    DataManager.saveQueue(id, queue);
+                    this.saveRecordTime(id);
+                }
+                // 若过滤后为空则跳过入队和更新时间
             }
 
             if (ctx.group.logOn) {
@@ -151,6 +162,7 @@ if (!seal.ext.find('randomChatLogger')) {
 
         static sendResponse(ctx, msg, id, logItem) {
             let filteredMsg = logItem.message;
+            // 冗余防护，也不知道留着干什么.jpg
             const regexConfigs = seal.ext.getTemplateConfig(ext, CONFIG.REGEX);
             if (Array.isArray(regexConfigs)) {
                 regexConfigs.forEach(cfg => {
