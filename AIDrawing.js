@@ -130,7 +130,6 @@ if (!seal.ext.find("AIDrawing")) {
         let responseText;
         try {
           responseText = await response.text();
-          console.log("sendImageRequest 响应体原文:", responseText);
         } catch (textError) {
           console.error("sendImageRequest 读取响应体失败:", textError);
           throw new Error(`无法读取响应内容: ${textError.message}`);
@@ -167,6 +166,8 @@ if (!seal.ext.find("AIDrawing")) {
           return data.url;
         } else if (data.images && data.images[0] && data.images[0].url) {
           return data.images[0].url;
+        } else if (data.data && data.data[0] && data.data[0]?.url) {
+          return data.data[0].url;
         }
 
         // 处理需要轮询的情况
