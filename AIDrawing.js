@@ -48,10 +48,6 @@ if (!seal.ext.find("AIDrawing")) {
 
   class AIDrawing {
 
-    // 删除 taskIdCache，不再需要
-    constructor() {
-      // 移除 this.taskIdCache = {};
-    }
 
     formatRequestBody(params, prompt, negativePrompt = "") {
       try {
@@ -108,11 +104,6 @@ if (!seal.ext.find("AIDrawing")) {
         const body = this.formatRequestBody(params, prompt, negativePrompt);
         const requestHeaders = this.formatRequestHeaders(headers);
 
-        console.log("===== sendImageRequest 开始请求 =====");
-        console.log("请求地址:", endpoint);
-        console.log("请求头:", JSON.stringify(requestHeaders, null, 2));
-        console.log("请求体:", body);
-
         let response;
         try {
           response = await fetch(endpoint, {
@@ -121,7 +112,6 @@ if (!seal.ext.find("AIDrawing")) {
             body: body,
           });
         } catch (fetchError) {
-          console.error("sendImageRequest Fetch 错误:", fetchError);
           throw new Error(`网络请求失败: ${fetchError.message || '未知错误'}`);
         }
 
@@ -131,14 +121,12 @@ if (!seal.ext.find("AIDrawing")) {
         try {
           responseText = await response.text();
         } catch (textError) {
-          console.error("sendImageRequest 读取响应体失败:", textError);
           throw new Error(`无法读取响应内容: ${textError.message}`);
         }
 
         let data;
         try {
           data = JSON.parse(responseText);
-          console.log("sendImageRequest 解析后的 JSON:", JSON.stringify(data, null, 2));
         } catch (parseError) {
           console.error("sendImageRequest JSON 解析失败:", parseError.message);
           throw new Error(`服务器返回了无效的 JSON。状态码: ${response.status}\n内容预览: ${responseText.substring(0,200)}`);
@@ -157,7 +145,6 @@ if (!seal.ext.find("AIDrawing")) {
           }
           if (data.message) errorMsg += `\n消息: ${data.message}`;
           if (data.msg) errorMsg += `\n消息: ${data.msg}`;
-          console.error("sendImageRequest HTTP 错误响应:", JSON.stringify(data, null, 2));
           throw new Error(errorMsg);
         }
 
@@ -168,6 +155,15 @@ if (!seal.ext.find("AIDrawing")) {
           return data.images[0].url;
         } else if (data.data && data.data[0] && data.data[0]?.url) {
           return data.data[0].url;
+        }
+
+        // 处理立即返回 base64 的情况
+        if (data.b64_json) {
+            return data.b64_json;
+        } else if (data.data && data.data[0] && data.data[0].b64_json) {
+            return data.data[0].b64_json;
+        } else if (data.images && data.images[0] && data.images[0].b64_json) {
+            return data.images[0].b64_json;
         }
 
         // 处理需要轮询的情况
@@ -195,10 +191,6 @@ if (!seal.ext.find("AIDrawing")) {
           const headers = seal.ext.getTemplateConfig(ext, "自定义_请求头");
           const requestHeaders = this.formatRequestHeaders(headers);
 
-          console.log(`===== 轮询任务状态 [${retry + 1}/${maxRetries}] =====`);
-          console.log("任务ID:", taskId);
-          console.log("请求地址:", endpoint);
-
           let response;
           try {
             response = await fetch(endpoint, {
@@ -215,7 +207,6 @@ if (!seal.ext.find("AIDrawing")) {
           let responseText;
           try {
             responseText = await response.text();
-            console.log("轮询响应体:", responseText);
           } catch (textError) {
             throw new Error(`无法读取轮询响应内容: ${textError.message}`);
           }
@@ -224,7 +215,6 @@ if (!seal.ext.find("AIDrawing")) {
           try {
             data = JSON.parse(responseText);
           } catch (parseError) {
-            console.error("轮询 JSON 解析失败:", parseError.message);
             throw new Error(`服务器返回了无效的 JSON: ${responseText.substring(0, 200)}`);
           }
 
@@ -239,15 +229,12 @@ if (!seal.ext.find("AIDrawing")) {
 
           if (data.output && data.output.task_status === "SUCCEEDED") {
             const imageUrl = data.output.results[0].url;
-            console.log("任务完成，图像URL:", imageUrl);
             return imageUrl;
           } else if (data.output && (data.output.task_status === "RUNNING" || data.output.task_status === "PENDING")) {
-            console.log("任务进行中，15秒后重试");
             await new Promise(resolve => setTimeout(resolve, 15000));
             continue;
           } else {
             const status = data.output ? data.output.task_status : '未知';
-            console.error("任务状态异常:", status);
             throw new Error(`任务失败，状态: ${status}`);
           }
         } catch (error) {
@@ -262,8 +249,18 @@ if (!seal.ext.find("AIDrawing")) {
     // 生成图像：发送请求，处理返回和错误
     async generateImage(prompt, ctx, msg, negativePrompt = "") {
       try {
-        const imageUrl = await this.sendImageRequest(prompt, negativePrompt);
-        seal.replyToSender(ctx, msg, `[CQ:image,file=${imageUrl}]`);
+        const result = await this.sendImageRequest(prompt, negativePrompt);
+        if (result.startsWith("http://") || result.startsWith("https://")) {
+            seal.replyToSender(ctx, msg, `[CQ:image,file=${result}]`);
+        } else {
+            try {
+                const imagePath = seal.base64ToImage(result);
+                seal.replyToSender(ctx, msg, `[CQ:image,file=${imagePath}]`);
+            } catch (e) {
+                console.error("Base64 转图片失败:", e);
+                throw new Error("成功获取 Base64 数据，但保存为本地图片文件失败");
+            }
+        }
       } catch (error) {
         console.error("generateImage 捕获错误:", error);
         seal.replyToSender(ctx, msg, `图像生成失败: ${error.message || String(error)}`);
