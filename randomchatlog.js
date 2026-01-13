@@ -2,7 +2,7 @@
 // @name         Random Chat Logger
 // @author       白鱼 
 // @version      1.3.0
-// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\nv1.3.0: 添加抓取图片持久化功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
+// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\nv1.3.0: 添加抓取图片持久化功能，添加群随机记录共享房间功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
 // @timestamp    1763728841
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -22,7 +22,8 @@ if (!seal.ext.find('randomChatLogger')) {
         PREFIX: "消息前缀",
         REGEX: "消息内容正则过滤",
         CATCH_IMAGES: "是否允许抓取图片",
-        BASE64BACKEND: "图片Base64转换后端"
+        BASE64BACKEND: "图片Base64转换后端",
+        SHARED_ROOM: "是否开启共享群记录库功能"
     };
 
     seal.ext.registerStringConfig(ext, CONFIG.MSG_ON, "记录已开启");
@@ -35,8 +36,92 @@ if (!seal.ext.find('randomChatLogger')) {
         "\\[CQ:reply,id=[^\\]]*\\]",
         "\\[CQ:image,[^\\]]*\\]"
     ], "替换匹配到的文本为空字符串");
-    seal.ext.registerBoolConfig(ext, CONFIG.CATCH_IMAGES, false, "开启后会允许将抓取的图片存入本地持久化储存，每个群需要可以单独开关，移动端和远程分离部署暂时无法使用");
+    seal.ext.registerBoolConfig(ext, CONFIG.CATCH_IMAGES, false, "开启后会允许将抓取的图片存入本地持久化储存，每个群需要需要单独开关，移动端和远程分离部署暂时无法使用");
     seal.ext.registerStringConfig(ext, CONFIG.BASE64BACKEND, "https://urltobase64.fishwhite.top", "开启抓取图片后必须配置该地址，中央服务不保证长久，坏了可自部署");
+    seal.ext.registerBoolConfig(ext, CONFIG.SHARED_ROOM, false, "开启后允许加入同一房间的群组/私聊共享群记录库，随机抽取时可以抽取所有加入该房间的群记录");
+
+    // 生成 UUID
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            const r = (Math.random() * 16) | 0;
+            const v = c === 'x' ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+        });
+    }
+
+    // 共享群记录库的房间管理
+    class RoomManager {
+        static getRooms() {
+            try {
+                const data = ext.storageGet('chatlogRooms');
+                return data ? JSON.parse(data) : {};
+            } catch (e) { return {}; }
+        }
+
+        static saveRooms(rooms) {
+            ext.storageSet('chatlogRooms', JSON.stringify(rooms));
+        }
+
+        static create(name, creatorId) {
+            const rooms = this.getRooms();
+            const code = generateUUID();
+            rooms[code] = {
+                name: name,
+                code: code,
+                creatorId: creatorId,
+                members: [creatorId]
+            };
+            this.saveRooms(rooms);
+            return code;
+        }
+
+        static join(code, memberId) {
+            const rooms = this.getRooms();
+            const room = rooms[code];
+            if (!room) return { success: false, msg: "房间不存在" };
+            if (room.members.includes(memberId)) return { success: false, msg: "已在房间中" };
+            
+            room.members.push(memberId);
+            this.saveRooms(rooms);
+            return { success: true, roomName: room.name };
+        }
+
+        static quit(memberId, roomName) {
+            const rooms = this.getRooms();
+            const quitRooms = [];
+            for (const code in rooms) {
+                const room = rooms[code];
+                if (room.members.includes(memberId) && (!roomName || room.name === roomName)) {
+                    // 如果是房主，直接解散
+                    if (room.creatorId === memberId) {
+                        delete rooms[code];
+                        quitRooms.push({ name: room.name, action: "解散" });
+                    } else {
+                        room.members = room.members.filter(m => m !== memberId);
+                        quitRooms.push({ name: room.name, action: "退出" });
+                    }
+                }
+            }
+            this.saveRooms(rooms);
+            return quitRooms;
+        }
+
+        static getMemberRooms(memberId) {
+            const rooms = this.getRooms();
+            const result = [];
+            for (const code in rooms) {
+                if (rooms[code].members.includes(memberId)) {
+                    result.push(rooms[code]);
+                }
+            }
+            return result;
+        }
+        
+        static list(memberId) {
+            const rooms = this.getMemberRooms(memberId);
+            return rooms.map(r => `【${r.name}】${r.creatorId === memberId ? "(房主)" : ""} 代码: ${r.code}`);
+        }
+    }
 
     class DataManager {
         static getQueue(id) {
@@ -212,15 +297,47 @@ if (!seal.ext.find('randomChatLogger')) {
             const defaultSendFreq = parseInt(seal.ext.getStringConfig(ext, CONFIG.SEND_FREQ)) * 1000;
             const sendFreq = groupCfg.sendFreq !== undefined ? parseInt(groupCfg.sendFreq) * 1000 : defaultSendFreq;
             if (!this.lastSendMap[id] || now - this.lastSendMap[id] >= sendFreq) {
-                const queue = DataManager.getQueue(id);
+                // 确定候选群记录来源ID列表
+                let candidateIds = [id];
+                const isSharedRoomOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
                 
-                if (queue && queue.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * queue.length);
-                    const logItem = queue[randomIndex];
+                if (isSharedRoomOn) {
+                    const rooms = RoomManager.getMemberRooms(id);
+                    if (rooms.length > 0) {
+                        for (const room of rooms) {
+                            candidateIds.push(...room.members);
+                        }
+                        // 去重
+                        candidateIds = [...new Set(candidateIds)];
+                    }
+                }
+
+                let selectedQueue = null;
+                let selectedId = null;
+
+                // 随机寻找有群记录的ID
+                while (candidateIds.length > 0) {
+                    const idx = Math.floor(Math.random() * candidateIds.length);
+                    const pickId = candidateIds[idx];
+                    const q = DataManager.getQueue(pickId);
+                    
+                    if (q && q.length > 0) {
+                        selectedQueue = q;
+                        selectedId = pickId;
+                        break;
+                    } else {
+                        // 该ID无群记录，移除
+                        candidateIds.splice(idx, 1);
+                    }
+                }
+                
+                if (selectedQueue && selectedQueue.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * selectedQueue.length);
+                    const logItem = selectedQueue[randomIndex];
                     
                     // 抽出后删除
-                    queue.splice(randomIndex, 1);
-                    DataManager.saveQueue(id, queue);
+                    selectedQueue.splice(randomIndex, 1);
+                    DataManager.saveQueue(selectedId, selectedQueue);
 
                     this.sendResponse(ctx, msg, id, logItem);
                     this.saveSendTime(id);
@@ -279,7 +396,11 @@ if (!seal.ext.find('randomChatLogger')) {
 .chatlog set sendfreq <秒> - 设置本群发送频率
 .chatlog set catchimg <on/off> - 设置是否抓取图片（需要插件配置项允许的前提下才能开启）
 .chatlog set default - 重置本群设置
-.chatlog status - 查看当前群设置`;
+.chatlog status - 查看当前群设置
+.chatlog room create <name> - 创建群记录共享房间
+.chatlog room join <code> - 加入群记录共享房间
+.chatlog room quit [name] - 退出群记录共享房间
+.chatlog room list - 查看已加入的群记录共享房间`;
 
     cmd.solve = async (ctx, msg, cmdArgs) => {
         const val = cmdArgs.getArgN(1);
@@ -306,7 +427,7 @@ if (!seal.ext.find('randomChatLogger')) {
                 break;
             case 'clear':
                 DataManager.saveQueue(id, []);
-                seal.replyToSender(ctx, msg, "已清空当前群的语料库。");
+                seal.replyToSender(ctx, msg, "已清空当前群的群记录库。");
                 break;
             case 'status':
                 const groupCfg = DataManager.getGroupConfig(id);
@@ -322,18 +443,20 @@ if (!seal.ext.find('randomChatLogger')) {
                 
                 const isGroupCatchOn = groupCfg.catchImages === true;
                 const currentCatchImg = globalCatch && isGroupCatchOn;
+                const isSharedRoomOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
                 
                 const queueSize = DataManager.getQueue(id).length;
                 const isEnabled = PassiveTimer.stateMap[id] || false;
 
                 let statusMsg = `当前群设置状态：
 功能开关: ${isEnabled ? "开启" : "关闭"}
-语料库大小: ${queueSize} 条
+群记录库大小: ${queueSize} 条
 消息前缀: ${currentPrefix || "(无)"}
 显示昵称: ${currentShowName ? "开启" : "关闭"}
 记录频率: ${currentRecFreq}秒
 发送频率: ${currentSendFreq}秒
-抓取图片: ${currentCatchImg ? "开启" : "关闭"}`;
+抓取图片: ${currentCatchImg ? "开启" : "关闭"}
+共享群记录: ${isSharedRoomOn ? "开启" : "关闭"}`;
 
                 if (isGroupCatchOn && !globalCatch) {
                     statusMsg += " (失效:全局配置未开启)";
@@ -397,6 +520,47 @@ if (!seal.ext.find('randomChatLogger')) {
                     seal.replyToSender(ctx, msg, "本群配置已重置为默认。");
                 } else {
                     seal.replyToSender(ctx, msg, "未知选项，请使用 .chatlog help");
+                }
+                break;
+            case 'room':
+                const isSharedOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
+                if (!isSharedOn) {
+                    seal.replyToSender(ctx, msg, "共享群记录库功能未在全局配置中开启，请联系骰主。");
+                    return seal.ext.newCmdExecuteResult(true);
+                }
+
+                const roomAction = subVal;
+                const roomArg = content; 
+
+                if (roomAction === 'create') {
+                     if (!roomArg) {
+                         seal.replyToSender(ctx, msg, "请指定房间名称");
+                         return seal.ext.newCmdExecuteResult(true);
+                     }
+                     const code = RoomManager.create(roomArg, id);
+                     seal.replyToSender(ctx, msg, `房间【${roomArg}】创建成功，邀请码: ${code}`);
+                } else if (roomAction === 'join') {
+                     if (!roomArg) {
+                         seal.replyToSender(ctx, msg, "请指定邀请码");
+                         return seal.ext.newCmdExecuteResult(true);
+                     }
+                     const res = RoomManager.join(roomArg, id);
+                     if (res.success) seal.replyToSender(ctx, msg, `成功加入房间【${res.roomName}】`);
+                     else seal.replyToSender(ctx, msg, `加入失败: ${res.msg}`);
+                } else if (roomAction === 'quit') {
+                     const res = RoomManager.quit(id, roomArg);
+                     if (res.length > 0) {
+                         const names = res.map(r => `${r.name}(${r.action})`).join(", ");
+                         seal.replyToSender(ctx, msg, `已处理: ${names}`);
+                     } else {
+                         seal.replyToSender(ctx, msg, "未找到指定/任何房间");
+                     }
+                } else if (roomAction === 'list') {
+                     const list = RoomManager.list(id);
+                     if (list.length > 0) seal.replyToSender(ctx, msg, "当前加入的房间:\n" + list.join("\n"));
+                     else seal.replyToSender(ctx, msg, "未加入任何房间");
+                } else {
+                     seal.replyToSender(ctx, msg, "未知房间指令，请使用 create/join/quit/list");
                 }
                 break;
             default:
