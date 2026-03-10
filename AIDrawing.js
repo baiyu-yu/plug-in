@@ -151,18 +151,22 @@ if (!seal.ext.find("AIDrawing")) {
         // 处理立即返回 URL 的情况
         if (data.url) {
           return data.url;
-        } else if (data.images && data.images[0] && data.images[0].url) {
+        } else if (data.images && data.images.length > 0 && data.images[0].url) {
           return data.images[0].url;
-        } else if (data.data && data.data[0] && data.data[0]?.url) {
+        } else if (data.data && data.data.length > 0 && data.data[0].url) {
           return data.data[0].url;
+        } else if (data.data && typeof data.data === 'object' && data.data.url) {
+          return data.data.url;
         }
 
         // 处理立即返回 base64 的情况
         if (data.b64_json) {
             return data.b64_json;
-        } else if (data.data && data.data[0] && data.data[0].b64_json) {
+        } else if (data.data && data.data.length > 0 && data.data[0].b64_json) {
             return data.data[0].b64_json;
-        } else if (data.images && data.images[0] && data.images[0].b64_json) {
+        } else if (data.data && typeof data.data === 'object' && data.data.b64_json) {
+            return data.data.b64_json;
+        } else if (data.images && data.images.length > 0 && data.images[0].b64_json) {
             return data.images[0].b64_json;
         }
 
