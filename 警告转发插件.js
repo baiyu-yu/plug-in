@@ -36,8 +36,9 @@ if (!seal.ext.find("消息转发插件")) {
     // 监听消息事件
     ext.onNotCommandReceived = (ctx, msg) => {
 
-        const mutePattern = /被禁言: 在群组<(.+?)>\((\d+)\)中被禁言，时长(\d+)秒，操作者:<(.+?)>\((\d+)\)/;
-        const kickPattern = /被踢出群: 在QQ群组<(.+?)>\((\d+)\)中被踢出，操作者:<(.+?)>\((\d+)\)/;
+        const mutePattern = /被禁言: 在群组<(.+?)>\((.+?)\)中被禁言，时长(\d+)秒，操作者:<(.+?)>\((.+?)\)/;
+        const kickPattern = /被踢出群: 在QQ群组<(.+?)>\((.+?)\)中被踢出，操作者:<(.+?)>\((.+?)\)/;
+        const kickPattern2 = /被踢出群: 在群组<(.+?)>\((.+?)\)中被踢出，操作者:<(.+?)>\((.+?)\)/;
         const blacklistPattern = /黑名单等级提升: \[(.+?)\] <(.+?)>\(QQ:(\d+)\) 原因:(.+)/;
 
         let match;
@@ -46,6 +47,7 @@ if (!seal.ext.find("消息转发插件")) {
         const patterns = [
             mutePattern,
             kickPattern,
+            kickPattern2,
             blacklistPattern
         ];
         
