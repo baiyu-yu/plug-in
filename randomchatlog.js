@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼 
-// @version      1.3.0
-// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\nv1.3.0: 添加抓取图片持久化功能，添加群随机记录共享房间功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
+// @version      1.4.0
+// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\nv1.4.0: 性能优化 - 添加批量写入、队列大小限制，重构时间戳和状态存储，尝试解决OOM和高频磁盘写入问题\nv1.3.0: 添加抓取图片持久化功能，添加群随机记录共享房间功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
 // @timestamp    1763728841
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.3.0');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.4.0');
     seal.ext.register(ext);
 
     const CONFIG = {
@@ -23,7 +23,9 @@ if (!seal.ext.find('randomChatLogger')) {
         REGEX: "消息内容正则过滤",
         CATCH_IMAGES: "是否允许抓取图片",
         BASE64BACKEND: "图片Base64转换后端",
-        SHARED_ROOM: "是否开启共享群记录库功能"
+        SHARED_ROOM: "是否开启共享群记录库功能",
+        MAX_QUEUE_SIZE: "单群最大记录数",
+        BATCH_WRITE_INTERVAL: "批量写入间隔（秒）"
     };
 
     seal.ext.registerStringConfig(ext, CONFIG.MSG_ON, "记录已开启");
@@ -39,6 +41,8 @@ if (!seal.ext.find('randomChatLogger')) {
     seal.ext.registerBoolConfig(ext, CONFIG.CATCH_IMAGES, false, "开启后会允许将抓取的图片存入本地持久化储存，每个群需要需要单独开关，移动端和远程分离部署暂时无法使用");
     seal.ext.registerStringConfig(ext, CONFIG.BASE64BACKEND, "https://urltobase64.fishwhite.top", "开启抓取图片后必须配置该地址，中央服务不保证长久，坏了可自部署");
     seal.ext.registerBoolConfig(ext, CONFIG.SHARED_ROOM, false, "开启后允许加入同一房间的群组/私聊共享群记录库，随机抽取时可以抽取所有加入该房间的群记录");
+    seal.ext.registerStringConfig(ext, CONFIG.MAX_QUEUE_SIZE, "100", "单个群最大记录数，超过后会删除最旧的记录，防止数据膨胀");
+    seal.ext.registerStringConfig(ext, CONFIG.BATCH_WRITE_INTERVAL, "300", "批量写入间隔秒数，减少磁盘写入频率");
 
     // 生成 UUID
     function generateUUID() {
@@ -92,7 +96,6 @@ if (!seal.ext.find('randomChatLogger')) {
             for (const code in rooms) {
                 const room = rooms[code];
                 if (room.members.includes(memberId) && (!roomName || room.name === roomName)) {
-                    // 如果是房主，直接解散
                     if (room.creatorId === memberId) {
                         delete rooms[code];
                         quitRooms.push({ name: room.name, action: "解散" });
@@ -116,7 +119,7 @@ if (!seal.ext.find('randomChatLogger')) {
             }
             return result;
         }
-        
+
         static list(memberId) {
             const rooms = this.getMemberRooms(memberId);
             return rooms.map(r => `【${r.name}】${r.creatorId === memberId ? "(房主)" : ""} 代码: ${r.code}`);
@@ -124,26 +127,52 @@ if (!seal.ext.find('randomChatLogger')) {
     }
 
     class DataManager {
+        static queueCache = {};
+        static pendingWrites = new Set();
+        static batchWriteTimer = null;
+
         static getQueue(id) {
+            if (this.queueCache[id]) {
+                return this.queueCache[id];
+            }
             try {
                 const data = ext.storageGet(`logQueue_${id}`);
                 return data ? JSON.parse(data) : [];
-            } catch (e) { return []; }
+            } catch (e) {
+                return [];
+            }
         }
 
         static saveQueue(id, queue) {
-            ext.storageSet(`logQueue_${id}`, JSON.stringify(queue));
+            this.queueCache[id] = queue;
+            this.pendingWrites.add(id);
+            this.scheduleBatchWrite();
         }
 
-        static getStateMap() {
-            try {
-                const data = ext.storageGet("logStateMap");
-                return data ? JSON.parse(data) : {};
-            } catch (e) { return {}; }
+        static scheduleBatchWrite() {
+            if (this.batchWriteTimer) return;
+
+            const interval = parseInt(seal.ext.getStringConfig(ext, CONFIG.BATCH_WRITE_INTERVAL) || "300") * 1000;
+
+            this.batchWriteTimer = setTimeout(() => {
+                this.flushPendingWrites();
+                this.batchWriteTimer = null;
+            }, interval);
         }
 
-        static saveStateMap(map) {
-            ext.storageSet("logStateMap", JSON.stringify(map));
+        static flushPendingWrites() {
+            for (const id of this.pendingWrites) {
+                try {
+                    const queue = this.queueCache[id];
+                    if (queue !== undefined) {
+                        ext.storageSet(`logQueue_${id}`, JSON.stringify(queue));
+                    }
+                } catch (e) {
+                    console.error(`[randomChatLogger] 写入失败 ${id}:`, e);
+                }
+                delete this.queueCache[id];
+            }
+            this.pendingWrites.clear();
         }
 
         static getGroupConfig(id) {
@@ -162,8 +191,43 @@ if (!seal.ext.find('randomChatLogger')) {
         static clearGroupConfig(id) {
             ext.storageSet(`groupConfig_${id}`, "");
         }
-    }
 
+        static trimQueue(id, maxSize) {
+            const queue = this.getQueue(id);
+            if (queue.length > maxSize) {
+                const trimmed = queue.slice(-maxSize);
+                this.saveQueue(id, trimmed);
+                return queue.length - maxSize;
+            }
+            return 0;
+        }
+
+        static migrateFromOldFormat() {
+            try {
+                const oldData = ext.storageGet("logStateMap");
+                if (!oldData || oldData === "" || oldData === "{}") return;
+
+                let parsed;
+                try { parsed = JSON.parse(oldData); } catch (e) { return; }
+                if (!parsed || typeof parsed !== "object") return;
+
+                let count = 0;
+                for (const id in parsed) {
+                    const existing = ext.storageGet(`state_${id}`);
+                    if (!existing) {
+                        ext.storageSet(`state_${id}`, parsed[id] ? "1" : "0");
+                        count++;
+                    }
+                }
+                ext.storageSet("logStateMap", "");
+                if (count > 0) {
+                    console.log(`[randomChatLogger] 数据部分平滑迁移：${count} 个群状态已分割为独立 key`);
+                }
+            } catch (e) {
+                console.error("[randomChatLogger] 数据迁移失败:", e);
+            }
+        }
+    }
 
     class ImageHelper {
         static async urlToBase64(url) {
@@ -193,17 +257,16 @@ if (!seal.ext.find('randomChatLogger')) {
                     console.error(`[randomChatLogger] base64转换后端api响应错误: ${data.error.message}`);
                     return null;
                 }
-                
+
                 return data.base64;
             } catch (error) {
                 console.error("[randomChatLogger] urlToBase64网络错误:", error);
                 return null;
             }
         }
-        
+
         static extractImageUrls(msg) {
             const urls = [];
-            // 匹配CQ:image并提取file参数
             const regex = /\[CQ:image,[^\]]*file=([^,\]]+)[^\]]*\]/g;
             let match;
             while ((match = regex.exec(msg)) !== null) {
@@ -214,47 +277,56 @@ if (!seal.ext.find('randomChatLogger')) {
     }
 
     class PassiveTimer {
-        static stateMap = {}; 
-        static lastRecordMap = {};
-        static lastSendMap = {};
+        static stateMap = {};       
+        static lastRecordMap = {};  
+        static lastSendMap = {};    
 
         static init() {
-            this.stateMap = DataManager.getStateMap();
+            DataManager.migrateFromOldFormat();
 
             try {
                 this.lastRecordMap = JSON.parse(ext.storageGet("lastRecordTimeMap") || "{}");
+            } catch (e) { this.lastRecordMap = {}; }
+            try {
                 this.lastSendMap = JSON.parse(ext.storageGet("lastSendTimeMap") || "{}");
-            } catch (e) {}
+            } catch (e) { this.lastSendMap = {}; }
         }
 
-        static saveState() {
-            DataManager.saveStateMap(this.stateMap);
-        }
-
-        static saveRecordTime(id) {
-            this.lastRecordMap[id] = Date.now();
-            ext.storageSet("lastRecordTimeMap", JSON.stringify(this.lastRecordMap));
-        }
-
-        static saveSendTime(id) {
-            this.lastSendMap[id] = Date.now();
-            ext.storageSet("lastSendTimeMap", JSON.stringify(this.lastSendMap));
+        static isEnabled(id) {
+            if (this.stateMap[id] !== undefined) return this.stateMap[id];
+            try {
+                const val = ext.storageGet(`state_${id}`);
+                const enabled = val === "1";
+                this.stateMap[id] = enabled;
+                return enabled;
+            } catch (e) {
+                this.stateMap[id] = false;
+                return false;
+            }
         }
 
         static setEnable(id, bool) {
             this.stateMap[id] = bool;
-            this.saveState();
+            ext.storageSet(`state_${id}`, bool ? "1" : "0");
+        }
+
+        static saveRecordTime(id) {
+            this.lastRecordMap[id] = Date.now();
+        }
+
+        static saveSendTime(id) {
+            this.lastSendMap[id] = Date.now();
         }
 
         static async tick(ctx, msg, id) {
-            if (!this.stateMap[id]) return;
+            if (!this.isEnabled(id)) return;
 
             const now = Date.now();
 
             const groupCfg = DataManager.getGroupConfig(id);
             const defaultRecFreq = parseInt(seal.ext.getStringConfig(ext, CONFIG.REC_FREQ)) * 1000;
             const recFreq = groupCfg.recFreq !== undefined ? parseInt(groupCfg.recFreq) * 1000 : defaultRecFreq;
-            
+
             if (!this.lastRecordMap[id] || now - this.lastRecordMap[id] >= recFreq) {
                 let messageContent = msg.message || "";
                 let savedImages = [];
@@ -270,7 +342,6 @@ if (!seal.ext.find('randomChatLogger')) {
                     }
                 }
 
-                // 过滤文本
                 const regexConfigs = seal.ext.getTemplateConfig(ext, CONFIG.REGEX);
                 if (Array.isArray(regexConfigs)) {
                     regexConfigs.forEach(cfg => {
@@ -280,10 +351,16 @@ if (!seal.ext.find('randomChatLogger')) {
 
                 if ((messageContent && messageContent.trim()) || savedImages.length > 0) {
                     const queue = DataManager.getQueue(id);
-                    queue.push({ 
-                        nickname: msg.sender.nickname, 
+
+                    const maxSize = parseInt(seal.ext.getStringConfig(ext, CONFIG.MAX_QUEUE_SIZE) || "100");
+                    if (queue.length >= maxSize) {
+                        queue.shift();
+                    }
+
+                    queue.push({
+                        nickname: msg.sender.nickname,
                         message: messageContent,
-                        images: savedImages 
+                        images: savedImages
                     });
                     DataManager.saveQueue(id, queue);
                     this.saveRecordTime(id);
@@ -297,17 +374,15 @@ if (!seal.ext.find('randomChatLogger')) {
             const defaultSendFreq = parseInt(seal.ext.getStringConfig(ext, CONFIG.SEND_FREQ)) * 1000;
             const sendFreq = groupCfg.sendFreq !== undefined ? parseInt(groupCfg.sendFreq) * 1000 : defaultSendFreq;
             if (!this.lastSendMap[id] || now - this.lastSendMap[id] >= sendFreq) {
-                // 确定候选群记录来源ID列表
                 let candidateIds = [id];
                 const isSharedRoomOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
-                
+
                 if (isSharedRoomOn) {
                     const rooms = RoomManager.getMemberRooms(id);
                     if (rooms.length > 0) {
                         for (const room of rooms) {
                             candidateIds.push(...room.members);
                         }
-                        // 去重
                         candidateIds = [...new Set(candidateIds)];
                     }
                 }
@@ -315,27 +390,20 @@ if (!seal.ext.find('randomChatLogger')) {
                 let selectedQueue = null;
                 let selectedId = null;
 
-                // 随机寻找有群记录的ID
-                while (candidateIds.length > 0) {
-                    const idx = Math.floor(Math.random() * candidateIds.length);
-                    const pickId = candidateIds[idx];
+                const shuffled = candidateIds.slice().sort(() => Math.random() - 0.5);
+                for (const pickId of shuffled) {
                     const q = DataManager.getQueue(pickId);
-                    
                     if (q && q.length > 0) {
                         selectedQueue = q;
                         selectedId = pickId;
                         break;
-                    } else {
-                        // 该ID无群记录，移除
-                        candidateIds.splice(idx, 1);
                     }
                 }
-                
+
                 if (selectedQueue && selectedQueue.length > 0) {
                     const randomIndex = Math.floor(Math.random() * selectedQueue.length);
                     const logItem = selectedQueue[randomIndex];
-                    
-                    // 抽出后删除
+
                     selectedQueue.splice(randomIndex, 1);
                     DataManager.saveQueue(selectedId, selectedQueue);
 
@@ -353,18 +421,18 @@ if (!seal.ext.find('randomChatLogger')) {
                     try { filteredMsg = filteredMsg.replace(new RegExp(cfg, "g"), ""); } catch (e) {}
                 });
             }
-            
+
             const hasImages = logItem.images && logItem.images.length > 0;
             if (!filteredMsg.trim() && !hasImages) return;
 
             const globalPrefix = seal.ext.getStringConfig(ext, CONFIG.PREFIX);
             const groupCfg = DataManager.getGroupConfig(id);
-            
+
             const prefix = groupCfg.prefix !== undefined ? groupCfg.prefix : globalPrefix;
             const showName = groupCfg.showName !== undefined ? groupCfg.showName : true;
 
-            let finalMsg = showName 
-                ? `${prefix}${logItem.nickname}: ${filteredMsg}` 
+            let finalMsg = showName
+                ? `${prefix}${logItem.nickname}: ${filteredMsg}`
                 : `${prefix}${filteredMsg}`;
 
             if (hasImages) {
@@ -382,7 +450,6 @@ if (!seal.ext.find('randomChatLogger')) {
         }
     }
 
-
     PassiveTimer.init();
 
     const cmd = seal.ext.newCmdItemInfo();
@@ -390,6 +457,8 @@ if (!seal.ext.find('randomChatLogger')) {
     cmd.help = `随机复读机控制：
 .chatlog on/off  - 开启/关闭
 .chatlog clear   - 清空当前群记录
+.chatlog trim    - 手动清理超出上限的记录
+.chatlog flush   - 立即写入所有待保存数据
 .chatlog set prefix <内容> - 设置本群前缀（使用 on/off 开启/关闭前缀）
 .chatlog set name <on/off> - 是否显示昵称
 .chatlog set recfreq <秒> - 设置本群记录频率
@@ -426,10 +495,23 @@ if (!seal.ext.find('randomChatLogger')) {
                 seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, CONFIG.MSG_OFF));
                 break;
             case 'clear':
-                DataManager.saveQueue(id, []);
+                delete DataManager.queueCache[id];
+                DataManager.pendingWrites.delete(id);
+                ext.storageSet(`logQueue_${id}`, "[]");
                 seal.replyToSender(ctx, msg, "已清空当前群的群记录库。");
                 break;
-            case 'status':
+            case 'trim': {
+                const maxSize = parseInt(seal.ext.getStringConfig(ext, CONFIG.MAX_QUEUE_SIZE) || "100");
+                const removed = DataManager.trimQueue(id, maxSize);
+                DataManager.flushPendingWrites();
+                seal.replyToSender(ctx, msg, removed > 0 ? `已清理 ${removed} 条超出上限的记录` : "无需清理");
+                break;
+            }
+            case 'flush':
+                DataManager.flushPendingWrites();
+                seal.replyToSender(ctx, msg, "已立即写入所有待保存数据");
+                break;
+            case 'status': {
                 const groupCfg = DataManager.getGroupConfig(id);
                 const globalPrefix = seal.ext.getStringConfig(ext, CONFIG.PREFIX);
                 const defaultRecFreq = seal.ext.getStringConfig(ext, CONFIG.REC_FREQ);
@@ -440,30 +522,34 @@ if (!seal.ext.find('randomChatLogger')) {
                 const currentShowName = groupCfg.showName !== undefined ? groupCfg.showName : true;
                 const currentRecFreq = groupCfg.recFreq !== undefined ? groupCfg.recFreq : defaultRecFreq;
                 const currentSendFreq = groupCfg.sendFreq !== undefined ? groupCfg.sendFreq : defaultSendFreq;
-                
+
                 const isGroupCatchOn = groupCfg.catchImages === true;
                 const currentCatchImg = globalCatch && isGroupCatchOn;
                 const isSharedRoomOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
-                
+
                 const queueSize = DataManager.getQueue(id).length;
-                const isEnabled = PassiveTimer.stateMap[id] || false;
+                const isEnabled = PassiveTimer.isEnabled(id);
+                const maxQueueSize = seal.ext.getStringConfig(ext, CONFIG.MAX_QUEUE_SIZE) || "100";
+                const batchInterval = seal.ext.getStringConfig(ext, CONFIG.BATCH_WRITE_INTERVAL) || "300";
 
                 let statusMsg = `当前群设置状态：
 功能开关: ${isEnabled ? "开启" : "关闭"}
-群记录库大小: ${queueSize} 条
+群记录库大小: ${queueSize} / ${maxQueueSize} 条
 消息前缀: ${currentPrefix || "(无)"}
 显示昵称: ${currentShowName ? "开启" : "关闭"}
 记录频率: ${currentRecFreq}秒
 发送频率: ${currentSendFreq}秒
 抓取图片: ${currentCatchImg ? "开启" : "关闭"}
-共享群记录: ${isSharedRoomOn ? "开启" : "关闭"}`;
+共享群记录: ${isSharedRoomOn ? "开启" : "关闭"}
+批量写入间隔: ${batchInterval}秒`;
 
                 if (isGroupCatchOn && !globalCatch) {
-                    statusMsg += " (失效:全局配置未开启)";
+                    statusMsg += "\n(失效:全局配置未开启)";
                 }
 
                 seal.replyToSender(ctx, msg, statusMsg);
                 break;
+            }
             case 'set':
                 if (subVal === 'prefix') {
                     const groupCfg = DataManager.getGroupConfig(id) || {};
@@ -511,7 +597,7 @@ if (!seal.ext.find('randomChatLogger')) {
                         return seal.ext.newCmdExecuteResult(true);
                     }
                     if (content !== 'on' && content !== 'off') return seal.replyToSender(ctx, msg, "请指定 on 或 off");
-                    
+
                     const isOn = content === 'on';
                     DataManager.setGroupConfig(id, { catchImages: isOn });
                     seal.replyToSender(ctx, msg, `本群抓取图片功能已${isOn ? '开启' : '关闭'}`);
@@ -522,7 +608,7 @@ if (!seal.ext.find('randomChatLogger')) {
                     seal.replyToSender(ctx, msg, "未知选项，请使用 .chatlog help");
                 }
                 break;
-            case 'room':
+            case 'room': {
                 const isSharedOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
                 if (!isSharedOn) {
                     seal.replyToSender(ctx, msg, "共享群记录库功能未在全局配置中开启，请联系骰主。");
@@ -530,39 +616,40 @@ if (!seal.ext.find('randomChatLogger')) {
                 }
 
                 const roomAction = subVal;
-                const roomArg = content; 
+                const roomArg = content;
 
                 if (roomAction === 'create') {
-                     if (!roomArg) {
-                         seal.replyToSender(ctx, msg, "请指定房间名称");
-                         return seal.ext.newCmdExecuteResult(true);
-                     }
-                     const code = RoomManager.create(roomArg, id);
-                     seal.replyToSender(ctx, msg, `房间【${roomArg}】创建成功，邀请码: ${code}`);
+                    if (!roomArg) {
+                        seal.replyToSender(ctx, msg, "请指定房间名称");
+                        return seal.ext.newCmdExecuteResult(true);
+                    }
+                    const code = RoomManager.create(roomArg, id);
+                    seal.replyToSender(ctx, msg, `房间【${roomArg}】创建成功，邀请码: ${code}`);
                 } else if (roomAction === 'join') {
-                     if (!roomArg) {
-                         seal.replyToSender(ctx, msg, "请指定邀请码");
-                         return seal.ext.newCmdExecuteResult(true);
-                     }
-                     const res = RoomManager.join(roomArg, id);
-                     if (res.success) seal.replyToSender(ctx, msg, `成功加入房间【${res.roomName}】`);
-                     else seal.replyToSender(ctx, msg, `加入失败: ${res.msg}`);
+                    if (!roomArg) {
+                        seal.replyToSender(ctx, msg, "请指定邀请码");
+                        return seal.ext.newCmdExecuteResult(true);
+                    }
+                    const res = RoomManager.join(roomArg, id);
+                    if (res.success) seal.replyToSender(ctx, msg, `成功加入房间【${res.roomName}】`);
+                    else seal.replyToSender(ctx, msg, `加入失败: ${res.msg}`);
                 } else if (roomAction === 'quit') {
-                     const res = RoomManager.quit(id, roomArg);
-                     if (res.length > 0) {
-                         const names = res.map(r => `${r.name}(${r.action})`).join(", ");
-                         seal.replyToSender(ctx, msg, `已处理: ${names}`);
-                     } else {
-                         seal.replyToSender(ctx, msg, "未找到指定/任何房间");
-                     }
+                    const res = RoomManager.quit(id, roomArg);
+                    if (res.length > 0) {
+                        const names = res.map(r => `${r.name}(${r.action})`).join(", ");
+                        seal.replyToSender(ctx, msg, `已处理: ${names}`);
+                    } else {
+                        seal.replyToSender(ctx, msg, "未找到指定/任何房间");
+                    }
                 } else if (roomAction === 'list') {
-                     const list = RoomManager.list(id);
-                     if (list.length > 0) seal.replyToSender(ctx, msg, "当前加入的房间:\n" + list.join("\n"));
-                     else seal.replyToSender(ctx, msg, "未加入任何房间");
+                    const list = RoomManager.list(id);
+                    if (list.length > 0) seal.replyToSender(ctx, msg, "当前加入的房间:\n" + list.join("\n"));
+                    else seal.replyToSender(ctx, msg, "未加入任何房间");
                 } else {
-                     seal.replyToSender(ctx, msg, "未知房间指令，请使用 create/join/quit/list");
+                    seal.replyToSender(ctx, msg, "未知房间指令，请使用 create/join/quit/list");
                 }
                 break;
+            }
             default:
                 seal.replyToSender(ctx, msg, "未知指令，请使用 .chatlog help");
         }
