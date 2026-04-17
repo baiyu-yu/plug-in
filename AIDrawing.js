@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AIDrawing依赖
 // @description  适配多种AI绘图平台，支持自定义请求体和二次请求。讯飞太特殊了不想支持。.generateimage 你的描述 [负面描述]。
-// @version      1.1.0
+// @version      1.1.1
 // @author       白鱼
 // @timestamp    1741422937
 // @license      MIT
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find("AIDrawing")) {
-  const ext = seal.ext.new("AIDrawing", "baiyu", "1.0.2");
+  const ext = seal.ext.new("AIDrawing", "baiyu", "1.1.1");
   seal.ext.register(ext);
 
   seal.ext.registerStringConfig(
@@ -157,6 +157,11 @@ if (!seal.ext.find("AIDrawing")) {
           return data.data[0].url;
         } else if (data.data && typeof data.data === 'object' && data.data.url) {
           return data.data.url;
+        } else if (data.output && data.output.choices && data.output.choices.length > 0) {
+          const content = data.output.choices[0].message?.content;
+          if (content && content.length > 0 && content[0].image) {
+            return content[0].image.trim();
+          }
         }
 
         // 处理立即返回 base64 的情况
