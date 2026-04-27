@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Random Chat Logger
 // @author       白鱼 
-// @version      1.4.0
-// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\nv1.4.0: 性能优化 - 添加批量写入、队列大小限制，重构时间戳和状态存储，尝试解决OOM和高频磁盘写入问题\nv1.3.0: 添加抓取图片持久化功能，添加群随机记录共享房间功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
+// @version      1.5.0
+// @description  随机记录群友发言。使用.chatlog help 查看帮助。\n！！！如果输出角色卡相关指令请先确保在该群【.ext randomChatLogger on】！！！\n不推荐进行版本回退\n性能优化由claude完成\nv1.5.0: 性能优化 - 实现分块存储和按需加载，启动时不再全量读取数据到内存，尝试降低内存占用和启动时间\nv1.4.0: 性能优化 - 添加批量写入、队列大小限制，重构时间戳和状态存储，尝试解决OOM和高频磁盘写入问题\nv1.3.0: 添加抓取图片持久化功能，添加群随机记录共享房间功能，添加当前群设置状态查看命令chatlog status \nv1.2.2: 修改为抓取时过滤正则，防止产生空消息 \n v1.2.1: 允许群内关闭前缀 \n v1.2.0:添加更多群内设置，允许群内清除记录，logon自动暂停发送，调整数据库结构
 // @timestamp    1763728841
 // @license      MIT
 // @homepageURL  https://github.com/sealdice/javascript
@@ -11,7 +11,7 @@
 // ==/UserScript==
 
 if (!seal.ext.find('randomChatLogger')) {
-    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.4.0');
+    const ext = seal.ext.new('randomChatLogger', 'baiyu', '1.5.0');
     seal.ext.register(ext);
 
     const CONFIG = {
@@ -127,26 +127,178 @@ if (!seal.ext.find('randomChatLogger')) {
     }
 
     class DataManager {
-        static queueCache = {};
-        static pendingWrites = new Set();
+        static CHUNK_SIZE = 50; // 每个块存储50条记录
+        static indexCache = {}; // 缓存索引信息
+        static chunkCache = {}; // 缓存最近访问的块
+        static pendingWrites = new Map(); // 待写入的块
         static batchWriteTimer = null;
 
-        static getQueue(id) {
-            if (this.queueCache[id]) {
-                return this.queueCache[id];
+        // 获取队列索引（轻量级元数据）
+        static getIndex(id) {
+            if (this.indexCache[id]) {
+                return this.indexCache[id];
             }
+            try {
+                const data = ext.storageGet(`logIndex_${id}`);
+                const index = data ? JSON.parse(data) : { total: 0, chunks: 0 };
+                this.indexCache[id] = index;
+                return index;
+            } catch (e) {
+                return { total: 0, chunks: 0 };
+            }
+        }
+
+        // 保存索引
+        static saveIndex(id, index) {
+            this.indexCache[id] = index;
+            ext.storageSet(`logIndex_${id}`, JSON.stringify(index));
+        }
+
+        // 获取指定块
+        static getChunk(id, chunkIndex) {
+            const cacheKey = `${id}_${chunkIndex}`;
+            if (this.chunkCache[cacheKey]) {
+                return this.chunkCache[cacheKey];
+            }
+            try {
+                const data = ext.storageGet(`logChunk_${id}_${chunkIndex}`);
+                const chunk = data ? JSON.parse(data) : [];
+                this.chunkCache[cacheKey] = chunk;
+                return chunk;
+            } catch (e) {
+                return [];
+            }
+        }
+
+        // 保存块（延迟写入）
+        static saveChunk(id, chunkIndex, chunk) {
+            const cacheKey = `${id}_${chunkIndex}`;
+            this.chunkCache[cacheKey] = chunk;
+            this.pendingWrites.set(cacheKey, { id, chunkIndex, chunk });
+            this.scheduleBatchWrite();
+        }
+
+        // 添加记录（按需加载最后一个块）
+        static addRecord(id, record, maxSize) {
+            const index = this.getIndex(id);
+            
+            // 检查是否需要删除旧记录
+            if (index.total >= maxSize) {
+                this.removeOldestRecord(id, index);
+            }
+
+            // 计算应该写入哪个块
+            const targetChunk = Math.floor(index.total / this.CHUNK_SIZE);
+            const chunk = this.getChunk(id, targetChunk);
+            
+            chunk.push(record);
+            this.saveChunk(id, targetChunk, chunk);
+            
+            index.total++;
+            index.chunks = Math.ceil(index.total / this.CHUNK_SIZE);
+            this.saveIndex(id, index);
+        }
+
+        // 删除最旧的记录
+        static removeOldestRecord(id, index) {
+            if (index.total === 0) return;
+            
+            const firstChunk = this.getChunk(id, 0);
+            if (firstChunk.length > 0) {
+                firstChunk.shift();
+                this.saveChunk(id, 0, firstChunk);
+                index.total--;
+                
+                // 如果第一个块空了，需要重新整理
+                if (firstChunk.length === 0 && index.chunks > 1) {
+                    this.compactChunks(id, index);
+                }
+            }
+        }
+
+        // 整理块（删除空块，重新编号）
+        static compactChunks(id, index) {
+            const allRecords = [];
+            for (let i = 0; i < index.chunks; i++) {
+                const chunk = this.getChunk(id, i);
+                allRecords.push(...chunk);
+                // 清理旧块
+                ext.storageSet(`logChunk_${id}_${i}`, "");
+                delete this.chunkCache[`${id}_${i}`];
+            }
+            
+            // 重新分块存储
+            const newChunks = Math.ceil(allRecords.length / this.CHUNK_SIZE);
+            for (let i = 0; i < newChunks; i++) {
+                const start = i * this.CHUNK_SIZE;
+                const chunk = allRecords.slice(start, start + this.CHUNK_SIZE);
+                this.saveChunk(id, i, chunk);
+            }
+            
+            index.total = allRecords.length;
+            index.chunks = newChunks;
+            this.saveIndex(id, index);
+        }
+
+        // 随机获取一条记录（只读取一个块）
+        static getRandomRecord(id) {
+            const index = this.getIndex(id);
+            if (index.total === 0) return null;
+            
+            const randomPos = Math.floor(Math.random() * index.total);
+            const chunkIndex = Math.floor(randomPos / this.CHUNK_SIZE);
+            const posInChunk = randomPos % this.CHUNK_SIZE;
+            
+            const chunk = this.getChunk(id, chunkIndex);
+            return chunk[posInChunk] || null;
+        }
+
+        // 删除随机记录
+        static removeRandomRecord(id) {
+            const index = this.getIndex(id);
+            if (index.total === 0) return null;
+            
+            const randomPos = Math.floor(Math.random() * index.total);
+            const chunkIndex = Math.floor(randomPos / this.CHUNK_SIZE);
+            const posInChunk = randomPos % this.CHUNK_SIZE;
+            
+            const chunk = this.getChunk(id, chunkIndex);
+            if (!chunk[posInChunk]) return null;
+            
+            const record = chunk[posInChunk];
+            chunk.splice(posInChunk, 1);
+            this.saveChunk(id, chunkIndex, chunk);
+            
+            index.total--;
+            this.saveIndex(id, index);
+            
+            return record;
+        }
+
+        // 获取队列大小（无需加载数据）
+        static getQueueSize(id) {
+            return this.getIndex(id).total;
+        }
+
+        // 清空队列
+        static clearQueue(id) {
+            const index = this.getIndex(id);
+            for (let i = 0; i < index.chunks; i++) {
+                ext.storageSet(`logChunk_${id}_${i}`, "");
+                delete this.chunkCache[`${id}_${i}`];
+            }
+            this.saveIndex(id, { total: 0, chunks: 0 });
+            delete this.indexCache[id];
+        }
+
+        // 兼容旧版本：获取完整队列（仅用于迁移）
+        static getQueue(id) {
             try {
                 const data = ext.storageGet(`logQueue_${id}`);
                 return data ? JSON.parse(data) : [];
             } catch (e) {
                 return [];
             }
-        }
-
-        static saveQueue(id, queue) {
-            this.queueCache[id] = queue;
-            this.pendingWrites.add(id);
-            this.scheduleBatchWrite();
         }
 
         static scheduleBatchWrite() {
@@ -161,16 +313,13 @@ if (!seal.ext.find('randomChatLogger')) {
         }
 
         static flushPendingWrites() {
-            for (const id of this.pendingWrites) {
+            for (const [cacheKey, data] of this.pendingWrites) {
                 try {
-                    const queue = this.queueCache[id];
-                    if (queue !== undefined) {
-                        ext.storageSet(`logQueue_${id}`, JSON.stringify(queue));
-                    }
+                    ext.storageSet(`logChunk_${data.id}_${data.chunkIndex}`, JSON.stringify(data.chunk));
                 } catch (e) {
-                    console.error(`[randomChatLogger] 写入失败 ${id}:`, e);
+                    console.error(`[randomChatLogger] 写入块失败 ${cacheKey}:`, e);
                 }
-                delete this.queueCache[id];
+                delete this.chunkCache[cacheKey];
             }
             this.pendingWrites.clear();
         }
@@ -193,17 +342,22 @@ if (!seal.ext.find('randomChatLogger')) {
         }
 
         static trimQueue(id, maxSize) {
-            const queue = this.getQueue(id);
-            if (queue.length > maxSize) {
-                const trimmed = queue.slice(-maxSize);
-                this.saveQueue(id, trimmed);
-                return queue.length - maxSize;
+            const index = this.getIndex(id);
+            if (index.total > maxSize) {
+                const removed = index.total - maxSize;
+                // 逐个删除最旧的记录
+                for (let i = 0; i < removed; i++) {
+                    this.removeOldestRecord(id, index);
+                }
+                this.flushPendingWrites();
+                return removed;
             }
             return 0;
         }
 
         static migrateFromOldFormat() {
             try {
+                // 迁移旧的状态存储格式
                 const oldData = ext.storageGet("logStateMap");
                 if (!oldData || oldData === "" || oldData === "{}") return;
 
@@ -221,10 +375,42 @@ if (!seal.ext.find('randomChatLogger')) {
                 }
                 ext.storageSet("logStateMap", "");
                 if (count > 0) {
-                    console.log(`[randomChatLogger] 数据部分平滑迁移：${count} 个群状态已分割为独立 key`);
+                    console.log(`[randomChatLogger] 状态数据迁移：${count} 个群状态已分割为独立 key`);
                 }
             } catch (e) {
-                console.error("[randomChatLogger] 数据迁移失败:", e);
+                console.error("[randomChatLogger] 状态迁移失败:", e);
+            }
+        }
+
+        // 迁移旧的队列存储格式到分块格式
+        static migrateQueueToChunks(id) {
+            try {
+                const oldQueue = this.getQueue(id);
+                if (!oldQueue || oldQueue.length === 0) return;
+
+                // 检查是否已经迁移过
+                const index = this.getIndex(id);
+                if (index.total > 0) return; // 已有新格式数据，跳过
+
+                console.log(`[randomChatLogger] 开始迁移群 ${id} 的队列数据，共 ${oldQueue.length} 条`);
+
+                // 分块存储
+                const chunks = Math.ceil(oldQueue.length / this.CHUNK_SIZE);
+                for (let i = 0; i < chunks; i++) {
+                    const start = i * this.CHUNK_SIZE;
+                    const chunk = oldQueue.slice(start, start + this.CHUNK_SIZE);
+                    ext.storageSet(`logChunk_${id}_${i}`, JSON.stringify(chunk));
+                }
+
+                // 保存索引
+                this.saveIndex(id, { total: oldQueue.length, chunks });
+
+                // 清理旧数据
+                ext.storageSet(`logQueue_${id}`, "");
+                
+                console.log(`[randomChatLogger] 群 ${id} 迁移完成，已分为 ${chunks} 个块`);
+            } catch (e) {
+                console.error(`[randomChatLogger] 队列迁移失败 ${id}:`, e);
             }
         }
     }
@@ -292,6 +478,15 @@ if (!seal.ext.find('randomChatLogger')) {
             } catch (e) { this.lastSendMap = {}; }
         }
 
+        // 懒加载迁移：仅在访问时迁移该群数据
+        static ensureMigrated(id) {
+            if (!this._migrationChecked) this._migrationChecked = {};
+            if (this._migrationChecked[id]) return;
+            
+            DataManager.migrateQueueToChunks(id);
+            this._migrationChecked[id] = true;
+        }
+
         static isEnabled(id) {
             if (this.stateMap[id] !== undefined) return this.stateMap[id];
             try {
@@ -320,6 +515,9 @@ if (!seal.ext.find('randomChatLogger')) {
 
         static async tick(ctx, msg, id) {
             if (!this.isEnabled(id)) return;
+
+            // 懒加载迁移
+            this.ensureMigrated(id);
 
             const now = Date.now();
 
@@ -350,19 +548,15 @@ if (!seal.ext.find('randomChatLogger')) {
                 }
 
                 if ((messageContent && messageContent.trim()) || savedImages.length > 0) {
-                    const queue = DataManager.getQueue(id);
-
                     const maxSize = parseInt(seal.ext.getStringConfig(ext, CONFIG.MAX_QUEUE_SIZE) || "100");
-                    if (queue.length >= maxSize) {
-                        queue.shift();
-                    }
-
-                    queue.push({
+                    
+                    const record = {
                         nickname: msg.sender.nickname,
                         message: messageContent,
                         images: savedImages
-                    });
-                    DataManager.saveQueue(id, queue);
+                    };
+                    
+                    DataManager.addRecord(id, record, maxSize);
                     this.saveRecordTime(id);
                 }
             }
@@ -387,26 +581,25 @@ if (!seal.ext.find('randomChatLogger')) {
                     }
                 }
 
-                let selectedQueue = null;
+                // 确保所有候选群都已迁移
+                candidateIds.forEach(cid => this.ensureMigrated(cid));
+
+                let logItem = null;
                 let selectedId = null;
 
                 const shuffled = candidateIds.slice().sort(() => Math.random() - 0.5);
                 for (const pickId of shuffled) {
-                    const q = DataManager.getQueue(pickId);
-                    if (q && q.length > 0) {
-                        selectedQueue = q;
-                        selectedId = pickId;
-                        break;
+                    const size = DataManager.getQueueSize(pickId);
+                    if (size > 0) {
+                        logItem = DataManager.removeRandomRecord(pickId);
+                        if (logItem) {
+                            selectedId = pickId;
+                            break;
+                        }
                     }
                 }
 
-                if (selectedQueue && selectedQueue.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * selectedQueue.length);
-                    const logItem = selectedQueue[randomIndex];
-
-                    selectedQueue.splice(randomIndex, 1);
-                    DataManager.saveQueue(selectedId, selectedQueue);
-
+                if (logItem) {
                     this.sendResponse(ctx, msg, id, logItem);
                     this.saveSendTime(id);
                 }
@@ -495,9 +688,7 @@ if (!seal.ext.find('randomChatLogger')) {
                 seal.replyToSender(ctx, msg, seal.ext.getStringConfig(ext, CONFIG.MSG_OFF));
                 break;
             case 'clear':
-                delete DataManager.queueCache[id];
-                DataManager.pendingWrites.delete(id);
-                ext.storageSet(`logQueue_${id}`, "[]");
+                DataManager.clearQueue(id);
                 seal.replyToSender(ctx, msg, "已清空当前群的群记录库。");
                 break;
             case 'trim': {
@@ -512,6 +703,8 @@ if (!seal.ext.find('randomChatLogger')) {
                 seal.replyToSender(ctx, msg, "已立即写入所有待保存数据");
                 break;
             case 'status': {
+                PassiveTimer.ensureMigrated(id);
+                
                 const groupCfg = DataManager.getGroupConfig(id);
                 const globalPrefix = seal.ext.getStringConfig(ext, CONFIG.PREFIX);
                 const defaultRecFreq = seal.ext.getStringConfig(ext, CONFIG.REC_FREQ);
@@ -527,7 +720,7 @@ if (!seal.ext.find('randomChatLogger')) {
                 const currentCatchImg = globalCatch && isGroupCatchOn;
                 const isSharedRoomOn = seal.ext.getBoolConfig(ext, CONFIG.SHARED_ROOM);
 
-                const queueSize = DataManager.getQueue(id).length;
+                const queueSize = DataManager.getQueueSize(id);
                 const isEnabled = PassiveTimer.isEnabled(id);
                 const maxQueueSize = seal.ext.getStringConfig(ext, CONFIG.MAX_QUEUE_SIZE) || "100";
                 const batchInterval = seal.ext.getStringConfig(ext, CONFIG.BATCH_WRITE_INTERVAL) || "300";
